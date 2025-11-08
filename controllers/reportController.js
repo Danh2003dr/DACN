@@ -142,6 +142,199 @@ const getSystemOverview = async (req, res) => {
   }
 };
 
+// @desc    Lấy dữ liệu dashboard thực tế
+// @route   GET /api/reports/dashboard
+// @access  Private
+const getDashboardSummary = async (req, res) => {
+  try {
+    const now = new Date();
+    const startOfToday = new Date(now);
+    startOfToday.setHours(0, 0, 0, 0);
+
+    const [
+      totalDrugs,
+      activeUsers,
+      completedTasks,
+      pendingTasks,
+      alertCount,
+      todayScanResult,
+      recentDrugs,
+      recentTasks,
+      recentScans,
+      recentAlerts
+    ] = await Promise.all([
+      Drug.countDocuments(),
+      User.countDocuments({ isActive: true }),
+      Task.countDocuments({ status: 'completed' }),
+      Task.countDocuments({ status: { $in: ['pending', 'in_progress'] } }),
+      Notification.countDocuments({
+        status: 'published',
+        priority: { $in: ['high', 'urgent'] },
+        $or: [
+          { expiresAt: null },
+          { expiresAt: { $gt: now } }
+        ]
+      }),
+      SupplyChain.aggregate([
+        { $unwind: '$accessLog' },
+        {
+          $match: {
+            'accessLog.accessType': 'scan',
+            'accessLog.timestamp': { $gte: startOfToday }
+          }
+        },
+        { $count: 'count' }
+      ]),
+      Drug.find()
+        .sort({ createdAt: -1 })
+        .limit(5)
+        .populate('createdBy', 'fullName role')
+        .populate('manufacturerId', 'fullName organizationInfo'),
+      Task.find()
+        .sort({ updatedAt: -1 })
+        .limit(5)
+        .populate('assignedTo', 'fullName role')
+        .populate('assignedBy', 'fullName role'),
+      SupplyChain.aggregate([
+        { $unwind: '$accessLog' },
+        { $match: { 'accessLog.accessType': 'scan' } },
+        { $sort: { 'accessLog.timestamp': -1 } },
+        { $limit: 5 },
+        {
+          $lookup: {
+            from: 'users',
+            localField: 'accessLog.accessedBy',
+            foreignField: '_id',
+            as: 'accessUser'
+          }
+        },
+        {
+          $unwind: {
+            path: '$accessUser',
+            preserveNullAndEmptyArrays: true
+          }
+        },
+        {
+          $project: {
+            supplyChainId: '$_id',
+            drugBatchNumber: '$drugBatchNumber',
+            accessLog: '$accessLog',
+            accessUser: {
+              fullName: '$accessUser.fullName',
+              role: '$accessUser.role'
+            }
+          }
+        }
+      ]),
+      Notification.find({
+        status: 'published',
+        priority: { $in: ['high', 'urgent'] },
+        $or: [
+          { expiresAt: null },
+          { expiresAt: { $gt: now } }
+        ]
+      })
+        .sort({ createdAt: -1 })
+        .limit(5)
+        .populate('sender', 'fullName role')
+    ]);
+
+    const todayScans = todayScanResult[0]?.count || 0;
+
+    const statusLabels = {
+      pending: 'được tạo',
+      in_progress: 'đang xử lý',
+      completed: 'đã hoàn thành',
+      cancelled: 'đã hủy',
+      on_hold: 'bị tạm dừng'
+    };
+
+    const activities = [];
+
+    recentDrugs.forEach((drug) => {
+      activities.push({
+        type: 'drug_created',
+        title: `Lô thuốc ${drug.batchNumber} đã được tạo`,
+        actor: drug.manufacturerId?.fullName || drug.createdBy?.fullName || 'Hệ thống',
+        role: drug.manufacturerId ? 'manufacturer' : drug.createdBy?.role,
+        timestamp: drug.createdAt,
+        metadata: {
+          drugId: drug.drugId,
+          batchNumber: drug.batchNumber
+        }
+      });
+    });
+
+    recentTasks.forEach((task) => {
+      activities.push({
+        type: task.status === 'completed' ? 'task_completed' : 'task_updated',
+        title: `Nhiệm vụ "${task.title}" ${statusLabels[task.status] || 'được cập nhật'}`,
+        actor: task.assignedTo?.fullName || task.assignedBy?.fullName || 'Không xác định',
+        role: task.assignedTo?.role || task.assignedBy?.role,
+        timestamp: task.updatedAt,
+        metadata: {
+          taskId: task._id,
+          status: task.status
+        }
+      });
+    });
+
+    recentScans.forEach((scan) => {
+      activities.push({
+        type: 'qr_scan',
+        title: `Quét QR cho lô ${scan.drugBatchNumber}`,
+        actor: scan.accessUser?.fullName || 'Người dùng ẩn danh',
+        role: scan.accessUser?.role || 'patient',
+        timestamp: scan.accessLog?.timestamp,
+        metadata: {
+          supplyChainId: scan.supplyChainId,
+          accessType: scan.accessLog?.accessType
+        }
+      });
+    });
+
+    recentAlerts.forEach((alert) => {
+      activities.push({
+        type: 'alert',
+        title: alert.title,
+        actor: alert.sender?.fullName || 'Hệ thống',
+        role: alert.sender?.role,
+        timestamp: alert.createdAt,
+        metadata: {
+          notificationId: alert._id,
+          priority: alert.priority
+        }
+      });
+    });
+
+    const recentActivities = activities
+      .filter((item) => item.timestamp)
+      .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+      .slice(0, 8);
+
+    res.status(200).json({
+      success: true,
+      data: {
+        stats: {
+          totalDrugs,
+          activeUsers,
+          completedTasks,
+          pendingTasks,
+          alerts: alertCount,
+          todayScans
+        },
+        recentActivities
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Lỗi server khi lấy dữ liệu dashboard.',
+      error: error.message
+    });
+  }
+};
+
 // @desc    Lấy thống kê chi tiết theo module
 // @route   GET /api/reports/module/:module
 // @access  Private
@@ -562,6 +755,7 @@ const getQualityAssessmentReport = async (req, res) => {
 
 module.exports = {
   getSystemOverview,
+  getDashboardSummary,
   getModuleStats,
   getDistributionJourneyReport,
   getSuspiciousDrugsReport,

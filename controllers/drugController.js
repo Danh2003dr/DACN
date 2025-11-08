@@ -1,9 +1,11 @@
 const Drug = require('../models/Drug');
 const User = require('../models/User');
+const SupplyChain = require('../models/SupplyChain');
 const QRCode = require('qrcode');
 const path = require('path');
 const fs = require('fs');
 const blockchainService = require('../services/blockchainService');
+const getServerUrl = require('../utils/getServerUrl');
 
 // @desc    Tạo lô thuốc mới
 // @route   POST /api/drugs
@@ -69,6 +71,11 @@ const createDrug = async (req, res) => {
 
     const drug = await Drug.create(drugData);
 
+    // Khởi tạo blockchain service nếu chưa có
+    if (!blockchainService.isInitialized) {
+      await blockchainService.initialize();
+    }
+
     // Ghi dữ liệu lên blockchain
     const blockchainResult = await blockchainService.recordDrugBatchOnBlockchain(drugData);
     
@@ -99,12 +106,15 @@ const createDrug = async (req, res) => {
     // Tạo QR code với blockchain ID
     const qrData = drug.generateQRData();
     // Thêm blockchain ID vào QR data
-    qrData.blockchainId = drug.blockchain?.blockchainId;
-    qrData.verificationUrl = `${process.env.CLIENT_URL || 'http://localhost:3001'}/verify/${drug.blockchain?.blockchainId}`;
+    qrData.blockchainId = drug.blockchain?.blockchainId || drug.drugId;
+    // Sử dụng server URL để tạo verification URL (tự động detect IP)
+    const serverUrl = getServerUrl();
+    qrData.verificationUrl = `${serverUrl}/verify/${drug.blockchain?.blockchainId || drug.drugId}`;
     
     const qrCodeDataURL = await QRCode.toDataURL(JSON.stringify(qrData));
 
     // Cập nhật QR code vào drug
+    drug.qrCode.data = JSON.stringify(qrData);
     drug.qrCode.imageUrl = qrCodeDataURL;
     drug.qrCode.blockchainId = drug.blockchain?.blockchainId;
     drug.qrCode.verificationUrl = qrData.verificationUrl;
@@ -171,10 +181,16 @@ const getDrugs = async (req, res) => {
       filter.manufacturerId = manufacturerId;
     }
 
-    // Kiểm tra quyền - chỉ admin mới xem tất cả
-    if (req.user.role !== 'admin' && req.user.role !== 'manufacturer') {
-      filter.manufacturerId = req.user._id;
+    // Kiểm tra quyền - chỉ admin và manufacturer mới có thể filter theo manufacturerId
+    // Các role khác (distributor, hospital, patient) có thể xem tất cả thuốc
+    if (req.user.role === 'manufacturer') {
+      // Manufacturer chỉ xem thuốc của chính mình nếu không có filter cụ thể
+      if (!manufacturerId) {
+        filter.manufacturerId = req.user._id;
+      }
     }
+    // Admin xem tất cả (không filter)
+    // Distributor, Hospital, Patient xem tất cả (không filter)
 
     // Tính toán pagination
     const skip = (page - 1) * limit;
@@ -226,14 +242,16 @@ const getDrugById = async (req, res) => {
     }
 
     // Kiểm tra quyền truy cập
-    if (req.user.role !== 'admin' && 
-        req.user.role !== 'manufacturer' && 
+    // Admin và tất cả các role khác đều có thể xem thông tin thuốc
+    // Chỉ manufacturer bị giới hạn xem thuốc của chính mình
+    if (req.user.role === 'manufacturer' && 
         drug.manufacturerId._id.toString() !== req.user._id.toString()) {
       return res.status(403).json({
         success: false,
-        message: 'Bạn không có quyền xem thông tin lô thuốc này.'
+        message: 'Bạn không có quyền xem thông tin lô thuốc này. Chỉ có thể xem thuốc do bạn sản xuất.'
       });
     }
+    // Admin, Distributor, Hospital, Patient đều có thể xem
 
     res.status(200).json({
       success: true,
@@ -401,15 +419,31 @@ const scanQRCode = async (req, res) => {
       });
     }
 
+    // Lấy thông tin từ blockchain (nếu có)
+    const actualBlockchainId = drug.blockchain?.blockchainId;
+    let blockchainData = null;
+    
+    try {
+      if (actualBlockchainId && drug.blockchain?.isOnBlockchain) {
+        blockchainData = await blockchainService.getDrugBatchFromBlockchain(actualBlockchainId);
+      }
+    } catch (blockchainError) {
+      console.error('Error fetching blockchain data:', blockchainError);
+      // Không throw error, chỉ log - vẫn trả về dữ liệu thuốc
+    }
+
     // Kiểm tra thuốc có bị thu hồi không
     if (drug.isRecalled) {
       return res.status(400).json({
         success: false,
         message: 'CẢNH BÁO: Lô thuốc này đã bị thu hồi!',
+        alertType: 'recalled',
         data: {
           drug: drug,
           recallReason: drug.recallReason,
-          recallDate: drug.recallDate
+          recallDate: drug.recallDate,
+          blockchain: blockchainData,
+          blockchainInfo: drug.blockchain
         }
       });
     }
@@ -419,10 +453,13 @@ const scanQRCode = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: 'CẢNH BÁO: Thuốc đã hết hạn sử dụng!',
+        alertType: 'expired',
         data: {
           drug: drug,
           expiryDate: drug.expiryDate,
-          daysExpired: Math.abs(drug.daysUntilExpiry)
+          daysExpired: Math.abs(drug.daysUntilExpiry),
+          blockchain: blockchainData,
+          blockchainInfo: drug.blockchain
         }
       });
     }
@@ -433,20 +470,51 @@ const scanQRCode = async (req, res) => {
         success: true,
         message: 'Thuốc hợp lệ nhưng gần hết hạn.',
         warning: `Thuốc sẽ hết hạn trong ${drug.daysUntilExpiry} ngày.`,
-        data: { drug }
+        data: { 
+          drug,
+          blockchain: blockchainData,
+          blockchainInfo: drug.blockchain
+        }
       });
     }
 
     res.status(200).json({
       success: true,
       message: 'Thuốc hợp lệ và an toàn.',
-      data: { drug }
+      data: { 
+        drug,
+        blockchain: blockchainData,
+        blockchainInfo: drug.blockchain
+      }
     });
 
   } catch (error) {
     res.status(500).json({
       success: false,
       message: 'Lỗi server khi quét QR code.',
+      error: error.message
+    });
+  }
+};
+
+// @desc    Lấy server URL (cho frontend sử dụng)
+// @route   GET /api/drugs/server-url
+// @access  Public
+const getServerUrlController = (req, res) => {
+  try {
+    const serverUrl = getServerUrl();
+    
+    res.json({
+      success: true,
+      data: {
+        serverUrl,
+        frontendUrl: serverUrl
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Lỗi server khi lấy server URL.',
       error: error.message
     });
   }
@@ -594,24 +662,76 @@ const verifyQRCode = async (req, res) => {
     if (!blockchainId) {
       return res.status(400).json({
         success: false,
-        message: 'Blockchain ID là bắt buộc.'
+        message: 'Blockchain ID hoặc số lô là bắt buộc.'
       });
     }
 
-    // Tìm drug trong database
-    const drug = await Drug.findOne({ 'blockchain.blockchainId': blockchainId })
+    // Tìm drug trong database - thử nhiều cách
+    let drug = null;
+    
+    // 1. Thử tìm bằng blockchain.blockchainId
+    drug = await Drug.findOne({ 'blockchain.blockchainId': blockchainId })
       .populate('manufacturerId', 'fullName organizationInfo')
       .populate('createdBy', 'fullName role');
+
+    // 2. Nếu không tìm thấy, thử tìm bằng drugId (format DRUG_...)
+    if (!drug && blockchainId.startsWith('DRUG_')) {
+      drug = await Drug.findOne({ drugId: blockchainId })
+        .populate('manufacturerId', 'fullName organizationInfo')
+        .populate('createdBy', 'fullName role');
+    }
+    
+    // 3. Nếu vẫn không tìm thấy, thử tìm bằng batchNumber
+    if (!drug) {
+      drug = await Drug.findOne({ batchNumber: blockchainId })
+        .populate('manufacturerId', 'fullName organizationInfo')
+        .populate('createdBy', 'fullName role');
+    }
+    
+    // 4. Thử tìm bằng drugId nếu chưa tìm thấy (cho các trường hợp khác)
+    if (!drug) {
+      drug = await Drug.findOne({ drugId: blockchainId })
+        .populate('manufacturerId', 'fullName organizationInfo')
+        .populate('createdBy', 'fullName role');
+    }
+    
+    // 5. Nếu vẫn không tìm thấy, thử tìm từ SupplyChain
+    if (!drug) {
+      const supplyChain = await SupplyChain.findOne({
+        $or: [
+          { 'qrCode.blockchainId': blockchainId },
+          { 'qrCode.code': blockchainId },
+          { drugBatchNumber: blockchainId }
+        ]
+      }).populate('drugId');
+      
+      if (supplyChain && supplyChain.drugId) {
+        drug = await Drug.findById(supplyChain.drugId)
+          .populate('manufacturerId', 'fullName organizationInfo')
+          .populate('createdBy', 'fullName role');
+      }
+    }
 
     if (!drug) {
       return res.status(404).json({
         success: false,
-        message: 'Không tìm thấy lô thuốc với blockchain ID này.'
+        message: 'Không tìm thấy lô thuốc với blockchain ID, số lô hoặc mã thuốc này. Vui lòng kiểm tra lại thông tin.'
       });
     }
 
     // Lấy thông tin từ blockchain (nếu có)
-    const blockchainData = await blockchainService.getDrugBatchFromBlockchain(blockchainId);
+    // Sử dụng blockchainId của drug nếu có, nếu không thì dùng tham số truyền vào
+    const actualBlockchainId = drug.blockchain?.blockchainId || blockchainId;
+    let blockchainData = null;
+    
+    try {
+      if (actualBlockchainId && drug.blockchain?.isOnBlockchain) {
+        blockchainData = await blockchainService.getDrugBatchFromBlockchain(actualBlockchainId);
+      }
+    } catch (blockchainError) {
+      console.error('Error fetching blockchain data:', blockchainError);
+      // Không throw error, chỉ log
+    }
 
     res.json({
       success: true,
@@ -651,6 +771,188 @@ const verifyQRCode = async (req, res) => {
   }
 };
 
+// @desc    Xác minh thuốc từ blockchain ID
+// @route   GET /api/drugs/verify/:blockchainId
+// @access  Public
+const verifyDrugByBlockchainId = async (req, res) => {
+  try {
+    const { blockchainId } = req.params;
+
+    if (!blockchainId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Blockchain ID là bắt buộc.'
+      });
+    }
+
+    // Tìm thuốc theo blockchain ID
+    const drug = await Drug.findOne({ 
+      'blockchain.blockchainId': blockchainId 
+    }).populate('manufacturerId', 'fullName organizationInfo.name');
+
+    if (!drug) {
+      return res.status(404).json({
+        success: false,
+        message: 'Không tìm thấy thuốc với blockchain ID này.'
+      });
+    }
+
+    // Lấy thông tin blockchain
+    const blockchainData = {
+      blockchainId: drug.blockchain?.blockchainId,
+      transactionHash: drug.blockchain?.transactionHash,
+      blockNumber: drug.blockchain?.blockNumber,
+      timestamp: drug.blockchain?.blockchainTimestamp,
+      gasUsed: drug.blockchain?.gasUsed,
+      contractAddress: drug.blockchain?.contractAddress,
+      isOnBlockchain: drug.blockchain?.isOnBlockchain,
+      digitalSignature: drug.blockchain?.digitalSignature,
+      dataHash: drug.blockchain?.dataHash,
+      transactionHistory: drug.blockchain?.transactionHistory || []
+    };
+
+    // Kiểm tra tính hợp lệ của blockchain data
+    const isValid = drug.blockchain?.isOnBlockchain && 
+                   drug.blockchain?.blockchainId && 
+                   drug.blockchain?.transactionHash;
+
+    res.json({
+      success: true,
+      message: 'Xác minh thành công.',
+      data: {
+        drug: {
+          _id: drug._id,
+          name: drug.name,
+          activeIngredient: drug.activeIngredient,
+          dosage: drug.dosage,
+          form: drug.form,
+          batchNumber: drug.batchNumber,
+          productionDate: drug.productionDate,
+          expiryDate: drug.expiryDate,
+          qualityTest: drug.qualityTest,
+          manufacturer: {
+            name: drug.manufacturerId?.fullName,
+            organization: drug.manufacturerId?.organizationInfo?.name
+          },
+          blockchain: drug.blockchain
+        },
+        blockchain: blockchainData,
+        verification: {
+          isValid: isValid,
+          verifiedAt: new Date().toISOString(),
+          status: isValid ? 'verified' : 'unverified'
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Blockchain verification error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Lỗi server khi xác minh blockchain.',
+      error: error.message
+    });
+  }
+};
+
+// @desc    Generate QR code cho drug nếu chưa có
+// @route   POST /api/drugs/:id/generate-qr
+// @access  Private (Admin, Manufacturer)
+const generateQRCode = async (req, res) => {
+  try {
+    const drug = await Drug.findById(req.params.id);
+    
+    if (!drug) {
+      return res.status(404).json({
+        success: false,
+        message: 'Không tìm thấy lô thuốc.'
+      });
+    }
+
+    // Populate manufacturer trước khi check
+    await drug.populate('manufacturerId', 'fullName organizationInfo');
+
+    // Nếu đã có QR code thì trả về luôn
+    if (drug.qrCode?.imageUrl || drug.qrCode?.data) {
+      let qrData = null;
+      if (drug.qrCode?.data) {
+        try {
+          qrData = typeof drug.qrCode.data === 'string' 
+            ? JSON.parse(drug.qrCode.data)
+            : drug.qrCode.data;
+        } catch (e) {
+          // Nếu parse lỗi, tạo lại từ drug info
+          qrData = drug.generateQRData();
+          if (drug.blockchain?.blockchainId) {
+            qrData.blockchainId = drug.blockchain.blockchainId;
+            const serverUrl = getServerUrl();
+            qrData.verificationUrl = `${serverUrl}/verify/${drug.blockchain.blockchainId || drug.drugId}`;
+          }
+        }
+      } else {
+        // Nếu không có data, tạo từ drug info
+        qrData = drug.generateQRData();
+        if (drug.blockchain?.blockchainId) {
+          qrData.blockchainId = drug.blockchain.blockchainId;
+          const serverUrl = getServerUrl();
+          qrData.verificationUrl = `${serverUrl}/verify/${drug.blockchain.blockchainId || drug.drugId}`;
+        }
+      }
+      
+      return res.json({
+        success: true,
+        message: 'QR code đã tồn tại.',
+        data: {
+          qrCode: drug.qrCode?.imageUrl || null,
+          qrData: qrData,
+          drug: drug
+        }
+      });
+    }
+
+    // Tạo QR code
+    const qrData = drug.generateQRData();
+    // Thêm blockchain ID vào QR data nếu có
+    if (drug.blockchain?.blockchainId) {
+      qrData.blockchainId = drug.blockchain.blockchainId;
+      const serverUrl = getServerUrl();
+      qrData.verificationUrl = `${serverUrl}/verify/${drug.blockchain.blockchainId || drug.drugId}`;
+    }
+    
+    const qrCodeDataURL = await QRCode.toDataURL(JSON.stringify(qrData));
+
+    // Cập nhật QR code vào drug
+    drug.qrCode.data = JSON.stringify(qrData);
+    drug.qrCode.imageUrl = qrCodeDataURL;
+    if (drug.blockchain?.blockchainId) {
+      drug.qrCode.blockchainId = drug.blockchain.blockchainId;
+      drug.qrCode.verificationUrl = qrData.verificationUrl;
+    }
+    drug.qrCode.generatedAt = new Date();
+    await drug.save();
+
+    // Populate thông tin manufacturer để trả về đầy đủ
+    await drug.populate('manufacturerId', 'fullName organizationInfo');
+
+    res.json({
+      success: true,
+      message: 'Tạo QR code thành công.',
+      data: {
+        qrCode: qrCodeDataURL,
+        qrData: qrData, // Trả về cả QR data để frontend có thể generate trực tiếp
+        drug: drug
+      }
+    });
+  } catch (error) {
+    console.error('Error generating QR code:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Lỗi server khi tạo QR code.',
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
   createDrug,
   getDrugs,
@@ -658,8 +960,11 @@ module.exports = {
   updateDrug,
   updateDistributionStatus,
   scanQRCode,
+  getServerUrl: getServerUrlController,
   recallDrug,
   getDrugStats,
   deleteDrug,
-  verifyQRCode
+  verifyQRCode,
+  verifyDrugByBlockchainId,
+  generateQRCode
 };

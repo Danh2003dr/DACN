@@ -2,8 +2,27 @@ import axios from 'axios';
 import toast from 'react-hot-toast';
 
 // Tạo axios instance
+// Tự động detect API URL: ưu tiên REACT_APP_API_URL, nếu không có thì dùng IP hiện tại hoặc localhost
+const getApiUrl = () => {
+  // Nếu có REACT_APP_API_URL trong env, dùng nó
+  if (process.env.REACT_APP_API_URL) {
+    return process.env.REACT_APP_API_URL;
+  }
+  
+  // Nếu đang chạy trên network (không phải localhost), dùng hostname hiện tại
+  if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+    const protocol = window.location.protocol;
+    const hostname = window.location.hostname;
+    const port = '5000'; // Backend port
+    return `${protocol}//${hostname}:${port}/api`;
+  }
+  
+  // Mặc định là localhost
+  return 'http://localhost:5000/api';
+};
+
 const api = axios.create({
-  baseURL: process.env.REACT_APP_API_URL || 'http://localhost:5000/api',
+  baseURL: getApiUrl(),
   timeout: 10000,
   headers: {
     'Content-Type': 'application/json',
@@ -141,6 +160,12 @@ export const authAPI = {
     const response = await api.post('/auth/create-default-accounts');
     return response.data;
   },
+  
+  // Đăng nhập bằng Google
+  loginWithGoogle: () => {
+    const backendUrl = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+    window.location.href = `${backendUrl}/auth/google`;
+  },
 };
 
 // User API
@@ -232,6 +257,12 @@ export const drugAPI = {
     return response.data;
   },
   
+  // Lấy server URL để tạo QR code
+  getServerUrl: async () => {
+    const response = await api.get('/drugs/server-url');
+    return response.data;
+  },
+  
   // Recall drug
   recallDrug: async (id, recallData) => {
     const response = await api.put(`/drugs/${id}/recall`, recallData);
@@ -253,6 +284,12 @@ export const drugAPI = {
   // Verify QR code (public)
   verifyQRCode: async (blockchainId) => {
     const response = await api.get(`/drugs/verify/${blockchainId}`);
+    return response.data;
+  },
+  
+  // Generate QR code cho drug
+  generateQRCode: async (id) => {
+    const response = await api.post(`/drugs/${id}/generate-qr`);
     return response.data;
   },
 };
@@ -535,6 +572,12 @@ export const reportAPI = {
   // Get system overview
   getSystemOverview: async () => {
     const response = await api.get('/reports/overview');
+    return response.data;
+  },
+
+  // Get dashboard summary
+  getDashboardSummary: async () => {
+    const response = await api.get('/reports/dashboard');
     return response.data;
   },
 

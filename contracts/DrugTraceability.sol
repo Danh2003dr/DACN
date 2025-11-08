@@ -257,4 +257,147 @@ contract DrugTraceability {
     function getAllDrugIds() external view returns (string[] memory) {
         return allDrugIds;
     }
+    
+    // Kiểm tra tính hợp lệ của lô thuốc
+    function verifyDrugBatch(string memory _drugId) external view returns (
+        bool isValid,
+        bool isExpired,
+        bool isRecalled,
+        string memory status
+    ) {
+        DrugBatch memory batch = drugBatches[_drugId];
+        
+        if (batch.createdAt == 0) {
+            return (false, false, false, "Không tồn tại");
+        }
+        
+        bool expired = block.timestamp > batch.expiryDate;
+        bool recalled = batch.isRecalled;
+        
+        string memory currentStatus;
+        if (recalled) {
+            currentStatus = "Đã thu hồi";
+        } else if (expired) {
+            currentStatus = "Đã hết hạn";
+        } else {
+            currentStatus = "Hợp lệ";
+        }
+        
+        return (!recalled && !expired, expired, recalled, currentStatus);
+    }
+    
+    // Lấy thống kê tổng quan
+    function getContractStats() external view returns (
+        uint256 totalBatches,
+        uint256 activeBatches,
+        uint256 recalledBatches,
+        uint256 expiredBatches
+    ) {
+        totalBatches = allDrugIds.length;
+        uint256 active = 0;
+        uint256 recalled = 0;
+        uint256 expired = 0;
+        
+        for (uint256 i = 0; i < allDrugIds.length; i++) {
+            DrugBatch memory batch = drugBatches[allDrugIds[i]];
+            
+            if (batch.isRecalled) {
+                recalled++;
+            } else if (block.timestamp > batch.expiryDate) {
+                expired++;
+            } else {
+                active++;
+            }
+        }
+        
+        return (totalBatches, active, recalled, expired);
+    }
+    
+    // Tìm kiếm lô thuốc theo tên
+    function searchDrugBatchesByName(string memory _name) external view returns (string[] memory) {
+        string[] memory results = new string[](allDrugIds.length);
+        uint256 count = 0;
+        
+        for (uint256 i = 0; i < allDrugIds.length; i++) {
+            DrugBatch memory batch = drugBatches[allDrugIds[i]];
+            if (keccak256(bytes(batch.name)) == keccak256(bytes(_name))) {
+                results[count] = allDrugIds[i];
+                count++;
+            }
+        }
+        
+        // Tạo array với kích thước chính xác
+        string[] memory finalResults = new string[](count);
+        for (uint256 i = 0; i < count; i++) {
+            finalResults[i] = results[i];
+        }
+        
+        return finalResults;
+    }
+    
+    // Lấy lịch sử phân phối với pagination
+    function getDistributionHistoryPaginated(
+        string memory _drugId,
+        uint256 _offset,
+        uint256 _limit
+    ) external view returns (
+        address[] memory,
+        address[] memory,
+        uint256[] memory,
+        string[] memory,
+        string[] memory,
+        string[] memory,
+        uint256 totalRecords
+    ) {
+        DistributionRecord[] memory records = distributionHistory[_drugId];
+        uint256 total = records.length;
+        
+        if (_offset >= total) {
+            address[] memory emptyAddresses = new address[](0);
+            string[] memory emptyStrings = new string[](0);
+            uint256[] memory emptyUints = new uint256[](0);
+            return (emptyAddresses, emptyAddresses, emptyUints, emptyStrings, emptyStrings, emptyStrings, total);
+        }
+        
+        uint256 end = _offset + _limit;
+        if (end > total) {
+            end = total;
+        }
+        
+        uint256 length = end - _offset;
+        
+        address[] memory froms = new address[](length);
+        address[] memory tos = new address[](length);
+        uint256[] memory timestamps = new uint256[](length);
+        string[] memory locations = new string[](length);
+        string[] memory statuses = new string[](length);
+        string[] memory notes = new string[](length);
+        
+        for (uint256 i = 0; i < length; i++) {
+            uint256 index = _offset + i;
+            froms[i] = records[index].from;
+            tos[i] = records[index].to;
+            timestamps[i] = records[index].timestamp;
+            locations[i] = records[index].location;
+            statuses[i] = records[index].status;
+            notes[i] = records[index].notes;
+        }
+        
+        return (froms, tos, timestamps, locations, statuses, notes, total);
+    }
+    
+    // Event cho việc xác minh
+    event DrugBatchVerified(
+        string indexed drugId,
+        address indexed verifier,
+        bool isValid,
+        uint256 timestamp
+    );
+    
+    // Function để ghi nhận việc xác minh
+    function recordVerification(string memory _drugId, bool _isValid) external {
+        require(drugBatches[_drugId].createdAt > 0, "Drug ID không tồn tại");
+        
+        emit DrugBatchVerified(_drugId, msg.sender, _isValid, block.timestamp);
+    }
 }

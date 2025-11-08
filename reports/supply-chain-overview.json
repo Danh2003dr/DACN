@@ -1,0 +1,48 @@
+{
+  "generatedAt": "2025-10-24T07:02:59.567Z",
+  "summary": {
+    "totalSupplyChains": 2,
+    "totalDrugs": 7,
+    "totalUsers": 7,
+    "totalSteps": 6,
+    "totalQualityChecks": 4
+  },
+  "statusDistribution": {
+    "active": 1,
+    "completed": 0,
+    "recalled": 1,
+    "expired": 0,
+    "suspended": 0
+  },
+  "roleDistribution": {
+    "manufacturers": 3,
+    "distributors": 1,
+    "hospitals": 1,
+    "patients": 1,
+    "admins": 1
+  },
+  "drugFormDistribution": {
+    "cao khô": 3,
+    "cao đặc": 2,
+    "viên nén": 1,
+    "viên nang": 1,
+    "siro": 0,
+    "dung dịch tiêm": 0,
+    "kem": 0,
+    "gel": 0,
+    "thuốc mỡ": 0,
+    "khác": 0
+  },
+  "qualitySummary": {
+    "totalChecks": 4,
+    "passedChecks": 3,
+    "failedChecks": 1,
+    "warningChecks": 0,
+    "successRate": 75
+  },
+  "blockchainIntegration": {
+    "totalOnBlockchain": 0,
+    "totalTransactions": 0,
+    "averageGasUsed": 0
+  }
+}

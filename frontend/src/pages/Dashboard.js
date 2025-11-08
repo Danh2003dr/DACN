@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Users,
   Package,
@@ -13,61 +13,134 @@ import {
   User,
   Shield
 } from 'lucide-react';
+import toast from 'react-hot-toast';
 import { useAuth } from '../contexts/AuthContext';
+import { reportAPI } from '../utils/api';
+
+const activityIconMap = {
+  drug_created: Package,
+  qr_scan: QrCode,
+  task_completed: CheckCircle,
+  task_updated: Clock,
+  alert: AlertTriangle,
+  user_registered: Users,
+  supply_chain: TrendingUp
+};
+
+const activityColorMap = {
+  drug_created: 'text-green-600',
+  qr_scan: 'text-blue-600',
+  task_completed: 'text-emerald-600',
+  task_updated: 'text-yellow-600',
+  alert: 'text-red-600',
+  user_registered: 'text-purple-600',
+  supply_chain: 'text-indigo-600'
+};
+
+const formatRelativeTime = (value) => {
+  if (!value) return '';
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+
+  const diffMs = date.getTime() - Date.now();
+  const diffMinutes = Math.round(diffMs / (1000 * 60));
+  const rtf = new Intl.RelativeTimeFormat('vi', { numeric: 'auto' });
+
+  if (Math.abs(diffMinutes) < 1) {
+    return 'Vừa xong';
+  }
+
+  if (Math.abs(diffMinutes) < 60) {
+    return rtf.format(diffMinutes, 'minute');
+  }
+
+  const diffHours = Math.round(diffMinutes / 60);
+  if (Math.abs(diffHours) < 24) {
+    return rtf.format(diffHours, 'hour');
+  }
+
+  const diffDays = Math.round(diffHours / 24);
+  if (Math.abs(diffDays) < 30) {
+    return rtf.format(diffDays, 'day');
+  }
+
+  const diffMonths = Math.round(diffDays / 30);
+  if (Math.abs(diffMonths) < 12) {
+    return rtf.format(diffMonths, 'month');
+  }
+
+  const diffYears = Math.round(diffMonths / 12);
+  return rtf.format(diffYears, 'year');
+};
+
+const getRoleDisplayName = (role) => {
+  const roleNames = {
+    admin: 'Quản trị viên',
+    manufacturer: 'Nhà sản xuất',
+    distributor: 'Nhà phân phối',
+    hospital: 'Bệnh viện',
+    patient: 'Bệnh nhân'
+  };
+  return roleNames[role] || role || 'Người dùng';
+};
+
+const getRoleIcon = (role) => {
+  const roleIcons = {
+    admin: Shield,
+    manufacturer: Building2,
+    distributor: Users,
+    hospital: Heart,
+    patient: User
+  };
+  return roleIcons[role] || User;
+};
 
 const Dashboard = () => {
-  const { user, hasRole } = useAuth();
+  const { user, hasAnyRole } = useAuth();
+  const [stats, setStats] = useState(null);
+  const [activities, setActivities] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  // Mock data - trong thực tế sẽ lấy từ API
-  const stats = {
-    totalDrugs: 1247,
-    activeUsers: 89,
-    completedTasks: 156,
-    pendingTasks: 23,
-    alerts: 5,
-    todayScans: 234
-  };
+  useEffect(() => {
+    const fetchDashboardData = async () => {
+      try {
+        setLoading(true);
+        setError(null);
 
-  const recentActivities = [
-    {
-      id: 1,
-      type: 'drug_created',
-      message: 'Lô thuốc PARACETAMOL-001 đã được tạo',
-      user: 'Nguyễn Văn A',
-      time: '5 phút trước',
-      icon: Package,
-      color: 'text-green-600'
-    },
-    {
-      id: 2,
-      type: 'scan_qr',
-      message: 'Bệnh nhân đã quét QR code thuốc',
-      user: 'Lê Thị B',
-      time: '12 phút trước',
-      icon: QrCode,
-      color: 'text-blue-600'
-    },
-    {
-      id: 3,
-      type: 'user_registered',
-      message: 'Tài khoản nhà phân phối mới đã đăng ký',
-      user: 'Trần Văn C',
-      time: '1 giờ trước',
-      icon: Users,
-      color: 'text-purple-600'
-    },
-    {
-      id: 4,
-      type: 'task_completed',
-      message: 'Nhiệm vụ vận chuyển đã hoàn thành',
-      user: 'Phạm Thị D',
-      time: '2 giờ trước',
-      icon: CheckCircle,
-      color: 'text-green-600'
-    }
-  ];
+        const response = await reportAPI.getDashboardSummary();
 
-  const quickActions = [
+        if (response.success) {
+          setStats(response.data?.stats || null);
+          setActivities(response.data?.recentActivities || []);
+        } else {
+          const message = response.message || 'Không thể tải dữ liệu dashboard.';
+          setError(message);
+          toast.error(message);
+        }
+      } catch (err) {
+        const message = err.response?.data?.message || 'Không thể tải dữ liệu dashboard.';
+        setError(message);
+        toast.error(message);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchDashboardData();
+  }, []);
+
+  const statsDisplay = useMemo(() => ({
+    totalDrugs: stats?.totalDrugs ?? 0,
+    activeUsers: stats?.activeUsers ?? 0,
+    completedTasks: stats?.completedTasks ?? 0,
+    pendingTasks: stats?.pendingTasks ?? 0,
+    alerts: stats?.alerts ?? 0,
+    todayScans: stats?.todayScans ?? 0
+  }), [stats]);
+
+  const quickActions = useMemo(() => ([
     {
       name: 'Quét QR Code',
       description: 'Quét mã QR để tra cứu nguồn gốc thuốc',
@@ -100,39 +173,62 @@ const Dashboard = () => {
       color: 'bg-orange-500 hover:bg-orange-600',
       roles: ['admin', 'manufacturer', 'hospital']
     }
-  ];
+  ]), []);
 
-  const filteredQuickActions = quickActions.filter(action => 
-    hasRole(action.roles.includes(user?.role))
+  const filteredQuickActions = quickActions.filter((action) =>
+    !action.roles?.length || hasAnyRole(action.roles)
   );
+
+  const statsCards = useMemo(() => ([
+    {
+      key: 'totalDrugs',
+      label: 'Tổng lô thuốc',
+      value: statsDisplay.totalDrugs,
+      icon: Package,
+      color: 'text-blue-600'
+    },
+    {
+      key: 'activeUsers',
+      label: 'Người dùng hoạt động',
+      value: statsDisplay.activeUsers,
+      icon: Users,
+      color: 'text-green-600'
+    },
+    {
+      key: 'completedTasks',
+      label: 'Nhiệm vụ hoàn thành',
+      value: statsDisplay.completedTasks,
+      icon: CheckCircle,
+      color: 'text-emerald-600'
+    },
+    {
+      key: 'pendingTasks',
+      label: 'Nhiệm vụ chờ xử lý',
+      value: statsDisplay.pendingTasks,
+      icon: Clock,
+      color: 'text-yellow-600'
+    },
+    {
+      key: 'alerts',
+      label: 'Cảnh báo',
+      value: statsDisplay.alerts,
+      icon: AlertTriangle,
+      color: 'text-red-600'
+    },
+    {
+      key: 'todayScans',
+      label: 'Quét QR hôm nay',
+      value: statsDisplay.todayScans,
+      icon: QrCode,
+      color: 'text-purple-600'
+    }
+  ]), [statsDisplay]);
 
   const getGreeting = () => {
     const hour = new Date().getHours();
     if (hour < 12) return 'Chào buổi sáng';
     if (hour < 18) return 'Chào buổi chiều';
     return 'Chào buổi tối';
-  };
-
-  const getRoleDisplayName = (role) => {
-    const roleNames = {
-      admin: 'Quản trị viên',
-      manufacturer: 'Nhà sản xuất',
-      distributor: 'Nhà phân phối',
-      hospital: 'Bệnh viện',
-      patient: 'Bệnh nhân'
-    };
-    return roleNames[role] || role;
-  };
-
-  const getRoleIcon = (role) => {
-    const roleIcons = {
-      admin: Shield,
-      manufacturer: Building2,
-      distributor: Users,
-      hospital: Heart,
-      patient: User
-    };
-    return roleIcons[role] || User;
   };
 
   const RoleIcon = getRoleIcon(user?.role);
@@ -144,7 +240,7 @@ const Dashboard = () => {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">
-              {getGreeting()}, {user?.fullName}!
+              {getGreeting()}, {user?.fullName || 'bạn'}!
             </h1>
             <p className="text-gray-600 mt-1">
               Chào mừng bạn đến với hệ thống quản lý nguồn gốc thuốc
@@ -159,122 +255,48 @@ const Dashboard = () => {
                 {getRoleDisplayName(user?.role)}
               </p>
               <p className="text-sm text-gray-500">
-                {user?.organizationInfo?.name || user?.patientId}
+                {user?.organizationInfo?.name || user?.patientId || 'Tài khoản hệ thống'}
               </p>
             </div>
           </div>
         </div>
       </div>
 
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-4">
+          <p className="font-semibold">{error}</p>
+          <p className="text-sm mt-1">Vui lòng thử tải lại trang hoặc kiểm tra kết nối server.</p>
+        </div>
+      )}
+
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-6">
-        <div className="bg-white rounded-lg shadow-soft p-6">
-          <div className="flex items-center">
-            <div className="flex-shrink-0">
-              <Package className="h-8 w-8 text-blue-600" />
-            </div>
-            <div className="ml-5 w-0 flex-1">
-              <dl>
-                <dt className="text-sm font-medium text-gray-500 truncate">
-                  Tổng lô thuốc
-                </dt>
-                <dd className="text-lg font-medium text-gray-900">
-                  {stats.totalDrugs.toLocaleString()}
-                </dd>
-              </dl>
-            </div>
-          </div>
-        </div>
+        {statsCards.map((card) => {
+          const Icon = card.icon;
+          const valueLabel = typeof card.value === 'number'
+            ? card.value.toLocaleString('vi-VN')
+            : card.value;
 
-        <div className="bg-white rounded-lg shadow-soft p-6">
-          <div className="flex items-center">
-            <div className="flex-shrink-0">
-              <Users className="h-8 w-8 text-green-600" />
+          return (
+            <div key={card.key} className="bg-white rounded-lg shadow-soft p-6">
+              <div className="flex items-center">
+                <div className="flex-shrink-0">
+                  <Icon className={`h-8 w-8 ${card.color}`} />
+                </div>
+                <div className="ml-5 w-0 flex-1">
+                  <dl>
+                    <dt className="text-sm font-medium text-gray-500">
+                      {card.label}
+                    </dt>
+                    <dd className="text-lg font-semibold text-gray-900">
+                      {loading && !stats ? 'Đang tải...' : valueLabel}
+                    </dd>
+                  </dl>
+                </div>
+              </div>
             </div>
-            <div className="ml-5 w-0 flex-1">
-              <dl>
-                <dt className="text-sm font-medium text-gray-500 truncate">
-                  Người dùng hoạt động
-                </dt>
-                <dd className="text-lg font-medium text-gray-900">
-                  {stats.activeUsers}
-                </dd>
-              </dl>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-lg shadow-soft p-6">
-          <div className="flex items-center">
-            <div className="flex-shrink-0">
-              <CheckCircle className="h-8 w-8 text-green-600" />
-            </div>
-            <div className="ml-5 w-0 flex-1">
-              <dl>
-                <dt className="text-sm font-medium text-gray-500 truncate">
-                  Nhiệm vụ hoàn thành
-                </dt>
-                <dd className="text-lg font-medium text-gray-900">
-                  {stats.completedTasks}
-                </dd>
-              </dl>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-lg shadow-soft p-6">
-          <div className="flex items-center">
-            <div className="flex-shrink-0">
-              <Clock className="h-8 w-8 text-yellow-600" />
-            </div>
-            <div className="ml-5 w-0 flex-1">
-              <dl>
-                <dt className="text-sm font-medium text-gray-500 truncate">
-                  Nhiệm vụ chờ xử lý
-                </dt>
-                <dd className="text-lg font-medium text-gray-900">
-                  {stats.pendingTasks}
-                </dd>
-              </dl>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-lg shadow-soft p-6">
-          <div className="flex items-center">
-            <div className="flex-shrink-0">
-              <AlertTriangle className="h-8 w-8 text-red-600" />
-            </div>
-            <div className="ml-5 w-0 flex-1">
-              <dl>
-                <dt className="text-sm font-medium text-gray-500 truncate">
-                  Cảnh báo
-                </dt>
-                <dd className="text-lg font-medium text-gray-900">
-                  {stats.alerts}
-                </dd>
-              </dl>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-lg shadow-soft p-6">
-          <div className="flex items-center">
-            <div className="flex-shrink-0">
-              <QrCode className="h-8 w-8 text-purple-600" />
-            </div>
-            <div className="ml-5 w-0 flex-1">
-              <dl>
-                <dt className="text-sm font-medium text-gray-500 truncate">
-                  Quét QR hôm nay
-                </dt>
-                <dd className="text-lg font-medium text-gray-900">
-                  {stats.todayScans}
-                </dd>
-              </dl>
-            </div>
-          </div>
-        </div>
+          );
+        })}
       </div>
 
       {/* Quick Actions */}
@@ -283,9 +305,14 @@ const Dashboard = () => {
           Thao tác nhanh
         </h2>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          {filteredQuickActions.map((action, index) => (
+          {filteredQuickActions.length === 0 && (
+            <p className="text-sm text-gray-500 col-span-full">
+              Chưa có thao tác phù hợp với quyền của bạn.
+            </p>
+          )}
+          {filteredQuickActions.map((action) => (
             <a
-              key={index}
+              key={action.name}
               href={action.href}
               className="group relative rounded-lg p-4 border border-gray-200 hover:border-gray-300 transition-colors"
             >
@@ -309,45 +336,61 @@ const Dashboard = () => {
 
       {/* Recent Activities */}
       <div className="bg-white rounded-lg shadow-soft p-6">
-        <h2 className="text-lg font-medium text-gray-900 mb-4">
-          Hoạt động gần đây
-        </h2>
-        <div className="flow-root">
-          <ul className="-mb-8">
-            {recentActivities.map((activity, activityIdx) => (
-              <li key={activity.id}>
-                <div className="relative pb-8">
-                  {activityIdx !== recentActivities.length - 1 ? (
-                    <span
-                      className="absolute top-4 left-4 -ml-px h-full w-0.5 bg-gray-200"
-                      aria-hidden="true"
-                    />
-                  ) : null}
-                  <div className="relative flex space-x-3">
-                    <div>
-                      <span className={`h-8 w-8 rounded-full ${activity.color} flex items-center justify-center ring-8 ring-white`}>
-                        <activity.icon className="h-5 w-5 text-white" />
-                      </span>
-                    </div>
-                    <div className="min-w-0 flex-1 pt-1.5 flex justify-between space-x-4">
-                      <div>
-                        <p className="text-sm text-gray-900">
-                          {activity.message}
-                        </p>
-                        <p className="text-sm text-gray-500">
-                          bởi {activity.user}
-                        </p>
-                      </div>
-                      <div className="text-right text-sm whitespace-nowrap text-gray-500">
-                        {activity.time}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </li>
-            ))}
-          </ul>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-medium text-gray-900">
+            Hoạt động gần đây
+          </h2>
+          {loading && (
+            <span className="text-sm text-gray-500">Đang cập nhật...</span>
+          )}
         </div>
+
+        {activities.length === 0 && !loading ? (
+          <p className="text-sm text-gray-500">Chưa có hoạt động nào được ghi nhận.</p>
+        ) : (
+          <div className="flow-root">
+            <ul className="-mb-8">
+              {activities.map((activity, index) => {
+                const IconComponent = activityIconMap[activity.type] || TrendingUp;
+                const colorClass = activityColorMap[activity.type] || 'text-indigo-600';
+                const timeLabel = formatRelativeTime(activity.timestamp);
+
+                return (
+                  <li key={`${activity.type}-${activity.timestamp}-${index}`}>
+                    <div className="relative pb-8">
+                      {index !== activities.length - 1 ? (
+                        <span
+                          className="absolute top-4 left-4 -ml-px h-full w-0.5 bg-gray-200"
+                          aria-hidden="true"
+                        />
+                      ) : null}
+                      <div className="relative flex space-x-3">
+                        <div>
+                          <span className={`h-8 w-8 rounded-full ${colorClass} flex items-center justify-center ring-8 ring-white`}>
+                            <IconComponent className="h-5 w-5 text-white" />
+                          </span>
+                        </div>
+                        <div className="min-w-0 flex-1 pt-1.5 flex justify-between space-x-4">
+                          <div>
+                            <p className="text-sm text-gray-900">
+                              {activity.title || activity.message}
+                            </p>
+                            <p className="text-sm text-gray-500">
+                              bởi {activity.actor || 'Hệ thống'}
+                            </p>
+                          </div>
+                          <div className="text-right text-sm whitespace-nowrap text-gray-500">
+                            {timeLabel}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        )}
       </div>
     </div>
   );

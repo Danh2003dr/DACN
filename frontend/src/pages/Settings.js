@@ -115,16 +115,23 @@ const Settings = () => {
       setLoading(true);
       const response = await settingsAPI.testBlockchainConnection();
       if (response.success) {
-        setMessage('Kết nối blockchain thành công!');
+        setMessage(response.message || 'Kết nối blockchain thành công!');
         setMessageType('success');
-        loadBlockchainStatus();
+        // Đợi một chút rồi refresh lại blockchain status để đảm bảo dữ liệu mới nhất
+        setTimeout(async () => {
+          await loadBlockchainStatus();
+        }, 500);
       } else {
-        setMessage('Kết nối blockchain thất bại: ' + response.message);
+        setMessage('Kết nối blockchain thất bại: ' + (response.message || 'Lỗi không xác định'));
         setMessageType('error');
+        // Vẫn refresh status để hiển thị trạng thái hiện tại
+        await loadBlockchainStatus();
       }
     } catch (error) {
-      setMessage('Lỗi khi test kết nối blockchain');
+      setMessage('Lỗi khi test kết nối blockchain: ' + (error.response?.data?.message || error.message));
       setMessageType('error');
+      // Vẫn refresh status
+      await loadBlockchainStatus();
     } finally {
       setLoading(false);
     }
@@ -488,14 +495,26 @@ const Settings = () => {
               <div className="flex justify-between">
                 <span className="text-sm text-gray-600">Database:</span>
                 <span className={`text-sm font-medium flex items-center gap-1 ${
-                  systemInfo.databaseStatus === 'connected' ? 'text-green-600' : 'text-red-600'
+                  systemInfo.databaseStatus === 'connected' 
+                    ? 'text-green-600' 
+                    : systemInfo.databaseStatus === 'connecting' || systemInfo.databaseStatus === 'disconnecting'
+                    ? 'text-yellow-600'
+                    : 'text-red-600'
                 }`}>
                   {systemInfo.databaseStatus === 'connected' ? (
                     <CheckCircle className="w-4 h-4" />
+                  ) : systemInfo.databaseStatus === 'connecting' || systemInfo.databaseStatus === 'disconnecting' ? (
+                    <AlertTriangle className="w-4 h-4" />
                   ) : (
                     <XCircle className="w-4 h-4" />
                   )}
-                  {systemInfo.databaseStatus === 'connected' ? 'Kết nối' : 'Lỗi'}
+                  {systemInfo.databaseStatus === 'connected' 
+                    ? 'Kết nối' 
+                    : systemInfo.databaseStatus === 'connecting'
+                    ? 'Đang kết nối'
+                    : systemInfo.databaseStatus === 'disconnecting'
+                    ? 'Đang ngắt kết nối'
+                    : 'Ngắt kết nối'}
                 </span>
               </div>
               <div className="flex justify-between">

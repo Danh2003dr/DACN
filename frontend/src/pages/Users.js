@@ -14,8 +14,405 @@ import {
   Eye,
   UserPlus
 } from 'lucide-react';
-import { userAPI } from '../utils/api';
+import { userAPI, authAPI } from '../utils/api';
 import toast from 'react-hot-toast';
+
+// Component form để tạo/chỉnh sửa user
+const CreateEditUserForm = ({ user, onSubmit, isLoading, onCancel, isEdit }) => {
+  const { register, handleSubmit, formState: { errors }, watch } = useForm({
+    defaultValues: user ? {
+      fullName: user.fullName || '',
+      email: user.email || '',
+      phone: user.phone || '',
+      role: user.role || '',
+      organizationId: user.organizationId || '',
+      patientId: user.patientId || '',
+      address: {
+        street: user.address?.street || '',
+        ward: user.address?.ward || '',
+        district: user.address?.district || '',
+        city: user.address?.city || ''
+      },
+      organizationInfo: {
+        name: user.organizationInfo?.name || '',
+        license: user.organizationInfo?.license || '',
+        type: user.organizationInfo?.type || ''
+      },
+      isActive: user.isActive !== undefined ? user.isActive : true
+    } : {
+      fullName: '',
+      username: '',
+      email: '',
+      password: '',
+      phone: '',
+      role: '',
+      organizationId: '',
+      patientId: '',
+      address: {
+        street: '',
+        ward: '',
+        district: '',
+        city: ''
+      },
+      organizationInfo: {
+        name: '',
+        license: '',
+        type: ''
+      }
+    }
+  });
+
+  const selectedRole = watch('role');
+
+  const onFormSubmit = (data) => {
+    if (isEdit) {
+      // Chỉ gửi các trường có thể cập nhật
+      const updateData = {
+        fullName: data.fullName,
+        phone: data.phone,
+        address: data.address,
+        organizationInfo: data.organizationInfo,
+        isActive: data.isActive
+      };
+      onSubmit(updateData);
+    } else {
+      // Gửi toàn bộ dữ liệu để tạo mới
+      onSubmit(data);
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit(onFormSubmit)} className="space-y-6">
+      {/* Thông tin cơ bản */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Họ và tên <span className="text-red-500">*</span>
+          </label>
+          <input
+            type="text"
+            {...register('fullName', { required: 'Vui lòng nhập họ và tên' })}
+            className={`form-input ${errors.fullName ? 'border-red-500' : ''}`}
+            placeholder="Nhập họ và tên"
+          />
+          {errors.fullName && (
+            <p className="text-red-500 text-xs mt-1">{errors.fullName.message}</p>
+          )}
+        </div>
+
+        {!isEdit && (
+          <>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Tên đăng nhập <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                {...register('username', { 
+                  required: 'Vui lòng nhập tên đăng nhập',
+                  pattern: {
+                    value: /^[a-zA-Z0-9]+$/,
+                    message: 'Tên đăng nhập chỉ được chứa chữ cái và số'
+                  },
+                  minLength: {
+                    value: 3,
+                    message: 'Tên đăng nhập phải có ít nhất 3 ký tự'
+                  }
+                })}
+                className={`form-input ${errors.username ? 'border-red-500' : ''}`}
+                placeholder="Nhập tên đăng nhập"
+              />
+              {errors.username && (
+                <p className="text-red-500 text-xs mt-1">{errors.username.message}</p>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Email <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="email"
+                {...register('email', { 
+                  required: 'Vui lòng nhập email',
+                  pattern: {
+                    value: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
+                    message: 'Email không hợp lệ'
+                  }
+                })}
+                className={`form-input ${errors.email ? 'border-red-500' : ''}`}
+                placeholder="Nhập email"
+              />
+              {errors.email && (
+                <p className="text-red-500 text-xs mt-1">{errors.email.message}</p>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Mật khẩu <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="password"
+                {...register('password', { 
+                  required: 'Vui lòng nhập mật khẩu',
+                  minLength: {
+                    value: 6,
+                    message: 'Mật khẩu phải có ít nhất 6 ký tự'
+                  }
+                })}
+                className={`form-input ${errors.password ? 'border-red-500' : ''}`}
+                placeholder="Nhập mật khẩu"
+              />
+              {errors.password && (
+                <p className="text-red-500 text-xs mt-1">{errors.password.message}</p>
+              )}
+            </div>
+          </>
+        )}
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Số điện thoại <span className="text-red-500">*</span>
+          </label>
+          <input
+            type="tel"
+            {...register('phone', { 
+              required: 'Vui lòng nhập số điện thoại',
+              pattern: {
+                value: /^[0-9]{10,11}$/,
+                message: 'Số điện thoại phải có 10-11 chữ số'
+              }
+            })}
+            className={`form-input ${errors.phone ? 'border-red-500' : ''}`}
+            placeholder="Nhập số điện thoại"
+          />
+          {errors.phone && (
+            <p className="text-red-500 text-xs mt-1">{errors.phone.message}</p>
+          )}
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Vai trò <span className="text-red-500">*</span>
+          </label>
+          <select
+            {...register('role', { required: 'Vui lòng chọn vai trò' })}
+            className={`form-input ${errors.role ? 'border-red-500' : ''}`}
+            disabled={isEdit}
+          >
+            <option value="">Chọn vai trò</option>
+            <option value="admin">Quản trị viên</option>
+            <option value="manufacturer">Nhà sản xuất</option>
+            <option value="distributor">Nhà phân phối</option>
+            <option value="hospital">Bệnh viện</option>
+            <option value="patient">Bệnh nhân</option>
+          </select>
+          {errors.role && (
+            <p className="text-red-500 text-xs mt-1">{errors.role.message}</p>
+          )}
+        </div>
+      </div>
+
+      {/* Mã tổ chức/Bệnh nhân */}
+      {(selectedRole === 'manufacturer' || selectedRole === 'distributor' || selectedRole === 'hospital') && (
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Mã tổ chức <span className="text-red-500">*</span>
+          </label>
+          <input
+            type="text"
+            {...register('organizationId', { 
+              required: selectedRole && ['manufacturer', 'distributor', 'hospital'].includes(selectedRole) ? 'Vui lòng nhập mã tổ chức' : false
+            })}
+            className={`form-input ${errors.organizationId ? 'border-red-500' : ''}`}
+            placeholder="Nhập mã tổ chức"
+            disabled={isEdit}
+          />
+          {errors.organizationId && (
+            <p className="text-red-500 text-xs mt-1">{errors.organizationId.message}</p>
+          )}
+        </div>
+      )}
+
+      {selectedRole === 'patient' && (
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Mã bệnh nhân <span className="text-red-500">*</span>
+          </label>
+          <input
+            type="text"
+            {...register('patientId', { 
+              required: selectedRole === 'patient' ? 'Vui lòng nhập mã bệnh nhân' : false
+            })}
+            className={`form-input ${errors.patientId ? 'border-red-500' : ''}`}
+            placeholder="Nhập mã bệnh nhân"
+            disabled={isEdit}
+          />
+          {errors.patientId && (
+            <p className="text-red-500 text-xs mt-1">{errors.patientId.message}</p>
+          )}
+        </div>
+      )}
+
+      {/* Địa chỉ */}
+      <div className="border-t pt-6">
+        <h4 className="text-lg font-semibold text-gray-900 mb-4">Địa chỉ</h4>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="md:col-span-2">
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Đường/Phố <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              {...register('address.street', { required: 'Vui lòng nhập đường/phố' })}
+              className={`form-input ${errors.address?.street ? 'border-red-500' : ''}`}
+              placeholder="Nhập đường/phố"
+            />
+            {errors.address?.street && (
+              <p className="text-red-500 text-xs mt-1">{errors.address.street.message}</p>
+            )}
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Phường/Xã <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              {...register('address.ward', { required: 'Vui lòng nhập phường/xã' })}
+              className={`form-input ${errors.address?.ward ? 'border-red-500' : ''}`}
+              placeholder="Nhập phường/xã"
+            />
+            {errors.address?.ward && (
+              <p className="text-red-500 text-xs mt-1">{errors.address.ward.message}</p>
+            )}
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Quận/Huyện <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              {...register('address.district', { required: 'Vui lòng nhập quận/huyện' })}
+              className={`form-input ${errors.address?.district ? 'border-red-500' : ''}`}
+              placeholder="Nhập quận/huyện"
+            />
+            {errors.address?.district && (
+              <p className="text-red-500 text-xs mt-1">{errors.address.district.message}</p>
+            )}
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Thành phố <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              {...register('address.city', { required: 'Vui lòng nhập thành phố' })}
+              className={`form-input ${errors.address?.city ? 'border-red-500' : ''}`}
+              placeholder="Nhập thành phố"
+            />
+            {errors.address?.city && (
+              <p className="text-red-500 text-xs mt-1">{errors.address.city.message}</p>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Thông tin tổ chức */}
+      {(selectedRole === 'manufacturer' || selectedRole === 'distributor' || selectedRole === 'hospital') && (
+        <div className="border-t pt-6">
+          <h4 className="text-lg font-semibold text-gray-900 mb-4">Thông tin tổ chức</h4>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Tên tổ chức
+              </label>
+              <input
+                type="text"
+                {...register('organizationInfo.name')}
+                className="form-input"
+                placeholder="Nhập tên tổ chức"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Số giấy phép
+              </label>
+              <input
+                type="text"
+                {...register('organizationInfo.license')}
+                className="form-input"
+                placeholder="Nhập số giấy phép"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Loại tổ chức
+              </label>
+              <select
+                {...register('organizationInfo.type')}
+                className="form-input"
+              >
+                <option value="">Chọn loại tổ chức</option>
+                <option value="pharmaceutical_company">Công ty dược phẩm</option>
+                <option value="distribution_company">Công ty phân phối</option>
+                <option value="hospital">Bệnh viện</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Trạng thái (chỉ khi edit) */}
+      {isEdit && (
+        <div className="border-t pt-6">
+          <div className="flex items-center">
+            <input
+              type="checkbox"
+              id="isActive"
+              {...register('isActive')}
+              className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+            />
+            <label htmlFor="isActive" className="ml-2 block text-sm text-gray-900">
+              Tài khoản hoạt động
+            </label>
+          </div>
+        </div>
+      )}
+
+      {/* Buttons */}
+      <div className="flex justify-end space-x-3 pt-6 border-t">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="btn btn-secondary"
+          disabled={isLoading}
+        >
+          Hủy
+        </button>
+        <button
+          type="submit"
+          className="btn btn-primary"
+          disabled={isLoading}
+        >
+          {isLoading ? (
+            <div className="flex items-center">
+              <div className="spinner w-4 h-4 mr-2"></div>
+              Đang {isEdit ? 'cập nhật' : 'tạo'}...
+            </div>
+          ) : (
+            isEdit ? 'Cập nhật' : 'Tạo mới'
+          )}
+        </button>
+      </div>
+    </form>
+  );
+};
 
 const Users = () => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -25,13 +422,29 @@ const Users = () => {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showDetailsModal, setShowDetailsModal] = useState(false);
 
   const queryClient = useQueryClient();
 
   // Fetch users
   const { data: usersData, isLoading, error } = useQuery(
     ['users', { page: currentPage, limit: 10, search: searchTerm, role: selectedRole }],
-    () => userAPI.getUsers({ page: currentPage, limit: 10, search: searchTerm, role: selectedRole }),
+    () => {
+      const params = {
+        page: currentPage,
+        limit: 10
+      };
+      
+      if (searchTerm && searchTerm.trim() !== '') {
+        params.search = searchTerm.trim();
+      }
+      
+      if (selectedRole && selectedRole.trim() !== '') {
+        params.role = selectedRole.trim();
+      }
+      
+      return userAPI.getUsers(params);
+    },
     {
       keepPreviousData: true,
     }
@@ -39,6 +452,23 @@ const Users = () => {
 
   // Fetch user stats
   const { data: statsData } = useQuery('userStats', userAPI.getUserStats);
+
+  // Fetch user details when viewing
+  const { data: userDetails, isLoading: isLoadingDetails } = useQuery(
+    ['userDetails', selectedUser?._id],
+    () => {
+      if (!selectedUser?._id) {
+        return Promise.reject(new Error('User ID không hợp lệ'));
+      }
+      return userAPI.getUserById(selectedUser._id);
+    },
+    {
+      enabled: showDetailsModal && selectedUser?._id != null,
+      onError: (error) => {
+        toast.error(error.response?.data?.message || 'Không thể tải thông tin user');
+      }
+    }
+  );
 
   // Mutations
   const toggleLockMutation = useMutation(userAPI.toggleUserLock, {
@@ -61,6 +491,35 @@ const Users = () => {
       toast.error(error.response?.data?.message || 'Có lỗi xảy ra');
     }
   });
+
+  const createUserMutation = useMutation(authAPI.register, {
+    onSuccess: () => {
+      queryClient.invalidateQueries('users');
+      queryClient.invalidateQueries('userStats');
+      setShowCreateModal(false);
+      toast.success('Tạo user thành công!');
+    },
+    onError: (error) => {
+      toast.error(error.response?.data?.message || 'Có lỗi xảy ra');
+    }
+  });
+
+  const updateUserMutation = useMutation(
+    ({ id, userData }) => userAPI.updateUser(id, userData),
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries('users');
+        queryClient.invalidateQueries('userStats');
+        queryClient.invalidateQueries('userDetails');
+        setShowEditModal(false);
+        setSelectedUser(null);
+        toast.success('Cập nhật user thành công!');
+      },
+      onError: (error) => {
+        toast.error(error.response?.data?.message || 'Có lỗi xảy ra');
+      }
+    }
+  );
 
   const handleToggleLock = (userId) => {
     toggleLockMutation.mutate(userId);
@@ -310,6 +769,16 @@ const Users = () => {
                         <button
                           onClick={() => {
                             setSelectedUser(user);
+                            setShowDetailsModal(true);
+                          }}
+                          className="text-blue-600 hover:text-blue-900"
+                          title="Xem chi tiết"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => {
+                            setSelectedUser(user);
                             setShowEditModal(true);
                           }}
                           className="text-primary-600 hover:text-primary-900"
@@ -415,6 +884,260 @@ const Users = () => {
           </div>
         )}
       </div>
+
+      {/* User Details Modal */}
+      {showDetailsModal && selectedUser && (
+        <div className="modal-overlay" onClick={() => setShowDetailsModal(false)}>
+          <div className="modal-content max-w-3xl" onClick={(e) => e.stopPropagation()}>
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-2xl font-bold text-gray-900">
+                  Chi tiết User
+                </h3>
+                <button
+                  onClick={() => setShowDetailsModal(false)}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              {isLoadingDetails ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="spinner w-8 h-8 mr-3"></div>
+                  <span className="text-gray-600">Đang tải thông tin...</span>
+                </div>
+              ) : userDetails?.data?.user ? (
+                <div className="space-y-6">
+                  {/* Avatar & Basic Info */}
+                  <div className="flex items-start space-x-6">
+                    <div className="h-24 w-24 rounded-full bg-primary-100 flex items-center justify-center">
+                      {userDetails.data.user.avatar ? (
+                        <img
+                          src={userDetails.data.user.avatar}
+                          alt={userDetails.data.user.fullName}
+                          className="h-24 w-24 rounded-full object-cover"
+                        />
+                      ) : (
+                        <span className="text-primary-600 text-3xl font-bold">
+                          {userDetails.data.user.fullName.charAt(0)}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex-1">
+                      <h4 className="text-xl font-bold text-gray-900 mb-1">
+                        {userDetails.data.user.fullName}
+                      </h4>
+                      <p className="text-sm text-gray-500 mb-2">
+                        {userDetails.data.user.username} • {userDetails.data.user.email}
+                      </p>
+                      <div className="flex items-center space-x-4">
+                        <span className={`badge ${getRoleBadgeColor(userDetails.data.user.role)}`}>
+                          {getRoleDisplayName(userDetails.data.user.role)}
+                        </span>
+                        <span className={`status-indicator ${userDetails.data.user.isActive ? 'status-active' : 'status-inactive'}`}>
+                          {userDetails.data.user.isActive ? 'Hoạt động' : 'Bị khóa'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* User Information */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Tên đăng nhập
+                      </label>
+                      <p className="text-sm text-gray-900 bg-gray-50 p-2 rounded">
+                        {userDetails.data.user.username}
+                      </p>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Email
+                      </label>
+                      <p className="text-sm text-gray-900 bg-gray-50 p-2 rounded">
+                        {userDetails.data.user.email}
+                      </p>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Số điện thoại
+                      </label>
+                      <p className="text-sm text-gray-900 bg-gray-50 p-2 rounded">
+                        {userDetails.data.user.phone || '-'}
+                      </p>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Vai trò
+                      </label>
+                      <p className="text-sm text-gray-900 bg-gray-50 p-2 rounded">
+                        {getRoleDisplayName(userDetails.data.user.role)}
+                      </p>
+                    </div>
+                    {(userDetails.data.user.organizationId || userDetails.data.user.patientId) && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          {userDetails.data.user.role === 'patient' ? 'Mã bệnh nhân' : 'Mã tổ chức'}
+                        </label>
+                        <p className="text-sm text-gray-900 bg-gray-50 p-2 rounded">
+                          {userDetails.data.user.organizationId || userDetails.data.user.patientId}
+                        </p>
+                      </div>
+                    )}
+                    {userDetails.data.user.organizationInfo?.name && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Tên tổ chức
+                        </label>
+                        <p className="text-sm text-gray-900 bg-gray-50 p-2 rounded">
+                          {userDetails.data.user.organizationInfo.name}
+                        </p>
+                      </div>
+                    )}
+                    {userDetails.data.user.address && (
+                      <div className="md:col-span-2">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Địa chỉ
+                        </label>
+                        <p className="text-sm text-gray-900 bg-gray-50 p-2 rounded">
+                          {userDetails.data.user.address.street}, {userDetails.data.user.address.ward}, {userDetails.data.user.address.district}, {userDetails.data.user.address.city}
+                        </p>
+                      </div>
+                    )}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Ngày tạo
+                      </label>
+                      <p className="text-sm text-gray-900 bg-gray-50 p-2 rounded">
+                        {new Date(userDetails.data.user.createdAt).toLocaleString('vi-VN')}
+                      </p>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Cập nhật lần cuối
+                      </label>
+                      <p className="text-sm text-gray-900 bg-gray-50 p-2 rounded">
+                        {userDetails.data.user.updatedAt ? new Date(userDetails.data.user.updatedAt).toLocaleString('vi-VN') : '-'}
+                      </p>
+                    </div>
+                    {userDetails.data.user.lastLogin && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Đăng nhập lần cuối
+                        </label>
+                        <p className="text-sm text-gray-900 bg-gray-50 p-2 rounded">
+                          {new Date(userDetails.data.user.lastLogin).toLocaleString('vi-VN')}
+                        </p>
+                      </div>
+                    )}
+                    {userDetails.data.user.organizationInfo?.license && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Số giấy phép
+                        </label>
+                        <p className="text-sm text-gray-900 bg-gray-50 p-2 rounded">
+                          {userDetails.data.user.organizationInfo.license}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Action Buttons */}
+                  <div className="flex justify-end space-x-3 pt-4 border-t border-gray-200">
+                    <button
+                      onClick={() => {
+                        setShowDetailsModal(false);
+                        setShowEditModal(true);
+                      }}
+                      className="btn btn-primary"
+                    >
+                      <Edit className="w-4 h-4 mr-2" />
+                      Chỉnh sửa
+                    </button>
+                    <button
+                      onClick={() => setShowDetailsModal(false)}
+                      className="btn btn-secondary"
+                    >
+                      Đóng
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-12">
+                  <p className="text-gray-500">Không thể tải thông tin user</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Create User Modal */}
+      {showCreateModal && (
+        <div className="modal-overlay" onClick={() => setShowCreateModal(false)}>
+          <div className="modal-content max-w-4xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-2xl font-bold text-gray-900">Tạo User Mới</h3>
+                <button
+                  onClick={() => setShowCreateModal(false)}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              <CreateEditUserForm
+                onSubmit={(data) => createUserMutation.mutate(data)}
+                isLoading={createUserMutation.isLoading}
+                onCancel={() => setShowCreateModal(false)}
+                isEdit={false}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit User Modal */}
+      {showEditModal && selectedUser && (
+        <div className="modal-overlay" onClick={() => setShowEditModal(false)}>
+          <div className="modal-content max-w-4xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-2xl font-bold text-gray-900">Chỉnh sửa User</h3>
+                <button
+                  onClick={() => {
+                    setShowEditModal(false);
+                    setSelectedUser(null);
+                  }}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              <CreateEditUserForm
+                user={selectedUser}
+                onSubmit={(data) => updateUserMutation.mutate({ id: selectedUser._id, userData: data })}
+                isLoading={updateUserMutation.isLoading}
+                onCancel={() => {
+                  setShowEditModal(false);
+                  setSelectedUser(null);
+                }}
+                isEdit={true}
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Delete Confirmation Modal */}
       {showDeleteModal && selectedUser && (

@@ -1,0 +1,7 @@
+{
+  "network": "mock",
+  "contractAddress": "0x4139d1bfab01d5ab57b7dc9b5025e716e7af030c",
+  "deployedAt": "2025-10-24T07:39:39.969Z",
+  "status": "active",
+  "mock": true
+}

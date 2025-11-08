@@ -69,28 +69,28 @@ const Layout = () => {
       roles: ['admin', 'manufacturer', 'distributor', 'hospital', 'patient']
     },
     {
-      name: 'Thông báo',
-      href: '/notifications',
-      icon: Bell,
-      roles: ['admin', 'manufacturer', 'distributor', 'hospital', 'patient']
+      name: 'Blockchain',
+      href: '/blockchain',
+      icon: Shield,
+      roles: ['admin', 'manufacturer', 'distributor', 'hospital']
     },
-        {
-          name: 'Đánh giá & Góp ý',
-          href: '/reviews',
-          icon: Star,
-          roles: ['admin', 'manufacturer', 'distributor', 'hospital', 'patient']
-        },
-        {
-          name: 'Thống kê & Báo cáo',
-          href: '/reports',
-          icon: BarChart3,
-          roles: ['admin', 'manufacturer', 'distributor', 'hospital']
-        },
     {
       name: 'Quét QR',
       href: '/qr-scanner',
       icon: QrCode,
       roles: ['admin', 'manufacturer', 'distributor', 'hospital', 'patient']
+    },
+    {
+      name: 'Thông báo',
+      href: '/notifications',
+      icon: Bell,
+      roles: ['admin', 'manufacturer', 'distributor', 'hospital', 'patient']
+    },
+    {
+      name: 'Đánh giá',
+      href: '/reviews',
+      icon: Star,
+      roles: ['admin', 'hospital', 'patient']
     },
     {
       name: 'Báo cáo',
@@ -99,28 +99,16 @@ const Layout = () => {
       roles: ['admin', 'manufacturer', 'hospital']
     },
     {
-      name: 'Thông báo',
-      href: '/notifications',
-      icon: Bell,
+      name: 'Demo Bản Đồ',
+      href: '/map-demo',
+      icon: Search,
       roles: ['admin', 'manufacturer', 'distributor', 'hospital', 'patient']
-    },
-    {
-      name: 'Nhiệm vụ',
-      href: '/tasks',
-      icon: FileText,
-      roles: ['admin', 'manufacturer', 'distributor', 'hospital']
-    },
-    {
-      name: 'Đánh giá',
-      href: '/reviews',
-      icon: MessageSquare,
-      roles: ['admin', 'hospital', 'patient']
     },
     {
       name: 'Cài đặt',
       href: '/settings',
       icon: Settings,
-      roles: ['admin', 'manufacturer', 'distributor', 'hospital', 'patient']
+      roles: ['admin'] // Chỉ admin mới có quyền truy cập Settings
     }
   ];
 

@@ -60,14 +60,25 @@ const Reviews = () => {
 
       let response;
       if (activeTab === 'public') {
+        // Ưu tiên top-rated; nếu chưa đủ dữ liệu (ít hơn 5 review/thuốc), fallback sang danh sách review đã duyệt
         response = await reviewAPI.getTopRatedTargets('drug', '10');
+        if (response.success && (response.data?.topRated?.length || 0) > 0) {
+          setReviews(response.data.topRated);
+          setPagination({ current: 1, pages: 1, total: response.data.topRated.length });
+        } else {
+          // Fallback: lấy các review đã được duyệt gần đây
+          const adminList = await reviewAPI.getReviewsForAdmin(`status=approved&${params.toString()}`);
+          if (adminList.success) {
+            setReviews(adminList.data.reviews);
+            setPagination(adminList.data.pagination || { current: 1, pages: 1, total: 0 });
+          }
+        }
       } else {
         response = await reviewAPI.getReviewsForAdmin(params.toString());
-      }
-      
-      if (response.success) {
-        setReviews(response.data.topRated || response.data.reviews);
-        setPagination(response.data.pagination || { current: 1, pages: 1, total: 0 });
+        if (response.success) {
+          setReviews(response.data.reviews);
+          setPagination(response.data.pagination || { current: 1, pages: 1, total: 0 });
+        }
       }
     } catch (error) {
       toast.error('Lỗi khi tải danh sách đánh giá');
@@ -171,7 +182,7 @@ const Reviews = () => {
             >
               Đánh giá công khai
             </button>
-            {hasRole(['admin']) && (
+            {hasRole('admin') && (
               <button
                 onClick={() => setActiveTab('admin')}
                 className={`py-4 px-1 border-b-2 font-medium text-sm ${
@@ -261,7 +272,10 @@ const Reviews = () => {
                   </div>
                   
                   <button
-                    onClick={() => setSelectedReview(review)}
+                    onClick={() => {
+                      setSelectedReview(review);
+                      setShowDetailModal(true);
+                    }}
                     className="text-blue-600 hover:text-blue-900"
                     title="Xem chi tiết"
                   >

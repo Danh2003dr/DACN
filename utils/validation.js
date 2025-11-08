@@ -357,13 +357,17 @@ const paginationSchema = Joi.object({
     }),
   
   search: Joi.string()
+    .allow('')
     .max(100)
+    .optional()
     .messages({
       'string.max': 'Từ khóa tìm kiếm không được quá 100 ký tự'
     }),
   
   role: Joi.string()
-    .valid('admin', 'manufacturer', 'distributor', 'hospital', 'patient')
+    .allow('')
+    .valid('admin', 'manufacturer', 'distributor', 'hospital', 'patient', '')
+    .optional()
     .messages({
       'any.only': 'Vai trò không hợp lệ'
     })

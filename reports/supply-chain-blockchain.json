@@ -1,0 +1,15 @@
+{
+  "generatedAt": "2025-10-24T07:02:59.600Z",
+  "totalDrugs": 7,
+  "totalSupplyChains": 2,
+  "blockchainSummary": {
+    "totalOnBlockchain": 0,
+    "totalTransactions": 0,
+    "totalGasUsed": 0,
+    "averageGasUsed": 0,
+    "totalBlocks": 0,
+    "averageBlockNumber": 0
+  },
+  "drugs": [],
+  "supplyChains": []
+}

@@ -1,8 +1,9 @@
-import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import React, { useEffect } from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from 'react-query';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { setAuthToken } from './utils/api';
 import Layout from './components/Layout';
 import Login from './components/Login';
 import Dashboard from './pages/Dashboard';
@@ -17,6 +18,9 @@ import Notifications from './pages/Notifications';
 import Reviews from './pages/Reviews';
 import QRScanner from './pages/QRScanner';
 import Reports from './pages/Reports';
+import MapDemo from './pages/MapDemo';
+import BlockchainVerify from './pages/BlockchainVerify';
+import BlockchainDashboard from './pages/BlockchainDashboard';
 
 // Create a client
 const queryClient = new QueryClient({
@@ -96,6 +100,44 @@ const PublicRoute = ({ children }) => {
   return children;
 };
 
+// Google OAuth Callback Component
+const GoogleCallback = () => {
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const { setToken } = useAuth();
+  
+  useEffect(() => {
+    const token = searchParams.get('token');
+    const success = searchParams.get('success');
+    const error = searchParams.get('error');
+    
+    if (success === 'true' && token) {
+      // Lưu token và redirect
+      setToken(token);
+      
+      // Lấy thông tin user
+      setTimeout(() => {
+        navigate('/dashboard', { replace: true });
+      }, 500);
+    } else if (error) {
+      // Có lỗi, redirect về login
+      navigate('/login?error=' + error, { replace: true });
+    } else {
+      // Không có token, redirect về login
+      navigate('/login?error=google_auth_failed', { replace: true });
+    }
+  }, [searchParams, navigate, setToken]);
+  
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="text-center">
+        <div className="spinner w-12 h-12 mx-auto mb-4"></div>
+        <p className="text-gray-600">Đang xử lý đăng nhập Google...</p>
+      </div>
+    </div>
+  );
+};
+
 // App Routes
 const AppRoutes = () => {
   return (
@@ -108,6 +150,12 @@ const AppRoutes = () => {
             <Login />
           </PublicRoute>
         }
+      />
+      
+      {/* Google OAuth Callback */}
+      <Route
+        path="/auth/callback"
+        element={<GoogleCallback />}
       />
 
       {/* Protected Routes */}
@@ -201,11 +249,27 @@ const AppRoutes = () => {
             </ProtectedRoute>
           }
         />
+
+        {/* Blockchain Dashboard */}
+        <Route
+          path="blockchain"
+          element={
+            <ProtectedRoute>
+              <BlockchainDashboard />
+            </ProtectedRoute>
+          }
+        />
         
         {/* Verify route - không cần authentication */}
         <Route
           path="verify/:blockchainId"
           element={<Verify />}
+        />
+        
+        {/* Blockchain Verify route - không cần authentication */}
+        <Route
+          path="blockchain-verify/:blockchainId"
+          element={<BlockchainVerify />}
         />
         
         {/* Settings - Admin only */}
@@ -224,6 +288,16 @@ const AppRoutes = () => {
           element={
             <ProtectedRoute>
               <Profile />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Map Demo - All authenticated users */}
+        <Route
+          path="map-demo"
+          element={
+            <ProtectedRoute>
+              <MapDemo />
             </ProtectedRoute>
           }
         />

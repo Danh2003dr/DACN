@@ -285,6 +285,29 @@ export const AuthProvider = ({ children }) => {
     return rolePermissions[state.user.role]?.includes(permission) || false;
   };
 
+  // Set token function (for Google OAuth callback)
+  const setToken = (token) => {
+    localStorage.setItem('token', token);
+    setAuthToken(token);
+    // Fetch user data after setting token
+    authAPI.getMe()
+      .then((response) => {
+        const user = response.data.user;
+        localStorage.setItem('user', JSON.stringify(user));
+        dispatch({
+          type: AUTH_ACTIONS.LOGIN_SUCCESS,
+          payload: { user, token },
+        });
+        toast.success('Đăng nhập bằng Google thành công!');
+      })
+      .catch((error) => {
+        console.error('Error fetching user after setting token:', error);
+        clearAuth();
+        dispatch({ type: AUTH_ACTIONS.LOGOUT });
+        toast.error('Lỗi khi lấy thông tin người dùng');
+      });
+  };
+
   const contextValue = {
     // State
     user: state.user,
@@ -301,6 +324,7 @@ export const AuthProvider = ({ children }) => {
     firstChangePassword,
     updateUser,
     clearError,
+    setToken,
     
     // Utilities
     hasRole,

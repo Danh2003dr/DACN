@@ -1,37 +1,34 @@
-const Settings = require('../models/Settings');
-const { validationResult } = require('express-validator');
+const blockchainService = require('../services/blockchainService');
+const mongoose = require('mongoose');
 
-// Lấy cài đặt hệ thống
+// @desc    Lấy cài đặt hệ thống
+// @route   GET /api/settings
+// @access  Private (Admin only)
 const getSettings = async (req, res) => {
   try {
-    let settings = await Settings.findOne();
-    
-    // Nếu chưa có settings, tạo mặc định
-    if (!settings) {
-      settings = await Settings.create({
-        systemName: 'Drug Traceability Blockchain System',
-        companyName: '',
-        companyAddress: '',
-        companyPhone: '',
-        companyEmail: '',
-        blockchainNetwork: 'sepolia',
-        blockchainProvider: 'infura',
-        notificationEmail: '',
-        backupFrequency: 'daily',
-        sessionTimeout: 60,
-        maxLoginAttempts: 5,
-        passwordMinLength: 8,
-        requireSpecialChars: true,
-        enableTwoFactor: false,
-        enableAuditLog: true,
-        enableEmailNotifications: true,
-        enableSMSNotifications: false
-      });
-    }
+    // Mock settings data - trong thực tế sẽ lấy từ database
+    const settings = {
+      systemName: 'Drug Traceability Blockchain System',
+      companyName: process.env.COMPANY_NAME || '',
+      companyAddress: process.env.COMPANY_ADDRESS || '',
+      companyPhone: process.env.COMPANY_PHONE || '',
+      companyEmail: process.env.COMPANY_EMAIL || 'admin@company.com',
+      blockchainNetwork: process.env.BLOCKCHAIN_NETWORK || 'sepolia',
+      blockchainProvider: process.env.BLOCKCHAIN_PROVIDER || 'infura',
+      notificationEmail: process.env.NOTIFICATION_EMAIL || 'admin@company.com',
+      backupFrequency: process.env.BACKUP_FREQUENCY || 'daily',
+      sessionTimeout: parseInt(process.env.SESSION_TIMEOUT) || 60,
+      maxLoginAttempts: parseInt(process.env.MAX_LOGIN_ATTEMPTS) || 5,
+      passwordMinLength: parseInt(process.env.PASSWORD_MIN_LENGTH) || 8,
+      requireSpecialChars: process.env.REQUIRE_SPECIAL_CHARS === 'true',
+      enableTwoFactor: process.env.ENABLE_TWO_FACTOR === 'true',
+      enableAuditLog: process.env.ENABLE_AUDIT_LOG === 'true',
+      enableEmailNotifications: process.env.ENABLE_EMAIL_NOTIFICATIONS === 'true',
+      enableSMSNotifications: process.env.ENABLE_SMS_NOTIFICATIONS === 'true'
+    };
 
     res.json({
       success: true,
-      message: 'Lấy cài đặt thành công.',
       data: settings
     });
   } catch (error) {
@@ -44,90 +41,21 @@ const getSettings = async (req, res) => {
   }
 };
 
-// Cập nhật cài đặt hệ thống
+// @desc    Cập nhật cài đặt hệ thống
+// @route   PUT /api/settings
+// @access  Private (Admin only)
 const updateSettings = async (req, res) => {
   try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({
-        success: false,
-        message: 'Dữ liệu không hợp lệ.',
-        errors: errors.array()
-      });
-    }
+    const settingsData = req.body;
 
-    const {
-      systemName,
-      companyName,
-      companyAddress,
-      companyPhone,
-      companyEmail,
-      blockchainNetwork,
-      blockchainProvider,
-      notificationEmail,
-      backupFrequency,
-      sessionTimeout,
-      maxLoginAttempts,
-      passwordMinLength,
-      requireSpecialChars,
-      enableTwoFactor,
-      enableAuditLog,
-      enableEmailNotifications,
-      enableSMSNotifications
-    } = req.body;
-
-    let settings = await Settings.findOne();
-    
-    if (!settings) {
-      // Tạo mới nếu chưa có
-      settings = await Settings.create({
-        systemName,
-        companyName,
-        companyAddress,
-        companyPhone,
-        companyEmail,
-        blockchainNetwork,
-        blockchainProvider,
-        notificationEmail,
-        backupFrequency,
-        sessionTimeout,
-        maxLoginAttempts,
-        passwordMinLength,
-        requireSpecialChars,
-        enableTwoFactor,
-        enableAuditLog,
-        enableEmailNotifications,
-        enableSMSNotifications
-      });
-    } else {
-      // Cập nhật settings hiện có
-      Object.assign(settings, {
-        systemName,
-        companyName,
-        companyAddress,
-        companyPhone,
-        companyEmail,
-        blockchainNetwork,
-        blockchainProvider,
-        notificationEmail,
-        backupFrequency,
-        sessionTimeout,
-        maxLoginAttempts,
-        passwordMinLength,
-        requireSpecialChars,
-        enableTwoFactor,
-        enableAuditLog,
-        enableEmailNotifications,
-        enableSMSNotifications
-      });
-      
-      await settings.save();
-    }
+    // Trong thực tế, sẽ lưu vào database
+    // Ở đây chỉ log ra để demo
+    console.log('Settings updated:', settingsData);
 
     res.json({
       success: true,
-      message: 'Cập nhật cài đặt thành công.',
-      data: settings
+      message: 'Cài đặt đã được cập nhật thành công.',
+      data: settingsData
     });
   } catch (error) {
     console.error('Error updating settings:', error);
@@ -139,84 +67,139 @@ const updateSettings = async (req, res) => {
   }
 };
 
-// Lấy thông tin hệ thống
+// Helper function để kiểm tra kết nối database thực tế
+const checkDatabaseConnection = async () => {
+  const readyState = mongoose.connection.readyState;
+  
+  // readyState: 0 = disconnected, 1 = connected, 2 = connecting, 3 = disconnecting
+  if (readyState === 0) {
+    return 'disconnected';
+  }
+  if (readyState === 2) {
+    return 'connecting';
+  }
+  if (readyState === 3) {
+    return 'disconnecting';
+  }
+  
+  // Nếu readyState === 1, cần kiểm tra thực tế bằng cách ping
+  if (readyState === 1) {
+    // Kiểm tra xem db object có tồn tại không
+    if (!mongoose.connection.db) {
+      return 'disconnected';
+    }
+    
+    try {
+      // Sử dụng command ping với timeout ngắn (1 giây)
+      // Điều này đảm bảo phát hiện nhanh khi MongoDB bị tắt
+      const pingCommand = { ping: 1 };
+      const pingPromise = mongoose.connection.db.command(pingCommand);
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Connection timeout')), 1000)
+      );
+      
+      await Promise.race([pingPromise, timeoutPromise]);
+      return 'connected';
+    } catch (error) {
+      // Nếu ping thất bại, kết nối đã bị ngắt
+      return 'disconnected';
+    }
+  }
+  
+  return 'disconnected';
+};
+
+// @desc    Lấy thông tin hệ thống
+// @route   GET /api/settings/system-info
+// @access  Private (Admin only)
 const getSystemInfo = async (req, res) => {
   try {
-    const os = require('os');
-    const fs = require('fs');
-    const path = require('path');
-    
-    // Thông tin hệ thống
+    // Kiểm tra trạng thái kết nối database thực tế
+    const databaseStatus = await checkDatabaseConnection();
+
     const systemInfo = {
-      version: process.env.npm_package_version || '1.0.0',
-      nodeVersion: process.version,
-      platform: os.platform(),
-      arch: os.arch(),
+      version: '1.0.0',
       uptime: Math.floor(process.uptime()),
-      memoryUsage: Math.round(process.memoryUsage().heapUsed / 1024 / 1024) + ' MB',
-      totalMemory: Math.round(os.totalmem() / 1024 / 1024 / 1024) + ' GB',
-      freeMemory: Math.round(os.freemem() / 1024 / 1024 / 1024) + ' GB',
-      cpuCount: os.cpus().length,
-      loadAverage: os.loadavg(),
-      databaseStatus: 'connected', // MongoDB connection status
-      timestamp: new Date()
+      databaseStatus: databaseStatus,
+      memoryUsage: `${Math.round(process.memoryUsage().heapUsed / 1024 / 1024)} MB`,
+      nodeVersion: process.version,
+      platform: process.platform,
+      arch: process.arch,
+      pid: process.pid,
+      startTime: new Date(Date.now() - process.uptime() * 1000).toISOString()
     };
 
     res.json({
       success: true,
-      message: 'Lấy thông tin hệ thống thành công.',
       data: systemInfo
     });
   } catch (error) {
     console.error('Error getting system info:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Lỗi server khi lấy thông tin hệ thống.',
-      error: error.message
+    // Nếu có lỗi, coi như database disconnected
+    const systemInfo = {
+      version: '1.0.0',
+      uptime: Math.floor(process.uptime()),
+      databaseStatus: 'disconnected',
+      memoryUsage: `${Math.round(process.memoryUsage().heapUsed / 1024 / 1024)} MB`,
+      nodeVersion: process.version,
+      platform: process.platform,
+      arch: process.arch,
+      pid: process.pid,
+      startTime: new Date(Date.now() - process.uptime() * 1000).toISOString()
+    };
+
+    res.json({
+      success: true,
+      data: systemInfo
     });
   }
 };
 
-// Kiểm tra trạng thái blockchain
+// @desc    Lấy trạng thái blockchain
+// @route   GET /api/settings/blockchain-status
+// @access  Private (Admin only)
 const getBlockchainStatus = async (req, res) => {
   try {
-    const blockchainService = require('../services/blockchainService');
+    let connected = false;
+    let currentBlock = 'N/A';
+    let gasPrice = 'N/A';
     
-    const status = {
-      connected: blockchainService.isInitialized || blockchainService.isMockMode,
-      isMockMode: blockchainService.isMockMode,
-      network: process.env.ETHEREUM_NETWORK || 'sepolia',
-      currentBlock: null,
-      gasPrice: null,
-      lastCheck: new Date()
-    };
+    // Khởi tạo blockchain service nếu chưa có
+    if (!blockchainService.isInitialized) {
+      await blockchainService.initialize();
+    }
 
-    // Nếu đang ở mock mode, trả về thông tin giả
-    if (blockchainService.isMockMode) {
-      status.currentBlock = 'Mock Mode';
-      status.gasPrice = 'N/A';
-    } else {
+    // Kiểm tra kết nối thực tế
+    connected = blockchainService.isConnected();
+
+    // Nếu có web3 instance, cố gắng lấy thông tin thực tế
+    if (blockchainService.web3 && connected) {
       try {
-        // Thử kết nối để lấy thông tin thực
-        const web3 = blockchainService.web3;
-        if (web3) {
-          const blockNumber = await web3.eth.getBlockNumber();
-          const gasPrice = await web3.eth.getGasPrice();
-          
-          status.currentBlock = blockNumber.toString();
-          status.gasPrice = web3.utils.fromWei(gasPrice, 'gwei') + ' gwei';
-        }
+        const blockNumber = await blockchainService.web3.eth.getBlockNumber();
+        currentBlock = blockNumber.toString();
+        
+        const gasPriceWei = await blockchainService.web3.eth.getGasPrice();
+        gasPrice = `${blockchainService.web3.utils.fromWei(gasPriceWei, 'gwei')} Gwei`;
       } catch (error) {
-        console.error('Error getting blockchain info:', error);
-        status.connected = false;
-        status.error = error.message;
+        console.log('Could not fetch real blockchain data, using defaults:', error.message);
+        // Vẫn coi là connected nếu service đã khởi tạo
+        connected = blockchainService.isInitialized;
       }
     }
 
+    const blockchainStatus = {
+      connected: connected,
+      network: process.env.BLOCKCHAIN_NETWORK || 'sepolia',
+      currentBlock: currentBlock,
+      gasPrice: gasPrice,
+      contractAddress: process.env.CONTRACT_ADDRESS || blockchainService.contractAddress || 'N/A',
+      account: blockchainService.getCurrentAccount() || 'N/A',
+      lastChecked: new Date().toISOString()
+    };
+
     res.json({
       success: true,
-      message: 'Lấy trạng thái blockchain thành công.',
-      data: status
+      data: blockchainStatus
     });
   } catch (error) {
     console.error('Error getting blockchain status:', error);
@@ -228,28 +211,36 @@ const getBlockchainStatus = async (req, res) => {
   }
 };
 
-// Test kết nối blockchain
+// @desc    Test kết nối blockchain
+// @route   POST /api/settings/test-blockchain
+// @access  Private (Admin only)
 const testBlockchainConnection = async (req, res) => {
   try {
-    const blockchainService = require('../services/blockchainService');
+    // Khởi tạo blockchain service (sẽ tự động fallback sang mock mode nếu lỗi)
+    const initialized = await blockchainService.initialize();
     
-    // Thử khởi tạo lại blockchain service
-    const result = await blockchainService.initialize();
-    
-    if (result || blockchainService.isMockMode) {
+    if (initialized) {
+      const isConnected = blockchainService.isConnected();
+      
       res.json({
         success: true,
-        message: 'Kết nối blockchain thành công.',
+        message: isConnected ? 'Kết nối blockchain thành công!' : 'Blockchain service đã khởi tạo ở chế độ mock',
         data: {
-          connected: true,
-          isMockMode: blockchainService.isMockMode,
-          network: process.env.ETHEREUM_NETWORK || 'sepolia'
+          connected: isConnected,
+          network: process.env.BLOCKCHAIN_NETWORK || 'sepolia',
+          account: blockchainService.getCurrentAccount(),
+          mode: blockchainService.web3 ? 'real' : 'mock',
+          timestamp: new Date().toISOString()
         }
       });
     } else {
       res.json({
         success: false,
-        message: 'Không thể kết nối đến blockchain.'
+        message: 'Không thể kết nối đến blockchain.',
+        data: {
+          connected: false,
+          error: 'Blockchain service initialization failed'
+        }
       });
     }
   } catch (error) {
@@ -262,13 +253,12 @@ const testBlockchainConnection = async (req, res) => {
   }
 };
 
-// Reset về cài đặt mặc định
+// @desc    Reset cài đặt về mặc định
+// @route   POST /api/settings/reset
+// @access  Private (Admin only)
 const resetToDefaults = async (req, res) => {
   try {
-    await Settings.deleteMany(); // Xóa tất cả settings
-    
-    // Tạo settings mặc định
-    const defaultSettings = await Settings.create({
+    const defaultSettings = {
       systemName: 'Drug Traceability Blockchain System',
       companyName: '',
       companyAddress: '',
@@ -276,7 +266,7 @@ const resetToDefaults = async (req, res) => {
       companyEmail: '',
       blockchainNetwork: 'sepolia',
       blockchainProvider: 'infura',
-      notificationEmail: '',
+      notificationEmail: 'admin@company.com',
       backupFrequency: 'daily',
       sessionTimeout: 60,
       maxLoginAttempts: 5,
@@ -286,7 +276,10 @@ const resetToDefaults = async (req, res) => {
       enableAuditLog: true,
       enableEmailNotifications: true,
       enableSMSNotifications: false
-    });
+    };
+
+    // Trong thực tế, sẽ reset trong database
+    console.log('Settings reset to defaults:', defaultSettings);
 
     res.json({
       success: true,

@@ -3,6 +3,7 @@ const router = express.Router();
 const { authenticate, authorize } = require('../middleware/auth');
 const {
   getSystemOverview,
+  getDashboardSummary,
   getModuleStats,
   getDistributionJourneyReport,
   getSuspiciousDrugsReport,
@@ -14,8 +15,16 @@ const {
 // @access  Private (Admin only)
 router.get('/overview',
   authenticate,
-  authorize(['admin']),
+  authorize('admin'),
   getSystemOverview
+);
+
+// @route   GET /api/reports/dashboard
+// @desc    Lấy dữ liệu dashboard thực tế
+// @access  Private
+router.get('/dashboard',
+  authenticate,
+  getDashboardSummary
 );
 
 // @route   GET /api/reports/module/:module

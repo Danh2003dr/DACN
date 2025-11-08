@@ -107,7 +107,7 @@ const AvatarCropper = ({ src, onCrop, onClose, onSave }) => {
       );
       
       console.log('Cropped blob:', croppedImageBlob);
-      onSave(croppedImageBlob);
+      await onSave(croppedImageBlob);
       onClose();
     } catch (error) {
       console.error('Error cropping image:', error);

@@ -2,6 +2,7 @@ const SupplyChain = require('../models/SupplyChain');
 const Drug = require('../models/Drug');
 const User = require('../models/User');
 const blockchainService = require('../services/blockchainService');
+const getServerUrl = require('../utils/getServerUrl');
 
 // @desc    Tạo hành trình chuỗi cung ứng mới
 // @route   POST /api/supply-chain
@@ -41,13 +42,17 @@ const createSupplyChain = async (req, res) => {
     }
     
     // Tạo hành trình mới
+    // Sử dụng blockchainId từ drug nếu có, nếu không thì dùng batchNumber cho verification
+    const verificationId = drug.blockchain?.blockchainId || drug.drugId || drugBatchNumber;
+    const serverUrl = getServerUrl();
+    
     const supplyChain = new SupplyChain({
       drugId,
       drugBatchNumber,
       qrCode: {
         code: `${drugBatchNumber}-${Date.now()}`,
-        blockchainId: `SC-${drugBatchNumber}-${Date.now()}`,
-        verificationUrl: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/verify/${drugBatchNumber}`
+        blockchainId: drug.blockchain?.blockchainId || `SC-${drugBatchNumber}-${Date.now()}`,
+        verificationUrl: `${serverUrl}/verify/${verificationId}`
       },
       createdBy: req.user._id,
       steps: []
@@ -344,12 +349,30 @@ const getSupplyChains = async (req, res) => {
     }
     
     // Lọc theo vai trò
-    if (req.user.role !== 'admin') {
-      filter.$or = [
-        { 'steps.actorId': req.user._id },
-        { createdBy: req.user._id }
-      ];
+    // Admin và Patient xem tất cả
+    // Manufacturer xem những hành trình họ tạo hoặc tham gia
+    // Distributor và Hospital xem những hành trình họ tham gia
+    if (req.user.role !== 'admin' && req.user.role !== 'patient') {
+      // Nếu đã có filter $or từ search, merge với role filter
+      if (filter.$or) {
+        filter.$and = [
+          { $or: filter.$or },
+          {
+            $or: [
+              { 'steps.actorId': req.user._id },
+              { createdBy: req.user._id }
+            ]
+          }
+        ];
+        delete filter.$or;
+      } else {
+        filter.$or = [
+          { 'steps.actorId': req.user._id },
+          { createdBy: req.user._id }
+        ];
+      }
     }
+    // Admin và Patient xem tất cả (không filter)
     
     const supplyChains = await SupplyChain.find(filter)
       .populate('drugId', 'name genericName manufacturer')

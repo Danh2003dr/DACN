@@ -7,153 +7,56 @@
       "type": "constructor"
     },
     {
-      "anonymous": false,
       "inputs": [
         {
-          "indexed": true,
           "internalType": "string",
-          "name": "drugId",
+          "name": "_drugId",
           "type": "string"
         },
         {
-          "indexed": false,
           "internalType": "string",
-          "name": "name",
+          "name": "_name",
           "type": "string"
         },
         {
-          "indexed": true,
-          "internalType": "address",
-          "name": "createdBy",
-          "type": "address"
-        },
-        {
-          "indexed": false,
-          "internalType": "uint256",
-          "name": "timestamp",
-          "type": "uint256"
-        }
-      ],
-      "name": "DrugBatchCreated",
-      "type": "event"
-    },
-    {
-      "anonymous": false,
-      "inputs": [
-        {
-          "indexed": true,
           "internalType": "string",
-          "name": "drugId",
+          "name": "_activeIngredient",
           "type": "string"
         },
         {
-          "indexed": false,
           "internalType": "string",
-          "name": "reason",
+          "name": "_manufacturerId",
           "type": "string"
         },
         {
-          "indexed": true,
-          "internalType": "address",
-          "name": "recalledBy",
-          "type": "address"
-        },
-        {
-          "indexed": false,
-          "internalType": "uint256",
-          "name": "timestamp",
-          "type": "uint256"
-        }
-      ],
-      "name": "DrugBatchRecalled",
-      "type": "event"
-    },
-    {
-      "anonymous": false,
-      "inputs": [
-        {
-          "indexed": true,
           "internalType": "string",
-          "name": "drugId",
+          "name": "_batchNumber",
           "type": "string"
         },
-        {
-          "indexed": true,
-          "internalType": "address",
-          "name": "from",
-          "type": "address"
-        },
-        {
-          "indexed": true,
-          "internalType": "address",
-          "name": "to",
-          "type": "address"
-        },
-        {
-          "indexed": false,
-          "internalType": "uint256",
-          "name": "timestamp",
-          "type": "uint256"
-        }
-      ],
-      "name": "DistributionRecorded",
-      "type": "event"
-    },
-    {
-      "anonymous": false,
-      "inputs": [
-        {
-          "indexed": true,
-          "internalType": "string",
-          "name": "drugId",
-          "type": "string"
-        },
-        {
-          "indexed": true,
-          "internalType": "address",
-          "name": "updatedBy",
-          "type": "address"
-        },
-        {
-          "indexed": false,
-          "internalType": "uint256",
-          "name": "timestamp",
-          "type": "uint256"
-        }
-      ],
-      "name": "DrugBatchUpdated",
-      "type": "event"
-    },
-    {
-      "inputs": [
         {
           "internalType": "uint256",
-          "name": "",
+          "name": "_productionDate",
           "type": "uint256"
-        }
-      ],
-      "name": "allDrugIds",
-      "outputs": [
+        },
+        {
+          "internalType": "uint256",
+          "name": "_expiryDate",
+          "type": "uint256"
+        },
         {
           "internalType": "string",
-          "name": "",
+          "name": "_qualityTestResult",
+          "type": "string"
+        },
+        {
+          "internalType": "string",
+          "name": "_qrCodeData",
           "type": "string"
         }
       ],
-      "stateMutability": "view",
-      "type": "function"
-    },
-    {
-      "inputs": [],
-      "name": "getAllDrugIds",
-      "outputs": [
-        {
-          "internalType": "string[]",
-          "name": "",
-          "type": "string[]"
-        }
-      ],
-      "stateMutability": "view",
+      "name": "createDrugBatch",
+      "outputs": [],
+      "stateMutability": "nonpayable",
       "type": "function"
     },
     {
@@ -244,321 +147,10 @@
       ],
       "stateMutability": "view",
       "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "string",
-          "name": "_drugId",
-          "type": "string"
-        }
-      ],
-      "name": "getDistributionHistory",
-      "outputs": [
-        {
-          "internalType": "address[]",
-          "name": "",
-          "type": "address[]"
-        },
-        {
-          "internalType": "address[]",
-          "name": "",
-          "type": "address[]"
-        },
-        {
-          "internalType": "uint256[]",
-          "name": "",
-          "type": "uint256[]"
-        },
-        {
-          "internalType": "string[]",
-          "name": "",
-          "type": "string[]"
-        },
-        {
-          "internalType": "string[]",
-          "name": "",
-          "type": "string[]"
-        },
-        {
-          "internalType": "string[]",
-          "name": "",
-          "type": "string[]"
-        }
-      ],
-      "stateMutability": "view",
-      "type": "function"
-    },
-    {
-      "inputs": [],
-      "name": "getTotalDrugBatches",
-      "outputs": [
-        {
-          "internalType": "uint256",
-          "name": "",
-          "type": "uint256"
-        }
-      ],
-      "stateMutability": "view",
-      "type": "function"
-    },
-    {
-      "inputs": [],
-      "name": "owner",
-      "outputs": [
-        {
-          "internalType": "address",
-          "name": "",
-          "type": "address"
-        }
-      ],
-      "stateMutability": "view",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "string",
-          "name": "_drugId",
-          "type": "string"
-        },
-        {
-          "internalType": "string",
-          "name": "_name",
-          "type": "string"
-        },
-        {
-          "internalType": "string",
-          "name": "_activeIngredient",
-          "type": "string"
-        },
-        {
-          "internalType": "string",
-          "name": "_manufacturerId",
-          "type": "string"
-        },
-        {
-          "internalType": "string",
-          "name": "_batchNumber",
-          "type": "string"
-        },
-        {
-          "internalType": "uint256",
-          "name": "_productionDate",
-          "type": "uint256"
-        },
-        {
-          "internalType": "uint256",
-          "name": "_expiryDate",
-          "type": "uint256"
-        },
-        {
-          "internalType": "string",
-          "name": "_qualityTestResult",
-          "type": "string"
-        },
-        {
-          "internalType": "string",
-          "name": "_qrCodeData",
-          "type": "string"
-        }
-      ],
-      "name": "createDrugBatch",
-      "outputs": [],
-      "stateMutability": "nonpayable",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "string",
-          "name": "_drugId",
-          "type": "string"
-        },
-        {
-          "internalType": "string",
-          "name": "_reason",
-          "type": "string"
-        }
-      ],
-      "name": "recallDrugBatch",
-      "outputs": [],
-      "stateMutability": "nonpayable",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "string",
-          "name": "_drugId",
-          "type": "string"
-        },
-        {
-          "internalType": "address",
-          "name": "_to",
-          "type": "address"
-        },
-        {
-          "internalType": "string",
-          "name": "_location",
-          "type": "string"
-        },
-        {
-          "internalType": "string",
-          "name": "_status",
-          "type": "string"
-        },
-        {
-          "internalType": "string",
-          "name": "_notes",
-          "type": "string"
-        }
-      ],
-      "name": "recordDistribution",
-      "outputs": [],
-      "stateMutability": "nonpayable",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "string",
-          "name": "_drugId",
-          "type": "string"
-        },
-        {
-          "internalType": "string",
-          "name": "_name",
-          "type": "string"
-        },
-        {
-          "internalType": "string",
-          "name": "_activeIngredient",
-          "type": "string"
-        },
-        {
-          "internalType": "string",
-          "name": "_qualityTestResult",
-          "type": "string"
-        }
-      ],
-      "name": "updateDrugBatch",
-      "outputs": [],
-      "stateMutability": "nonpayable",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "string",
-          "name": "_drugId",
-          "type": "string"
-        }
-      ],
-      "name": "drugBatchExists",
-      "outputs": [
-        {
-          "internalType": "bool",
-          "name": "",
-          "type": "bool"
-        }
-      ],
-      "stateMutability": "view",
-      "type": "function"
-    },
-    {
-      "inputs": [
-        {
-          "internalType": "string",
-          "name": "",
-          "type": "string"
-        }
-      ],
-      "name": "drugBatches",
-      "outputs": [
-        {
-          "internalType": "string",
-          "name": "drugId",
-          "type": "string"
-        },
-        {
-          "internalType": "string",
-          "name": "name",
-          "type": "string"
-        },
-        {
-          "internalType": "string",
-          "name": "activeIngredient",
-          "type": "string"
-        },
-        {
-          "internalType": "string",
-          "name": "manufacturerId",
-          "type": "string"
-        },
-        {
-          "internalType": "string",
-          "name": "batchNumber",
-          "type": "string"
-        },
-        {
-          "internalType": "uint256",
-          "name": "productionDate",
-          "type": "uint256"
-        },
-        {
-          "internalType": "uint256",
-          "name": "expiryDate",
-          "type": "uint256"
-        },
-        {
-          "internalType": "string",
-          "name": "qualityTestResult",
-          "type": "string"
-        },
-        {
-          "internalType": "string",
-          "name": "qrCodeData",
-          "type": "string"
-        },
-        {
-          "internalType": "address",
-          "name": "createdBy",
-          "type": "address"
-        },
-        {
-          "internalType": "uint256",
-          "name": "createdAt",
-          "type": "uint256"
-        },
-        {
-          "internalType": "bool",
-          "name": "isActive",
-          "type": "bool"
-        },
-        {
-          "internalType": "bool",
-          "name": "isRecalled",
-          "type": "bool"
-        },
-        {
-          "internalType": "string",
-          "name": "recallReason",
-          "type": "string"
-        },
-        {
-          "internalType": "uint256",
-          "name": "recallDate",
-          "type": "uint256"
-        }
-      ],
-      "stateMutability": "view",
-      "type": "function"
     }
   ],
-  "metadata": "{\"compiler\":{\"version\":\"0.8.19+commit.7dd6d404\"},\"language\":\"Solidity\",\"output\":{\"abi\":[{\"inputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"constructor\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"string\",\"name\":\"drugId\",\"type\":\"string\"},{\"indexed\":false,\"internalType\":\"string\",\"name\":\"name\",\"type\":\"string\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"createdBy\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"timestamp\",\"type\":\"uint256\"}],\"name\":\"DrugBatchCreated\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"string\",\"name\":\"drugId\",\"type\":\"string\"},{\"indexed\":false,\"internalType\":\"string\",\"name\":\"reason\",\"type\":\"string\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"recalledBy\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"timestamp\",\"type\":\"uint256\"}],\"name\":\"DrugBatchRecalled\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"string\",\"name\":\"drugId\",\"type\":\"string\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"from\",\"type\":\"address\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"to\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"timestamp\",\"type\":\"uint256\"}],\"name\":\"DistributionRecorded\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"string\",\"name\":\"drugId\",\"type\":\"string\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"updatedBy\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"timestamp\",\"type\":\"uint256\"}],\"name\":\"DrugBatchUpdated\",\"type\":\"event\"},{\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"name\":\"allDrugIds\",\"outputs\":[{\"internalType\":\"string\",\"name\":\"\",\"type\":\"string\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"getAllDrugIds\",\"outputs\":[{\"internalType\":\"string[]\",\"name\":\"\",\"type\":\"string[]\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"string\",\"name\":\"_drugId\",\"type\":\"string\"}],\"name\":\"getDrugBatch\",\"outputs\":[{\"internalType\":\"string\",\"name\":\"\",\"type\":\"string\"},{\"internalType\":\"string\",\"name\":\"\",\"type\":\"string\"},{\"internalType\":\"string\",\"name\":\"\",\"type\":\"string\"},{\"internalType\":\"string\",\"name\":\"\",\"type\":\"string\"},{\"internalType\":\"string\",\"name\":\"\",\"type\":\"string\"},{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"},{\"internalType\":\"string\",\"name\":\"\",\"type\":\"string\"},{\"internalType\":\"string\",\"name\":\"\",\"type\":\"string\"},{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"},{\"internalType\":\"bool\",\"name\":\"\",\"type\":\"bool\"},{\"internalType\":\"bool\",\"name\":\"\",\"type\":\"bool\"},{\"internalType\":\"string\",\"name\":\"\",\"type\":\"string\"},{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"string\",\"name\":\"_drugId\",\"type\":\"string\"}],\"name\":\"getDistributionHistory\",\"outputs\":[{\"internalType\":\"address[]\",\"name\":\"\",\"type\":\"address[]\"},{\"internalType\":\"address[]\",\"name\":\"\",\"type\":\"address[]\"},{\"internalType\":\"uint256[]\",\"name\":\"\",\"type\":\"uint256[]\"},{\"internalType\":\"string[]\",\"name\":\"\",\"type\":\"string[]\"},{\"internalType\":\"string[]\",\"name\":\"\",\"type\":\"string[]\"},{\"internalType\":\"string[]\",\"name\":\"\",\"type\":\"string[]\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"getTotalDrugBatches\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"owner\",\"outputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"string\",\"name\":\"_drugId\",\"type\":\"string\"},{\"internalType\":\"string\",\"name\":\"_name\",\"type\":\"string\"},{\"internalType\":\"string\",\"name\":\"_activeIngredient\",\"type\":\"string\"},{\"internalType\":\"string\",\"name\":\"_manufacturerId\",\"type\":\"string\"},{\"internalType\":\"string\",\"name\":\"_batchNumber\",\"type\":\"string\"},{\"internalType\":\"uint256\",\"name\":\"_productionDate\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"_expiryDate\",\"type\":\"uint256\"},{\"internalType\":\"string\",\"name\":\"_qualityTestResult\",\"type\":\"string\"},{\"internalType\":\"string\",\"name\":\"_qrCodeData\",\"type\":\"string\"}],\"name\":\"createDrugBatch\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"string\",\"name\":\"_drugId\",\"type\":\"string\"},{\"internalType\":\"string\",\"name\":\"_reason\",\"type\":\"string\"}],\"name\":\"recallDrugBatch\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"string\",\"name\":\"_drugId\",\"type\":\"string\"},{\"internalType\":\"address\",\"name\":\"_to\",\"type\":\"address\"},{\"internalType\":\"string\",\"name\":\"_location\",\"type\":\"string\"},{\"internalType\":\"string\",\"name\":\"_status\",\"type\":\"string\"},{\"internalType\":\"string\",\"name\":\"_notes\",\"type\":\"string\"}],\"name\":\"recordDistribution\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"string\",\"name\":\"_drugId\",\"type\":\"string\"},{\"internalType\":\"string\",\"name\":\"_name\",\"type\":\"string\"},{\"internalType\":\"string\",\"name\":\"_activeIngredient\",\"type\":\"string\"},{\"internalType\":\"string\",\"name\":\"_qualityTestResult\",\"type\":\"string\"}],\"name\":\"updateDrugBatch\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"string\",\"name\":\"_drugId\",\"type\":\"string\"}],\"name\":\"drugBatchExists\",\"outputs\":[{\"internalType\":\"bool\",\"name\":\"\",\"type\":\"bool\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"string\",\"name\":\"\",\"type\":\"string\"}],\"name\":\"drugBatches\",\"outputs\":[{\"internalType\":\"string\",\"name\":\"drugId\",\"type\":\"string\"},{\"internalType\":\"string\",\"name\":\"name\",\"type\":\"string\"},{\"internalType\":\"string\",\"name\":\"activeIngredient\",\"type\":\"string\"},{\"internalType\":\"string\",\"name\":\"manufacturerId\",\"type\":\"string\"},{\"internalType\":\"string\",\"name\":\"batchNumber\",\"type\":\"string\"},{\"internalType\":\"uint256\",\"name\":\"productionDate\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"expiryDate\",\"type\":\"uint256\"},{\"internalType\":\"string\",\"name\":\"qualityTestResult\",\"type\":\"string\"},{\"internalType\":\"string\",\"name\":\"qrCodeData\",\"type\":\"string\"},{\"internalType\":\"address\",\"name\":\"createdBy\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"createdAt\",\"type\":\"uint256\"},{\"internalType\":\"bool\",\"name\":\"isActive\",\"type\":\"bool\"},{\"internalType\":\"bool\",\"name\":\"isRecalled\",\"type\":\"bool\"},{\"internalType\":\"string\",\"name\":\"recallReason\",\"type\":\"string\"},{\"internalType\":\"uint256\",\"name\":\"recallDate\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"}],\"devdoc\":{\"kind\":\"dev\",\"methods\":{},\"version\":1},\"userdoc\":{\"kind\":\"user\",\"methods\":{},\"version\":1}}",
-  "bytecode": "0x608060405234801561001057600080fd5b50600080546001600160a01b031916331790556101a3806100326000396000f3fe608060405234801561001057600080fd5b50600436106100ea5760003560e01c80638da5cb5b1161008c578063a6f9dae111610066578063a6f9dae1146101e8578063c4d66de8146101fb578063d4b839921461020e578063f2fde38b1461022157600080fd5b80638da5cb5b146101b25780639a8a0592146101c5578063a4d66daf146101d557600080fd5b8063715018a6116100c8578063715018a61461016f57806373b2e80e146101775780637b1039991461019a5780638b8c4c34146101ad57600080fd5b80631a695230146100ef5780632e1a7d4d146101045780633a5381b514610117575b600080fd5b6101026100fd36600461014c565b610234565b005b61010261011236600461014c565b6102a4565b61012a61012536600461014c565b6102d1565b604051610137919061015e565b60405180910390f35b61010261014a36600461014c565b6102e8565b60006020828403121561015e57600080fd5b81356001600160a01b038116811461017557600080fd5b92915050565b6020808252818101527f4f776e61626c653a2063616c6c6572206973206e6f7420746865206f776e6572604082015260600190565b6001600160a01b031660009081526020819052604090205490565b6000546001600160a01b031633146101e85760405162461bcd60e51b81526004016101df90610165565b60405180910390fd5b6001600160a01b03811661020e5760405162461bcd60e51b81526004016101df90610165565b600080546001600160a01b0319166001600160a01b0392909216919091179055565b6000546001600160a01b031633146102585760405162461bcd60e51b81526004016101df90610165565b6001600160a01b03811661027e5760405162461bcd60e51b81526004016101df90610165565b6001600160a01b038116600090815260208190526040902054156102a157600080fd5b50565b6000546001600160a01b031633146102ce5760405162461bcd60e51b81526004016101df90610165565b50565b6000546001600160a01b031633146102f55760405162461bcd60e51b81526004016101df90610165565b6001600160a01b0381166000908152602081905260409020541561031857600080fd5b5056fea2646970667358221220...",
-  "deployedBytecode": "0x608060405234801561001057600080fd5b50600436106100ea5760003560e01c80638da5cb5b1161008c578063a6f9dae111610066578063a6f9dae1146101e8578063c4d66de8146101fb578063d4b839921461020e578063f2fde38b1461022157600080fd5b80638da5cb5b146101b25780639a8a0592146101c5578063a4d66daf146101d557600080fd5b8063715018a6116100c8578063715018a61461016f578063715018a61461017757806373b2e80e146101775780637b1039991461019a5780638b8c4c34146101ad57600080fd5b80631a695230146100ef5780632e1a7d4d146101045780633a5381b514610117575b600080fd5b6101026100fd36600461014c565b610234565b005b61010261011236600461014c565b6102a4565b61012a61012536600461014c565b6102d1565b604051610137919061015e565b60405180910390f35b61010261014a36600461014c565b6102e8565b60006020828403121561015e57600080fd5b81356001600160a01b038116811461017557600080fd5b92915050565b6020808252818101527f4f776e61626c653a2063616c6c6572206973206e6f7420746865206f776e6572604082015260600190565b6001600160a01b031660009081526020819052604090205490565b6000546001600160a01b031633146101e85760405162461bcd60e51b81526004016101df90610165565b60405180910390fd5b6001600160a01b03811661020e5760405162461bcd60e51b81526004016101df90610165565b600080546001600160a01b0319166001600160a01b0392909216919091179055565b6000546001600160a01b031633146102585760405162461bcd60e51b81526004016101df90610165565b6001600160a01b03811661027e5760405162461bcd60e51b81526004016101df90610165565b6001600160a01b038116600090815260208190526040902054156102a157600080fd5b50565b6000546001600160a01b031633146102ce5760405162461bcd60e51b81526004016101df90610165565b50565b6000546001600160a01b031633146102f55760405162461bcd60e51b81526004016101df90610165565b6001600160a01b0381166000908152602081905260409020541561031857600080fd5b5056fea2646970667358221220...",
-  "linkReferences": {},
-  "deployedLinkReferences": {}
+  "bytecode": "0x608060405234801561001057600080fd5b50600080546001600160a01b031916331790556101c0806100326000396000f3fe608060405234801561001057600080fd5b50600436106100365760003560e01c8063...",
+  "deployedBytecode": "0x608060405234801561001057600080fd5b50600080546001600160a01b031916331790556101c0806100326000396000f3fe608060405234801561001057600080fd5b50600436106100365760003560e01c8063...",
+  "sourceMap": "",
+  "metadata": "{\"compiler\":{\"version\":\"0.8.0\"},\"language\":\"Solidity\",\"output\":{\"abi\":[{\"inputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"constructor\"}],\"devdoc\":{\"kind\":\"dev\",\"methods\":{}},\"userdoc\":{\"kind\":\"user\",\"methods\":{}}}}"
 }

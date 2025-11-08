@@ -15,9 +15,14 @@ import {
   Star,
   RefreshCw,
   Eye,
-  Printer
+  Printer,
+  Layers,
+  Truck,
+  BellRing,
+  ClipboardCheck
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { reportAPI } from '../utils/api';
 import toast from 'react-hot-toast';
 
 const Reports = () => {
@@ -36,21 +41,16 @@ const Reports = () => {
   const loadOverviewData = async () => {
     try {
       setLoading(true);
-      const response = await fetch('/api/reports/overview', {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
-      });
-      const data = await response.json();
+      const response = await reportAPI.getSystemOverview();
       
-      if (data.success) {
-        setOverviewData(data.data);
+      if (response.success) {
+        setOverviewData(response.data);
       } else {
-        toast.error(data.message);
+        toast.error(response.message || 'Không thể tải dữ liệu tổng quan');
       }
     } catch (error) {
       console.error('Error loading overview:', error);
-      toast.error('Lỗi khi tải dữ liệu tổng quan');
+      toast.error('Lỗi khi tải dữ liệu tổng quan: ' + (error.response?.data?.message || error.message));
     } finally {
       setLoading(false);
     }
@@ -60,32 +60,27 @@ const Reports = () => {
   const loadModuleData = async (module) => {
     try {
       setLoading(true);
-      const params = new URLSearchParams();
-      if (dateRange.startDate) params.append('startDate', dateRange.startDate);
-      if (dateRange.endDate) params.append('endDate', dateRange.endDate);
+      const params = {};
+      if (dateRange.startDate) params.startDate = dateRange.startDate;
+      if (dateRange.endDate) params.endDate = dateRange.endDate;
       
-      const response = await fetch(`/api/reports/module/${module}?${params}`, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
-      });
-      const data = await response.json();
+      const response = await reportAPI.getModuleStats(module, params);
       
-      if (data.success) {
-        setModuleData(data.data);
+      if (response.success) {
+        setModuleData(response.data);
       } else {
-        toast.error(data.message);
+        toast.error(response.message || 'Không thể tải dữ liệu module');
       }
     } catch (error) {
       console.error('Error loading module data:', error);
-      toast.error('Lỗi khi tải dữ liệu module');
+      toast.error('Lỗi khi tải dữ liệu module: ' + (error.response?.data?.message || error.message));
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    if (hasRole(['admin']) && activeTab === 'overview') {
+    if (hasRole('admin') && activeTab === 'overview') {
       loadOverviewData();
     } else if (activeTab === 'modules') {
       loadModuleData(selectedModule);
@@ -240,12 +235,86 @@ const Reports = () => {
   };
 
   // Modules Tab
+  const formatMonth = (item) => {
+    if (!item?._id) return 'Không xác định';
+    const month = item._id.month?.toString().padStart(2, '0');
+    return `${month}/${item._id.year || ''}`;
+  };
+
+  const getModuleSummary = (moduleKey) => {
+    if (!moduleData) return [];
+    switch (moduleKey) {
+      case 'drugs':
+        return [
+          { label: 'Tổng số lô', value: moduleData.total, icon: Package, color: 'text-blue-600' },
+          { label: 'Đã thu hồi', value: moduleData.recalled, icon: AlertTriangle, color: 'text-red-600' },
+          { label: 'Hết hạn', value: moduleData.expired, icon: Calendar, color: 'text-orange-500' },
+          { label: 'Sắp hết hạn', value: moduleData.nearExpiry, icon: AlertTriangle, color: 'text-yellow-500' }
+        ];
+      case 'supply-chain':
+        return [
+          { label: 'Tổng bước', value: moduleData.totalSteps, icon: Layers, color: 'text-purple-600' },
+          { label: 'Trạng thái hoạt động', value: moduleData.byStatus?.reduce((acc, cur) => acc + cur.count, 0), icon: Truck, color: 'text-blue-600' },
+          { label: 'Hành động khác nhau', value: moduleData.byAction?.length, icon: BarChart3, color: 'text-emerald-600' }
+        ];
+      case 'tasks':
+        return [
+          { label: 'Tổng nhiệm vụ', value: moduleData.total, icon: ClipboardList, color: 'text-indigo-600' },
+          { label: 'Tỷ lệ hoàn thành', value: `${moduleData.completionRate || 0}%`, icon: ClipboardCheck, color: 'text-green-600' },
+          { label: 'Trạng thái ghi nhận', value: moduleData.byStatus?.length, icon: TrendingUp, color: 'text-blue-500' }
+        ];
+      case 'notifications':
+        return [
+          { label: 'Thông báo đã gửi', value: moduleData.total, icon: Bell, color: 'text-blue-600' },
+          { label: 'Phân loại', value: moduleData.byType?.length, icon: BellRing, color: 'text-purple-600' },
+          { label: 'Theo mức ưu tiên', value: moduleData.byPriority?.length, icon: AlertTriangle, color: 'text-orange-500' }
+        ];
+      case 'reviews':
+        return [
+          { label: 'Tổng đánh giá', value: moduleData.total, icon: Star, color: 'text-yellow-500' },
+          { label: 'Điểm trung bình', value: moduleData.averageRating ? `${moduleData.averageRating}/5` : '—', icon: CheckCircle, color: 'text-emerald-600' },
+          { label: 'Loại đánh giá', value: moduleData.byType?.length, icon: FileText, color: 'text-blue-500' }
+        ];
+      default:
+        return [];
+    }
+  };
+
+  const renderDataList = (title, items, formatter = (item) => item._id, valueFormatter = (item) => item.count) => {
+    if (!items || items.length === 0) return null;
+    return (
+      <div className="bg-white rounded-lg shadow-soft p-6">
+        <h4 className="text-base font-semibold text-gray-900 mb-4">{title}</h4>
+        <div className="space-y-2">
+          {items.map((item, idx) => (
+            <div key={idx} className="flex items-center justify-between rounded-md border border-gray-100 px-3 py-2">
+              <span className="text-sm text-gray-700 font-medium">{formatter(item)}</span>
+              <span className="text-sm text-gray-500">{typeof valueFormatter(item) === 'number' ? formatNumber(valueFormatter(item)) : valueFormatter(item)}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
   const renderModulesTab = () => {
     return (
       <div className="space-y-6">
         {/* Filters */}
-        <div className="bg-white rounded-lg shadow p-6">
-          <h3 className="text-lg font-semibold mb-4">Bộ lọc báo cáo</h3>
+        <div className="bg-white rounded-lg shadow-soft p-6">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900">Bộ lọc báo cáo</h3>
+              <p className="text-sm text-gray-500">Chọn module và phạm vi thời gian để xem thống kê chi tiết.</p>
+            </div>
+            <button
+              onClick={() => { setDateRange({ startDate: '', endDate: '' }); loadModuleData(selectedModule); }}
+              className="hidden md:inline-flex items-center space-x-2 px-4 py-2 text-sm font-medium text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50"
+            >
+              <RefreshCw className="h-4 w-4" />
+              <span>Làm mới</span>
+            </button>
+          </div>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Module</label>
@@ -282,7 +351,7 @@ const Reports = () => {
             <div className="flex items-end">
               <button
                 onClick={() => loadModuleData(selectedModule)}
-                className="w-full bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center justify-center space-x-2"
+                className="w-full bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center justify-center space-x-2 shadow-sm"
               >
                 <Filter className="h-4 w-4" />
                 <span>Lọc</span>
@@ -292,68 +361,107 @@ const Reports = () => {
         </div>
 
         {/* Module Data */}
-        {moduleData && (
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex justify-between items-center mb-6">
-              <h3 className="text-lg font-semibold">
-                Thống kê {selectedModule === 'supply-chain' ? 'Chuỗi cung ứng' : 
-                          selectedModule === 'tasks' ? 'Nhiệm vụ' :
-                          selectedModule === 'notifications' ? 'Thông báo' :
-                          selectedModule === 'reviews' ? 'Đánh giá' : 'Thuốc'}
-              </h3>
-              <div className="flex space-x-2">
-                <button
-                  onClick={exportToExcel}
-                  className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 flex items-center space-x-2"
-                >
-                  <Download className="h-4 w-4" />
-                  <span>Excel</span>
-                </button>
-                <button
-                  onClick={exportToPDF}
-                  className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 flex items-center space-x-2"
-                >
-                  <FileText className="h-4 w-4" />
-                  <span>PDF</span>
-                </button>
-                <button
-                  onClick={printReport}
-                  className="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 flex items-center space-x-2"
-                >
-                  <Printer className="h-4 w-4" />
-                  <span>In</span>
-                </button>
+        {moduleData ? (
+          <div className="space-y-6">
+            <div className="bg-white rounded-lg shadow-soft p-6">
+              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">
+                    Thống kê {selectedModule === 'supply-chain' ? 'Chuỗi cung ứng' : 
+                              selectedModule === 'tasks' ? 'Nhiệm vụ' :
+                              selectedModule === 'notifications' ? 'Thông báo' :
+                              selectedModule === 'reviews' ? 'Đánh giá' : 'Thuốc'}
+                  </h3>
+                  <p className="text-sm text-gray-500">Tổng hợp dữ liệu đã lọc theo khoảng thời gian và module.</p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={exportToExcel}
+                    className="inline-flex items-center gap-2 bg-green-50 text-green-700 px-3 py-2 rounded-lg hover:bg-green-100"
+                  >
+                    <Download className="h-4 w-4" />
+                    <span>Excel</span>
+                  </button>
+                  <button
+                    onClick={exportToPDF}
+                    className="inline-flex items-center gap-2 bg-red-50 text-red-600 px-3 py-2 rounded-lg hover:bg-red-100"
+                  >
+                    <FileText className="h-4 w-4" />
+                    <span>PDF</span>
+                  </button>
+                  <button
+                    onClick={printReport}
+                    className="inline-flex items-center gap-2 bg-gray-100 text-gray-700 px-3 py-2 rounded-lg hover:bg-gray-200"
+                  >
+                    <Printer className="h-4 w-4" />
+                    <span>In</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Summary cards */}
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                {getModuleSummary(selectedModule).map((card, index) => {
+                  const Icon = card.icon;
+                  const displayValue = typeof card.value === 'number' ? formatNumber(card.value) : (card.value ?? '—');
+                  return (
+                    <div key={index} className="rounded-lg border border-gray-100 bg-gray-50 px-4 py-5 flex items-start gap-3">
+                      <div className={`p-2 rounded-full bg-white ${card.color} shadow-sm`}>
+                        <Icon className="h-5 w-5" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-gray-600">{card.label}</p>
+                        <p className="text-2xl font-semibold text-gray-900">{displayValue}</p>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
 
-            {/* Module specific data */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="bg-gray-50 rounded-lg p-4">
-                <p className="text-sm font-medium text-gray-600">Tổng số</p>
-                <p className="text-2xl font-bold text-gray-900">{formatNumber(moduleData.total || 0)}</p>
-              </div>
-              
-              {selectedModule === 'tasks' && moduleData.completionRate && (
-                <div className="bg-gray-50 rounded-lg p-4">
-                  <p className="text-sm font-medium text-gray-600">Tỷ lệ hoàn thành</p>
-                  <p className="text-2xl font-bold text-gray-900">{moduleData.completionRate}%</p>
-                </div>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {selectedModule === 'drugs' && (
+                <>
+                  {renderDataList('Theo trạng thái', moduleData.byStatus, (item) => item._id || 'khác')}
+                  {renderDataList('Theo tháng', moduleData.byMonth, formatMonth)}
+                </>
               )}
-              
-              {selectedModule === 'reviews' && moduleData.averageRating && (
-                <div className="bg-gray-50 rounded-lg p-4">
-                  <p className="text-sm font-medium text-gray-600">Điểm trung bình</p>
-                  <p className="text-2xl font-bold text-gray-900">⭐ {moduleData.averageRating}/5</p>
-                </div>
+              {selectedModule === 'supply-chain' && (
+                <>
+                  {renderDataList('Theo trạng thái', moduleData.byStatus, (item) => item._id || 'khác')}
+                  {renderDataList('Theo hành động', moduleData.byAction, (item) => item._id || 'khác')}
+                </>
+              )}
+              {selectedModule === 'tasks' && (
+                <>
+                  {renderDataList('Theo trạng thái', moduleData.byStatus, (item) => item._id || 'khác')}
+                  {renderDataList('Theo mức độ ưu tiên', moduleData.byPriority, (item) => item._id || 'khác')}
+                  {renderDataList('Theo tháng', moduleData.byMonth, formatMonth)}
+                </>
+              )}
+              {selectedModule === 'notifications' && (
+                <>
+                  {renderDataList('Theo loại thông báo', moduleData.byType, (item) => item._id || 'khác')}
+                  {renderDataList('Theo mức ưu tiên', moduleData.byPriority, (item) => item._id || 'khác')}
+                </>
+              )}
+              {selectedModule === 'reviews' && (
+                <>
+                  {renderDataList('Theo điểm đánh giá', moduleData.byRating, (item) => `${item._id} ⭐`, (item) => `${item.count} lượt`)}
+                  {renderDataList('Theo loại đánh giá', moduleData.byType, (item) => item._id || 'khác')}
+                </>
               )}
             </div>
 
-            {/* Charts data */}
-            <div className="mt-6">
-              <p className="text-sm text-gray-600">
-                Dữ liệu chi tiết sẽ được hiển thị dưới dạng biểu đồ trong phiên bản tương lai.
+            <div className="bg-white rounded-lg shadow-soft p-6">
+              <p className="text-sm text-gray-500">
+                Biểu đồ trực quan đang được phát triển. Hiện tại dữ liệu được trình bày dưới dạng bảng để thuận tiện cho việc xuất báo cáo.
               </p>
             </div>
+          </div>
+        ) : (
+          <div className="bg-white rounded-lg shadow-soft p-10 text-center">
+            <p className="text-gray-500">Chọn module và bấm "Lọc" để xem báo cáo chi tiết.</p>
           </div>
         )}
       </div>
@@ -417,10 +525,10 @@ const Reports = () => {
       {/* Content */}
       {!loading && (
         <>
-          {activeTab === 'overview' && hasRole(['admin']) && renderOverviewTab()}
+          {activeTab === 'overview' && hasRole('admin') && renderOverviewTab()}
           {activeTab === 'modules' && renderModulesTab()}
           
-          {activeTab === 'overview' && !hasRole(['admin']) && (
+          {activeTab === 'overview' && !hasRole('admin') && (
             <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6">
               <div className="flex items-center">
                 <AlertTriangle className="h-5 w-5 text-yellow-600 mr-3" />

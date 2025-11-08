@@ -6,10 +6,17 @@ const morgan = require('morgan');
 const compression = require('compression');
 require('dotenv').config();
 
+// Initialize Passport (chỉ cần require, không cần sử dụng session nếu dùng JWT)
+require('./config/passport');
+
+// Import getServerUrl để hiển thị network URL
+const getServerUrl = require('./utils/getServerUrl');
+
 // Import routes
 const authRoutes = require('./routes/auth');
 const userRoutes = require('./routes/users');
 const settingsRoutes = require('./routes/settings');
+const blockchainRoutes = require('./routes/blockchain');
 
 // Import blockchain service
 const blockchainService = require('./services/blockchainService');
@@ -90,6 +97,7 @@ app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api/reviews', require('./routes/reviews'));
 app.use('/api/reports', require('./routes/reports'));
 app.use('/api/settings', settingsRoutes);
+app.use('/api/blockchain', blockchainRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
@@ -111,6 +119,7 @@ app.get('/api', (req, res) => {
       auth: '/api/auth',
       users: '/api/users',
       drugs: '/api/drugs',
+      blockchain: '/api/blockchain',
       health: '/api/health'
     },
     documentation: {
@@ -123,7 +132,11 @@ app.get('/api', (req, res) => {
       drugs: 'GET /api/drugs',
       createDrug: 'POST /api/drugs (Admin/Manufacturer)',
       scanQR: 'POST /api/drugs/scan-qr',
-      drugStats: 'GET /api/drugs/stats'
+      drugStats: 'GET /api/drugs/stats',
+      blockchainStats: 'GET /api/blockchain/stats',
+      blockchainDrugs: 'GET /api/blockchain/drugs',
+      verifyDrug: 'POST /api/blockchain/verify/:drugId',
+      blockchainStatus: 'GET /api/blockchain/status'
     }
   });
 });
@@ -200,10 +213,40 @@ process.on('SIGINT', () => {
 });
 
 const PORT = process.env.PORT || 5000;
+const HOST = process.env.HOST || '0.0.0.0'; // Bind to all interfaces để accessible từ network
 
-app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
+app.listen(PORT, HOST, () => {
+  console.log(`Server is running on ${HOST}:${PORT}`);
   console.log(`Environment: ${process.env.NODE_ENV}`);
+  console.log(`Local: http://localhost:${PORT}`);
+  
+  // Hiển thị network URL nếu bind trên 0.0.0.0
+  if (HOST === '0.0.0.0') {
+    try {
+      const os = require('os');
+      const networkInterfaces = os.networkInterfaces();
+      let networkIP = null;
+      
+      // Tìm IP address không phải loopback
+      for (const interfaceName in networkInterfaces) {
+        const addresses = networkInterfaces[interfaceName];
+        for (const address of addresses) {
+          if (address.family === 'IPv4' && !address.internal) {
+            networkIP = address.address;
+            break;
+          }
+        }
+        if (networkIP) break;
+      }
+      
+      if (networkIP && networkIP !== '127.0.0.1') {
+        console.log(`Network: http://${networkIP}:${PORT}`);
+      }
+    } catch (error) {
+      // Ignore error
+    }
+  }
+  
   console.log(`Health check: http://localhost:${PORT}/api/health`);
   console.log(`API docs: http://localhost:${PORT}/api`);
 });

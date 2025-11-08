@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const passport = require('../config/passport');
 
 // Import controllers
 const {
@@ -13,6 +14,13 @@ const {
   logout,
   createDefaultAccounts
 } = require('../controllers/authController');
+
+// Import Google OAuth controllers
+const {
+  googleCallback,
+  googleSuccess,
+  googleFailure
+} = require('../controllers/googleAuthController');
 
 // Import middleware
 const {
@@ -101,5 +109,63 @@ router.post('/create-default-accounts',
   authorize('admin'),
   createDefaultAccounts
 );
+
+// Middleware để kiểm tra Google OAuth có được cấu hình không
+const checkGoogleOAuth = (req, res, next) => {
+  if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
+    return res.status(503).json({
+      success: false,
+      message: 'Google OAuth chưa được cấu hình. Vui lòng thêm GOOGLE_CLIENT_ID và GOOGLE_CLIENT_SECRET vào file .env'
+    });
+  }
+  next();
+};
+
+// Google OAuth Routes
+// @route   GET /api/auth/google
+// @desc    Bắt đầu quá trình đăng nhập bằng Google
+// @access  Public
+router.get('/google',
+  checkGoogleOAuth,
+  passport.authenticate('google', {
+    scope: ['profile', 'email']
+  })
+);
+
+// @route   GET /api/auth/google/callback
+// @desc    Google OAuth callback
+// @access  Public
+router.get('/google/callback',
+  checkGoogleOAuth,
+  (req, res, next) => {
+    passport.authenticate('google', { session: false }, (err, user, info) => {
+      if (err) {
+        console.error('Google auth error:', err);
+        const frontendUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL || 'http://localhost:3000';
+        return res.redirect(`${frontendUrl}/login?error=google_auth_failed`);
+      }
+      
+      if (!user) {
+        const frontendUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL || 'http://localhost:3000';
+        return res.redirect(`${frontendUrl}/login?error=google_auth_failed`);
+      }
+      
+      // Gán user vào req để sử dụng trong callback handler
+      req.user = user;
+      next();
+    })(req, res, next);
+  },
+  googleCallback
+);
+
+// @route   GET /api/auth/google/success
+// @desc    Google OAuth success endpoint
+// @access  Public
+router.get('/google/success', checkGoogleOAuth, googleSuccess);
+
+// @route   GET /api/auth/google/failure
+// @desc    Google OAuth failure endpoint
+// @access  Public
+router.get('/google/failure', checkGoogleOAuth, googleFailure);
 
 module.exports = router;

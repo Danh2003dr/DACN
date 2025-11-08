@@ -317,18 +317,9 @@ const updateProfile = async (req, res) => {
     if (phone) updateData.phone = phone;
     if (address) updateData.address = address;
     
-    // Parse organizationInfo if it's a JSON string
+    // Xử lý organizationInfo
     if (organizationInfo) {
-      try {
-        updateData.organizationInfo = typeof organizationInfo === 'string' 
-          ? JSON.parse(organizationInfo) 
-          : organizationInfo;
-      } catch (e) {
-        return res.status(400).json({
-          success: false,
-          message: 'Thông tin tổ chức không hợp lệ.'
-        });
-      }
+      updateData.organizationInfo = organizationInfo;
     }
     
     // Xử lý avatar nếu có

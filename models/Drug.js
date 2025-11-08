@@ -34,7 +34,7 @@ const drugSchema = new mongoose.Schema({
   form: {
     type: String,
     required: [true, 'Dạng bào chế là bắt buộc'],
-    enum: ['viên nén', 'viên nang', 'siro', 'dung dịch tiêm', 'kem', 'gel', 'thuốc mỡ', 'khác'],
+    enum: ['viên nén', 'viên nang', 'siro', 'dung dịch tiêm', 'kem', 'gel', 'thuốc mỡ', 'cao khô', 'cao đặc', 'khác'],
     default: 'viên nén'
   },
   
@@ -161,7 +161,7 @@ const drugSchema = new mongoose.Schema({
   qrCode: {
     data: {
       type: String,
-      required: true,
+      required: false,
       unique: true
     },
     imageUrl: {
@@ -230,6 +230,22 @@ const drugSchema = new mongoose.Schema({
     }]
   },
   
+  // Thông tin đóng gói
+  packaging: {
+    specifications: {
+      type: String,
+      trim: true
+    },
+    standard: {
+      type: String,
+      trim: true
+    },
+    shelfLife: {
+      type: String,
+      trim: true
+    }
+  },
+
   // Thông tin bảo quản
   storage: {
     temperature: {
@@ -391,7 +407,7 @@ drugSchema.methods.recall = function(reason, recalledBy) {
 
 // Method để tạo QR code data
 drugSchema.methods.generateQRData = function() {
-  return {
+  const qrData = {
     drugId: this.drugId,
     name: this.name,
     batchNumber: this.batchNumber,
@@ -404,17 +420,75 @@ drugSchema.methods.generateQRData = function() {
     isRecalled: this.isRecalled,
     timestamp: Date.now()
   };
+  
+  // Thêm blockchain ID nếu có
+  if (this.blockchain?.blockchainId) {
+    qrData.blockchainId = this.blockchain.blockchainId;
+    // Sử dụng getServerUrl để có URL đúng (tự động detect IP)
+    try {
+      const getServerUrl = require('../utils/getServerUrl');
+      const serverUrl = getServerUrl();
+      qrData.verificationUrl = `${serverUrl}/verify/${this.blockchain.blockchainId}`;
+    } catch (error) {
+      // Fallback về CLIENT_URL hoặc localhost
+      qrData.verificationUrl = `${process.env.CLIENT_URL || process.env.FRONTEND_URL || 'http://localhost:3000'}/verify/${this.blockchain.blockchainId}`;
+    }
+  }
+  
+  return qrData;
 };
 
 // Static method để tìm thuốc theo QR code
 drugSchema.statics.findByQRCode = async function(qrData) {
   try {
-    const data = typeof qrData === 'string' ? JSON.parse(qrData) : qrData;
-    return await this.findOne({ drugId: data.drugId })
-      .populate('manufacturerId', 'fullName organizationInfo')
-      .populate('distribution.history.updatedBy', 'fullName role');
+    // Nếu là string, thử parse JSON
+    let data = qrData;
+    if (typeof qrData === 'string') {
+      // Bỏ qua các URL scheme không hợp lệ
+      if (qrData.startsWith('tel:') || qrData.startsWith('mailto:') || qrData.startsWith('sms:')) {
+        throw new Error('QR code không hợp lệ: Không phải là mã QR của hệ thống');
+      }
+      
+      // Thử parse JSON
+      try {
+        data = JSON.parse(qrData);
+      } catch (e) {
+        // Nếu không parse được JSON, có thể là raw text
+        // Nếu là blockchain ID (bắt đầu bằng 0x hoặc dài 66 ký tự)
+        if (qrData.startsWith('0x') || qrData.length === 66) {
+          // Tìm theo blockchain ID
+          return await this.findOne({ 'blockchain.blockchainId': qrData })
+            .populate('manufacturerId', 'fullName organizationInfo')
+            .populate('distribution.history.updatedBy', 'fullName role');
+        } else {
+          // Tìm theo drugId
+          return await this.findOne({ drugId: qrData })
+            .populate('manufacturerId', 'fullName organizationInfo')
+            .populate('distribution.history.updatedBy', 'fullName role');
+        }
+      }
+    }
+    
+    // Nếu là object, tìm theo drugId hoặc blockchainId
+    if (data.drugId) {
+      return await this.findOne({ drugId: data.drugId })
+        .populate('manufacturerId', 'fullName organizationInfo')
+        .populate('distribution.history.updatedBy', 'fullName role');
+    }
+    
+    if (data.blockchainId) {
+      return await this.findOne({ 'blockchain.blockchainId': data.blockchainId })
+        .populate('manufacturerId', 'fullName organizationInfo')
+        .populate('distribution.history.updatedBy', 'fullName role');
+    }
+    
+    // Không tìm thấy
+    return null;
   } catch (error) {
-    throw new Error('QR code không hợp lệ');
+    if (error.message.includes('QR code không hợp lệ')) {
+      throw error;
+    }
+    throw new Error('QR code không hợp lệ: ' + error.message);
   }
 };
 

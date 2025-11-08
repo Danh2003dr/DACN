@@ -16,8 +16,12 @@ const userSchema = new mongoose.Schema({
   // Thông tin cơ bản
   username: {
     type: String,
-    required: [true, 'Vui lòng nhập tên đăng nhập'],
+    required: function() {
+      // Username không bắt buộc nếu đăng nhập bằng Google (sẽ tự động tạo)
+      return !this.googleId;
+    },
     unique: true,
+    sparse: true, // Cho phép null nhưng unique khi có giá trị
     trim: true,
     minlength: [3, 'Tên đăng nhập phải có ít nhất 3 ký tự'],
     maxlength: [50, 'Tên đăng nhập không được quá 50 ký tự']
@@ -33,15 +37,34 @@ const userSchema = new mongoose.Schema({
   
   password: {
     type: String,
-    required: [true, 'Vui lòng nhập mật khẩu'],
+    required: function() {
+      // Password không bắt buộc nếu đăng nhập bằng OAuth
+      return !this.googleId;
+    },
     minlength: [6, 'Mật khẩu phải có ít nhất 6 ký tự'],
     select: false // Không trả về password khi query
+  },
+  
+  // Google OAuth
+  googleId: {
+    type: String,
+    unique: true,
+    sparse: true // Cho phép null nhưng unique khi có giá trị
+  },
+  
+  authProvider: {
+    type: String,
+    enum: ['local', 'google'],
+    default: 'local'
   },
   
   // Thông tin cá nhân
   fullName: {
     type: String,
-    required: [true, 'Vui lòng nhập họ và tên'],
+    required: function() {
+      // FullName không bắt buộc nếu đăng nhập bằng Google (sẽ lấy từ Google profile)
+      return !this.googleId;
+    },
     trim: true,
     maxlength: [100, 'Họ tên không được quá 100 ký tự']
   },
@@ -70,15 +93,18 @@ const userSchema = new mongoose.Schema({
   
   phone: {
     type: String,
-    required: [true, 'Vui lòng nhập số điện thoại'],
+    required: function() {
+      // Phone không bắt buộc nếu đăng nhập bằng OAuth
+      return !this.googleId;
+    },
     match: [/^[0-9]{10,11}$/, 'Số điện thoại không hợp lệ']
   },
   
   address: {
-    street: { type: String, required: true },
-    ward: { type: String, required: true },
-    district: { type: String, required: true },
-    city: { type: String, required: true }
+    street: { type: String, required: false },
+    ward: { type: String, required: false },
+    district: { type: String, required: false },
+    city: { type: String, required: false }
   },
   
   // Phân quyền và vai trò
@@ -93,6 +119,8 @@ const userSchema = new mongoose.Schema({
   organizationId: {
     type: String,
     required: function() {
+      // Không bắt buộc nếu đăng nhập bằng OAuth (sẽ được set sau)
+      if (this.googleId || this.authProvider === 'google') return false;
       return ['manufacturer', 'distributor', 'hospital'].includes(this.role);
     },
     unique: true,
@@ -102,6 +130,8 @@ const userSchema = new mongoose.Schema({
   patientId: {
     type: String,
     required: function() {
+      // Không bắt buộc nếu đăng nhập bằng OAuth (sẽ được set sau)
+      if (this.googleId || this.authProvider === 'google') return false;
       return this.role === 'patient';
     },
     unique: true,
@@ -133,10 +163,13 @@ const userSchema = new mongoose.Schema({
     type: Date
   },
   
-  // Bắt buộc đổi mật khẩu lần đầu
+  // Bắt buộc đổi mật khẩu lần đầu (không áp dụng cho OAuth)
   mustChangePassword: {
     type: Boolean,
-    default: true
+    default: function() {
+      // Không cần đổi mật khẩu nếu đăng nhập bằng Google
+      return !this.googleId;
+    }
   },
   
   // Thông tin bổ sung theo vai trò
@@ -184,11 +217,12 @@ userSchema.index({ email: 1 });
 userSchema.index({ role: 1 });
 userSchema.index({ organizationId: 1 });
 userSchema.index({ patientId: 1 });
+userSchema.index({ googleId: 1 });
 
 // Middleware trước khi save - mã hóa mật khẩu
 userSchema.pre('save', async function(next) {
-  // Chỉ mã hóa nếu mật khẩu được thay đổi
-  if (!this.isModified('password')) return next();
+  // Chỉ mã hóa nếu mật khẩu được thay đổi và có password (không phải OAuth user)
+  if (!this.isModified('password') || !this.password) return next();
   
   try {
     // Mã hóa mật khẩu với salt rounds = 12

@@ -1,18 +1,22 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { 
   QrCode, 
-  Camera, 
   AlertTriangle, 
   CheckCircle, 
   X, 
   RefreshCw,
-  Download,
   ExternalLink,
   Shield,
   Calendar,
   MapPin,
-  Package
+  Upload,
+  Video,
+  FileText,
+  AlertCircle,
+  Database,
+  Hash
 } from 'lucide-react';
+import { BrowserMultiFormatReader } from '@zxing/library';
 import { drugAPI } from '../utils/api';
 import { useAuth } from '../contexts/AuthContext';
 import toast from 'react-hot-toast';
@@ -21,12 +25,30 @@ const QRScanner = () => {
   const { user, hasRole } = useAuth();
   const [scanResult, setScanResult] = useState(null);
   const [drugInfo, setDrugInfo] = useState(null);
+  const [blockchainData, setBlockchainData] = useState(null);
+  const [blockchainInfo, setBlockchainInfo] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [showScanner, setShowScanner] = useState(true);
+  const [showScanner, setShowScanner] = useState(false);
   const [manualQR, setManualQR] = useState('');
   const [showManualInput, setShowManualInput] = useState(false);
   const [scanHistory, setScanHistory] = useState([]);
+  const [scanMode, setScanMode] = useState(null); // 'camera', 'upload', 'manual'
+  const [isScanning, setIsScanning] = useState(false);
+  const [alertModal, setAlertModal] = useState(null); // { type: 'recalled' | 'expired', data: {...} }
+  const videoRef = useRef(null);
+  const fileInputRef = useRef(null);
+  const codeReader = useRef(null);
+
+  // Initialize QR code reader
+  useEffect(() => {
+    codeReader.current = new BrowserMultiFormatReader();
+    return () => {
+      if (codeReader.current) {
+        codeReader.current.reset();
+      }
+    };
+  }, []);
 
   // Load scan history from localStorage
   useEffect(() => {
@@ -35,6 +57,16 @@ const QRScanner = () => {
       setScanHistory(JSON.parse(savedHistory));
     }
   }, []);
+
+  // Stop camera when component unmounts or mode changes
+  useEffect(() => {
+    return () => {
+      if (codeReader.current && scanMode === 'camera') {
+        codeReader.current.reset();
+        setIsScanning(false);
+      }
+    };
+  }, [scanMode]);
 
   // Save scan history to localStorage
   const saveToHistory = (scanData) => {
@@ -46,19 +78,118 @@ const QRScanner = () => {
     localStorage.setItem('qrScanHistory', JSON.stringify(newHistory));
   };
 
-  // Handle QR scan result (placeholder for future camera integration)
-  const handleScan = async (result) => {
-    if (result && result.text) {
-      setScanResult(result.text);
-      setShowScanner(false);
-      await processQRData(result.text);
+  // Start camera scanning
+  const startCameraScan = async () => {
+    try {
+      setScanMode('camera');
+      setShowScanner(true);
+      setError(null);
+      setIsScanning(true);
+
+      // Get available video input devices
+      const videoInputDevices = await codeReader.current.listVideoInputDevices();
+      
+      if (videoInputDevices.length === 0) {
+        throw new Error('Không tìm thấy camera. Vui lòng kiểm tra kết nối camera.');
+      }
+
+      // Use the first available camera (usually the default)
+      const selectedDeviceId = videoInputDevices[0].deviceId;
+
+      // Start scanning
+      const result = await codeReader.current.decodeFromVideoDevice(
+        selectedDeviceId,
+        videoRef.current,
+        (result, error) => {
+          if (result) {
+            handleScanResult(result.getText());
+          }
+          if (error && error.name !== 'NotFoundException') {
+            console.error('Scan error:', error);
+          }
+        }
+      );
+
+    } catch (error) {
+      console.error('Camera scan error:', error);
+      setIsScanning(false);
+      setError(error.message || 'Không thể truy cập camera. Vui lòng cho phép quyền truy cập camera.');
+      toast.error(error.message || 'Lỗi khi khởi động camera');
     }
   };
 
-  // Handle scan error (placeholder for future camera integration)
-  const handleError = (error) => {
-    console.error('QR Scanner Error:', error);
-    toast.error('Lỗi khi quét QR code');
+  // Stop camera scanning
+  const stopCameraScan = () => {
+    if (codeReader.current) {
+      codeReader.current.reset();
+    }
+    setIsScanning(false);
+    setScanMode(null);
+    setShowScanner(false);
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+  };
+
+  // Handle scan result
+  const handleScanResult = async (text) => {
+    if (text) {
+      stopCameraScan();
+      setScanResult(text);
+      await processQRData(text);
+    }
+  };
+
+  // Handle file upload
+  const handleFileUpload = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setLoading(true);
+      setError(null);
+      setScanMode('upload');
+
+      // Create image element
+      const img = new Image();
+      const reader = new FileReader();
+
+      reader.onload = async (e) => {
+        img.src = e.target.result;
+        img.onload = async () => {
+          try {
+            // Decode QR code from image
+            const result = await codeReader.current.decodeFromImage(img);
+            if (result) {
+              await handleScanResult(result.getText());
+            } else {
+              throw new Error('Không tìm thấy QR code trong ảnh');
+            }
+          } catch (error) {
+            console.error('Decode error:', error);
+            setError('Không thể đọc QR code từ ảnh. Vui lòng kiểm tra chất lượng ảnh.');
+            toast.error('Không thể đọc QR code từ ảnh');
+          } finally {
+            setLoading(false);
+            // Reset file input
+            if (fileInputRef.current) {
+              fileInputRef.current.value = '';
+            }
+          }
+        };
+      };
+
+      reader.onerror = () => {
+        setError('Lỗi khi đọc file ảnh');
+        setLoading(false);
+      };
+
+      reader.readAsDataURL(file);
+    } catch (error) {
+      console.error('Upload error:', error);
+      setError('Lỗi khi xử lý file ảnh');
+      setLoading(false);
+    }
   };
 
   // Process QR data
@@ -66,34 +197,99 @@ const QRScanner = () => {
     try {
       setLoading(true);
       setError(null);
+      setAlertModal(null);
+      setBlockchainData(null);
+      setBlockchainInfo(null);
       
-      const response = await drugAPI.scanQRCode({ qrData });
+      // Kiểm tra nếu là URL (có thể là verification URL)
+      if (typeof qrData === 'string') {
+        // Nếu là URL verification, extract blockchainId hoặc drugId
+        if (qrData.includes('/verify/')) {
+          const parts = qrData.split('/verify/');
+          if (parts.length > 1) {
+            qrData = parts[1].split('?')[0]; // Lấy phần sau /verify/ và bỏ query params
+          }
+        }
+        
+        // Bỏ qua các URL scheme không hợp lệ
+        if (qrData.startsWith('tel:') || qrData.startsWith('mailto:') || qrData.startsWith('sms:')) {
+          setError('QR code không hợp lệ: Không phải là mã QR của hệ thống');
+          toast.error('QR code không hợp lệ. Vui lòng quét mã QR từ nhãn thuốc.');
+          setLoading(false);
+          return;
+        }
+      }
       
+      // Gửi QR data lên server (có thể là string hoặc object)
+      // Backend sẽ tự động xử lý nhiều định dạng
+      const response = await drugAPI.scanQRCode(qrData);
+      
+      // Response thành công
       if (response.success) {
-        setDrugInfo(response.data);
+        const data = response.data;
+        const drugData = data.drug || data;
+        
+        setDrugInfo(drugData);
+        setBlockchainData(data.blockchain || null);
+        setBlockchainInfo(data.blockchainInfo || drugData.blockchain || null);
+        
+        // Kiểm tra warning (thuốc gần hết hạn)
+        if (response.warning) {
+          toast(response.warning, { icon: '⚠️' });
+        } else {
+          toast.success(response.message || 'Quét QR code thành công!');
+        }
         
         // Save to history
         saveToHistory({
-          qrData,
-          drugInfo: response.data,
+          qrData: typeof qrData === 'string' ? qrData : JSON.stringify(qrData),
+          drugInfo: drugData,
           success: true
         });
-        
-        toast.success('Quét QR code thành công!');
       } else {
-        setError(response.message);
-        
-        // Save failed scan to history
-        saveToHistory({
-          qrData,
-          error: response.message,
-          success: false
-        });
+        setError(response.message || 'Không tìm thấy thông tin thuốc');
+        toast.error(response.message || 'Không tìm thấy thông tin thuốc');
       }
     } catch (error) {
       console.error('Process QR Error:', error);
-      setError('Lỗi khi xử lý dữ liệu QR code');
-      toast.error('Lỗi khi xử lý dữ liệu QR code');
+      
+      // Xử lý lỗi từ API (có thể là lỗi 400 với alertType cho thuốc bị thu hồi/hết hạn)
+      const errorResponse = error.response?.data;
+      
+      if (errorResponse?.alertType) {
+        // Thuốc bị thu hồi hoặc hết hạn - vẫn hiển thị thông tin nhưng có cảnh báo
+        const data = errorResponse.data;
+        const drugData = data.drug || data;
+        
+        setDrugInfo(drugData);
+        setBlockchainData(data.blockchain || null);
+        setBlockchainInfo(data.blockchainInfo || drugData.blockchain || null);
+        setAlertModal({
+          type: errorResponse.alertType,
+          data: data,
+          message: errorResponse.message
+        });
+        
+        // Save to history
+        saveToHistory({
+          qrData: typeof qrData === 'string' ? qrData : JSON.stringify(qrData),
+          drugInfo: drugData,
+          success: true,
+          alertType: errorResponse.alertType
+        });
+      } else {
+        const errorMessage = errorResponse?.message || error.message || 'Lỗi khi xử lý dữ liệu QR code';
+        setError(errorMessage);
+        
+        // Save failed scan to history
+        saveToHistory({
+          qrData: typeof qrData === 'string' ? qrData : JSON.stringify(qrData),
+          error: errorMessage,
+          success: false
+        });
+        
+        toast.error(errorMessage);
+      }
     } finally {
       setLoading(false);
     }
@@ -111,10 +307,17 @@ const QRScanner = () => {
 
   // Reset scanner
   const resetScanner = () => {
+    stopCameraScan();
     setScanResult(null);
     setDrugInfo(null);
+    setBlockchainData(null);
+    setBlockchainInfo(null);
     setError(null);
-    setShowScanner(true);
+    setShowScanner(false);
+    setScanMode(null);
+    setManualQR('');
+    setShowManualInput(false);
+    setAlertModal(null);
   };
 
   // Clear history
@@ -162,75 +365,160 @@ const QRScanner = () => {
           <p className="text-gray-600">Quét mã QR để tra cứu thông tin thuốc</p>
         </div>
         
-        <div className="flex space-x-2">
+        {drugInfo && (
           <button
-            onClick={() => setShowManualInput(!showManualInput)}
-            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-2"
+            onClick={resetScanner}
+            className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 flex items-center space-x-2"
           >
-            <Package className="h-5 w-5" />
-            <span>Nhập thủ công</span>
+            <RefreshCw className="h-5 w-5" />
+            <span>Quét mã khác</span>
           </button>
-          
-          {!showScanner && (
-            <button
-              onClick={resetScanner}
-              className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 flex items-center space-x-2"
-            >
-              <RefreshCw className="h-5 w-5" />
-              <span>Quét lại</span>
-            </button>
-          )}
-        </div>
+        )}
       </div>
+
+      {/* Scan Mode Selection */}
+      {!drugInfo && !showScanner && !showManualInput && (
+        <div className="bg-white rounded-lg shadow p-6">
+          <h3 className="text-lg font-semibold mb-4">Chọn phương thức quét QR</h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Camera Scan */}
+            <button
+              onClick={startCameraScan}
+              className="p-6 border-2 border-gray-200 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-all text-center group"
+            >
+              <Video className="h-12 w-12 text-gray-400 group-hover:text-blue-600 mx-auto mb-3" />
+              <h4 className="font-semibold text-gray-900 mb-2">Quét bằng Camera</h4>
+              <p className="text-sm text-gray-600">Sử dụng camera để quét QR code trực tiếp</p>
+            </button>
+
+            {/* Upload Image */}
+            <label className="p-6 border-2 border-gray-200 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-all text-center group cursor-pointer">
+              <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleFileUpload}
+                accept="image/*"
+                className="hidden"
+              />
+              <Upload className="h-12 w-12 text-gray-400 group-hover:text-blue-600 mx-auto mb-3" />
+              <h4 className="font-semibold text-gray-900 mb-2">Tải ảnh lên</h4>
+              <p className="text-sm text-gray-600">Tải ảnh chứa QR code để quét</p>
+            </label>
+
+            {/* Manual Input */}
+            <button
+              onClick={() => {
+                setShowManualInput(true);
+                setScanMode('manual');
+              }}
+              className="p-6 border-2 border-gray-200 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-all text-center group"
+            >
+              <FileText className="h-12 w-12 text-gray-400 group-hover:text-blue-600 mx-auto mb-3" />
+              <h4 className="font-semibold text-gray-900 mb-2">Nhập thủ công</h4>
+              <p className="text-sm text-gray-600">Nhập mã QR code bằng tay</p>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Manual QR Input */}
       {showManualInput && (
         <div className="bg-white rounded-lg shadow p-6">
-          <h3 className="text-lg font-semibold mb-4">Nhập mã QR thủ công</h3>
-          <form onSubmit={handleManualSubmit} className="flex space-x-2">
-            <input
-              type="text"
-              value={manualQR}
-              onChange={(e) => setManualQR(e.target.value)}
-              placeholder="Nhập dữ liệu QR code..."
-              className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-            />
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-lg font-semibold">Nhập mã QR thủ công</h3>
             <button
-              type="submit"
-              disabled={!manualQR.trim() || loading}
-              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50"
+              onClick={() => {
+                setShowManualInput(false);
+                setManualQR('');
+                setScanMode(null);
+              }}
+              className="text-gray-500 hover:text-gray-700"
             >
-              {loading ? 'Đang xử lý...' : 'Tra cứu'}
+              <X className="h-6 w-6" />
             </button>
+          </div>
+          <form onSubmit={handleManualSubmit} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Nhập mã QR code (blockchainId, drugId, hoặc batchNumber)
+              </label>
+              <input
+                type="text"
+                value={manualQR}
+                onChange={(e) => setManualQR(e.target.value)}
+                placeholder="Ví dụ: DRUG_001, BATCH001, hoặc blockchainId..."
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              />
+            </div>
+            <div className="flex space-x-2">
+              <button
+                type="submit"
+                disabled={!manualQR.trim() || loading}
+                className="flex-1 bg-blue-600 text-white px-4 py-3 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
+              >
+                {loading ? (
+                  <>
+                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                    <span>Đang xử lý...</span>
+                  </>
+                ) : (
+                  <>
+                    <QrCode className="h-5 w-5" />
+                    <span>Tra cứu</span>
+                  </>
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowManualInput(false);
+                  setManualQR('');
+                  setScanMode(null);
+                }}
+                className="px-4 py-3 border border-gray-300 rounded-lg hover:bg-gray-50"
+              >
+                Hủy
+              </button>
+            </div>
           </form>
         </div>
       )}
 
-      {/* QR Scanner */}
-      {showScanner && (
+      {/* Camera Scanner */}
+      {showScanner && scanMode === 'camera' && (
         <div className="bg-white rounded-lg shadow">
           <div className="p-6">
-            <h3 className="text-lg font-semibold mb-4">Quét mã QR</h3>
-            
-            <div className="text-center">
-              <div className="bg-gray-100 rounded-lg p-8 mb-4">
-                <Camera className="h-16 w-16 text-gray-400 mx-auto mb-4" />
-                <p className="text-gray-600 mb-4">
-                  Camera quét QR sẽ được tích hợp trong phiên bản mobile
-                </p>
-                <p className="text-sm text-gray-500">
-                  Hiện tại vui lòng sử dụng chức năng "Nhập thủ công" bên dưới
-                </p>
-              </div>
-              
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold">Quét bằng Camera</h3>
               <button
-                onClick={() => setShowManualInput(true)}
-                className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 flex items-center space-x-2 mx-auto"
+                onClick={stopCameraScan}
+                className="text-gray-500 hover:text-gray-700"
               >
-                <QrCode className="h-5 w-5" />
-                <span>Nhập mã QR thủ công</span>
+                <X className="h-6 w-6" />
               </button>
             </div>
+            
+            <div className="relative">
+              <video
+                ref={videoRef}
+                className="w-full h-auto rounded-lg bg-black"
+                style={{ maxHeight: '500px' }}
+              />
+              {isScanning && (
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                  <div className="border-4 border-blue-500 rounded-lg" style={{ width: '250px', height: '250px' }}>
+                    <div className="absolute top-0 left-0 w-8 h-8 border-t-4 border-l-4 border-blue-500"></div>
+                    <div className="absolute top-0 right-0 w-8 h-8 border-t-4 border-r-4 border-blue-500"></div>
+                    <div className="absolute bottom-0 left-0 w-8 h-8 border-b-4 border-l-4 border-blue-500"></div>
+                    <div className="absolute bottom-0 right-0 w-8 h-8 border-b-4 border-r-4 border-blue-500"></div>
+                  </div>
+                </div>
+              )}
+            </div>
+            
+            <p className="text-sm text-gray-600 mt-4 text-center">
+              Đưa QR code vào khung và đợi hệ thống tự động quét
+            </p>
           </div>
         </div>
       )}
@@ -347,6 +635,57 @@ const QRScanner = () => {
               </div>
             </div>
 
+            {/* Blockchain Information */}
+            {(blockchainInfo || blockchainData) && (
+              <div className="mt-6">
+                <h4 className="font-semibold text-gray-900 border-b pb-2 mb-4 flex items-center space-x-2">
+                  <Database className="h-5 w-5 text-blue-600" />
+                  <span>Thông tin Blockchain</span>
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-blue-50 rounded-lg">
+                  {blockchainInfo?.blockchainId && (
+                    <div>
+                      <label className="text-sm font-medium text-gray-500 flex items-center space-x-1">
+                        <Hash className="h-3 w-3" />
+                        <span>Blockchain ID</span>
+                      </label>
+                      <p className="text-gray-900 font-mono text-sm break-all">{blockchainInfo.blockchainId}</p>
+                    </div>
+                  )}
+                  {blockchainInfo?.isOnBlockchain !== undefined && (
+                    <div>
+                      <label className="text-sm font-medium text-gray-500">Trạng thái</label>
+                      <p className={`font-medium ${blockchainInfo.isOnBlockchain ? 'text-green-600' : 'text-gray-600'}`}>
+                        {blockchainInfo.isOnBlockchain ? 'Đã lưu trên blockchain' : 'Chưa lưu trên blockchain'}
+                      </p>
+                    </div>
+                  )}
+                  {blockchainInfo?.transactionHash && (
+                    <div>
+                      <label className="text-sm font-medium text-gray-500">Transaction Hash</label>
+                      <p className="text-gray-900 font-mono text-sm break-all">{blockchainInfo.transactionHash}</p>
+                    </div>
+                  )}
+                  {blockchainInfo?.blockNumber && (
+                    <div>
+                      <label className="text-sm font-medium text-gray-500">Block Number</label>
+                      <p className="text-gray-900 font-mono">{blockchainInfo.blockNumber}</p>
+                    </div>
+                  )}
+                  {blockchainData && (
+                    <div className="md:col-span-2">
+                      <label className="text-sm font-medium text-gray-500">Dữ liệu từ Blockchain</label>
+                      <div className="mt-2 p-3 bg-white rounded border border-blue-200">
+                        <pre className="text-xs text-gray-700 overflow-auto">
+                          {JSON.stringify(blockchainData, null, 2)}
+                        </pre>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* Distribution History */}
             {drugInfo.distribution?.history && drugInfo.distribution.history.length > 0 && (
               <div className="mt-6">
@@ -371,13 +710,15 @@ const QRScanner = () => {
 
             {/* Actions */}
             <div className="mt-6 flex space-x-3">
-              <button
-                onClick={() => window.open(`/verify/${drugInfo.blockchainId}`, '_blank')}
-                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-2"
-              >
-                <ExternalLink className="h-4 w-4" />
-                <span>Xem trên blockchain</span>
-              </button>
+              {(blockchainInfo?.blockchainId || drugInfo.blockchain?.blockchainId) && (
+                <button
+                  onClick={() => window.open(`/verify/${blockchainInfo?.blockchainId || drugInfo.blockchain?.blockchainId}`, '_blank')}
+                  className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-2"
+                >
+                  <ExternalLink className="h-4 w-4" />
+                  <span>Xem trên blockchain</span>
+                </button>
+              )}
               
               <button
                 onClick={resetScanner}
@@ -386,6 +727,97 @@ const QRScanner = () => {
                 <RefreshCw className="h-4 w-4" />
                 <span>Quét mã khác</span>
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Alert Modal - Cảnh báo thuốc bị thu hồi hoặc hết hạn */}
+      {alertModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className={`p-6 ${alertModal.type === 'recalled' ? 'bg-red-50 border-b-4 border-red-500' : 'bg-orange-50 border-b-4 border-orange-500'}`}>
+              <div className="flex items-start space-x-4">
+                <div className={`flex-shrink-0 ${alertModal.type === 'recalled' ? 'text-red-600' : 'text-orange-600'}`}>
+                  <AlertCircle className="h-12 w-12" />
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-2xl font-bold text-gray-900 mb-2">
+                    {alertModal.type === 'recalled' ? '⚠️ CẢNH BÁO: THUỐC BỊ THU HỒI' : '⚠️ CẢNH BÁO: THUỐC ĐÃ HẾT HẠN'}
+                  </h3>
+                  <p className="text-lg text-gray-700 font-medium">{alertModal.message}</p>
+                </div>
+                <button
+                  onClick={() => setAlertModal(null)}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <X className="h-6 w-6" />
+                </button>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {alertModal.type === 'recalled' && alertModal.data.recallReason && (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                  <h4 className="font-semibold text-red-900 mb-2">Lý do thu hồi:</h4>
+                  <p className="text-red-800">{alertModal.data.recallReason}</p>
+                  {alertModal.data.recallDate && (
+                    <p className="text-sm text-red-700 mt-2">
+                      Ngày thu hồi: {formatDate(alertModal.data.recallDate)}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {alertModal.type === 'expired' && (
+                <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
+                  <h4 className="font-semibold text-orange-900 mb-2">Thông tin hết hạn:</h4>
+                  <p className="text-orange-800">
+                    Hạn sử dụng: {alertModal.data.expiryDate ? formatDate(alertModal.data.expiryDate) : 'N/A'}
+                  </p>
+                  {alertModal.data.daysExpired && (
+                    <p className="text-sm text-orange-700 mt-2">
+                      Đã hết hạn {alertModal.data.daysExpired} ngày
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {alertModal.data.drug && (
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <h4 className="font-semibold text-gray-900 mb-2">Thông tin thuốc:</h4>
+                  <div className="grid grid-cols-2 gap-2 text-sm">
+                    <div>
+                      <span className="text-gray-600">Tên thuốc:</span>
+                      <p className="font-medium text-gray-900">{alertModal.data.drug.name}</p>
+                    </div>
+                    <div>
+                      <span className="text-gray-600">Mã lô:</span>
+                      <p className="font-medium text-gray-900 font-mono">{alertModal.data.drug.batchNumber}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex space-x-3 pt-4 border-t">
+                <button
+                  onClick={() => setAlertModal(null)}
+                  className="flex-1 bg-gray-600 text-white px-4 py-3 rounded-lg hover:bg-gray-700 font-medium"
+                >
+                  Tôi đã hiểu
+                </button>
+                {alertModal.type === 'recalled' && (
+                  <button
+                    onClick={() => {
+                      window.open('https://www.moh.gov.vn/', '_blank');
+                      setAlertModal(null);
+                    }}
+                    className="flex-1 bg-red-600 text-white px-4 py-3 rounded-lg hover:bg-red-700 font-medium"
+                  >
+                    Báo cáo Bộ Y tế
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>

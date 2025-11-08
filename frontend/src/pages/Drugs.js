@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import {
   Plus,
@@ -11,10 +12,12 @@ import {
   XCircle,
   RefreshCw
 } from 'lucide-react';
+import { QRCode } from 'react-qr-code';
 import { useAuth } from '../contexts/AuthContext';
 import api, { drugAPI } from '../utils/api';
 
 const Drugs = () => {
+  const navigate = useNavigate();
   const { user } = useAuth();
   const [drugs, setDrugs] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -154,9 +157,114 @@ const Drugs = () => {
   };
 
   // Open QR modal
-  const openQRModal = (drug) => {
+  const openQRModal = async (drug) => {
     setSelectedDrug(drug);
     setShowQRModal(true);
+    
+    // Nếu chưa có QR code data, tự động generate
+    if (!drug.qrCode?.data && !drug.qrCode?.imageUrl) {
+      try {
+        setLoading(true);
+        const response = await drugAPI.generateQRCode(drug._id);
+        if (response.success) {
+          // Cập nhật drug với QR code mới từ response
+          let updatedDrug;
+          if (response.data.drug) {
+            updatedDrug = response.data.drug;
+          } else {
+            // Nếu không có drug trong response, cập nhật qrCode vào drug hiện tại
+            updatedDrug = {
+              ...drug,
+              qrCode: {
+                ...drug.qrCode,
+                data: response.data.qrData ? JSON.stringify(response.data.qrData) : drug.qrCode?.data,
+                imageUrl: response.data.qrCode || drug.qrCode?.imageUrl
+              }
+            };
+          }
+          setSelectedDrug(updatedDrug);
+          // Cập nhật trong danh sách
+          setDrugs(drugs.map(d => d._id === drug._id ? updatedDrug : d));
+        }
+      } catch (error) {
+        console.error('Error generating QR code:', error);
+        setError('Không thể tạo QR code: ' + (error.response?.data?.message || error.message));
+      } finally {
+        setLoading(false);
+      }
+    }
+  };
+
+  // State để lưu server URL
+  const [serverUrl, setServerUrl] = useState(null);
+
+  // Load server URL từ backend
+  useEffect(() => {
+    const loadServerUrl = async () => {
+      try {
+        const response = await drugAPI.getServerUrl();
+        if (response.success) {
+          setServerUrl(response.data.frontendUrl || response.data.serverUrl);
+        }
+      } catch (error) {
+        console.error('Error loading server URL:', error);
+        // Fallback về window.location.origin nếu API lỗi
+        setServerUrl(window.location.origin);
+      }
+    };
+    loadServerUrl();
+  }, []);
+
+  // Lấy QR data để hiển thị
+  const getQRData = (drug) => {
+    if (!drug) return null;
+    
+    // Sử dụng serverUrl từ backend hoặc fallback về window.location.origin
+    const baseUrl = serverUrl || window.location.origin;
+    
+    // Ưu tiên parse từ qrCode.data
+    if (drug.qrCode?.data) {
+      try {
+        const parsed = typeof drug.qrCode.data === 'string' 
+          ? JSON.parse(drug.qrCode.data)
+          : drug.qrCode.data;
+        
+        // Đảm bảo có blockchainId nếu drug có blockchain
+        if (drug.blockchain?.blockchainId && !parsed.blockchainId) {
+          parsed.blockchainId = drug.blockchain.blockchainId;
+        }
+        
+        // Đảm bảo có verificationUrl với server URL đúng
+        if (!parsed.verificationUrl && drug.blockchain?.blockchainId) {
+          parsed.verificationUrl = `${baseUrl}/verify/${drug.blockchain.blockchainId}`;
+        } else if (parsed.verificationUrl && parsed.verificationUrl.includes('localhost')) {
+          // Nếu URL cũ có localhost, thay thế bằng server URL mới
+          parsed.verificationUrl = parsed.verificationUrl.replace(/http:\/\/localhost:\d+/, baseUrl);
+        }
+        
+        return parsed;
+      } catch (e) {
+        console.error('Error parsing QR data:', e);
+      }
+    }
+    
+    // Nếu chưa có, tạo QR data từ thông tin drug
+    const qrData = {
+      drugId: drug.drugId,
+      name: drug.name,
+      batchNumber: drug.batchNumber,
+      manufacturer: drug.manufacturerId?._id || drug.manufacturerId,
+      productionDate: drug.productionDate,
+      expiryDate: drug.expiryDate,
+      blockchainId: drug.blockchain?.blockchainId || null,
+      verificationUrl: drug.qrCode?.verificationUrl || 
+        (drug.blockchain?.blockchainId 
+          ? `${baseUrl}/verify/${drug.blockchain.blockchainId}`
+          : null),
+      timestamp: Date.now()
+    };
+    
+    return qrData;
   };
 
   // Open blockchain modal
@@ -409,14 +517,18 @@ const Drugs = () => {
                               </svg>
                             </button>
                           )}
-                          <button
-                            onClick={() => openEditModal(drug)}
-                            className="text-green-600 hover:text-green-900"
-                            title="Chỉnh sửa"
-                          >
-                            <Edit className="w-5 h-5" />
-                          </button>
-                          {!drug.isRecalled && (
+                          {/* Chỉ admin và manufacturer mới có thể chỉnh sửa */}
+                          {(user?.role === 'admin' || user?.role === 'manufacturer') && (
+                            <button
+                              onClick={() => openEditModal(drug)}
+                              className="text-green-600 hover:text-green-900"
+                              title="Chỉnh sửa"
+                            >
+                              <Edit className="w-5 h-5" />
+                            </button>
+                          )}
+                          {/* Chỉ admin và manufacturer mới có thể thu hồi */}
+                          {!drug.isRecalled && (user?.role === 'admin' || user?.role === 'manufacturer') && (
                             <button
                               onClick={() => handleRecall(drug._id)}
                               className="text-orange-600 hover:text-orange-900"
@@ -665,21 +777,85 @@ const Drugs = () => {
                   <p className="text-sm text-gray-600">Mã lô: {selectedDrug.drugId}</p>
                 </div>
                 
-                {selectedDrug.qrCode?.imageUrl ? (
-                  <div className="bg-white p-4 rounded-lg border">
-                    <img
-                      src={selectedDrug.qrCode.imageUrl}
-                      alt="QR Code"
-                      className="mx-auto"
-                      style={{ maxWidth: '200px' }}
-                    />
-                  </div>
-                ) : (
+                {loading ? (
                   <div className="bg-gray-100 p-8 rounded-lg">
-                    <QrCode className="w-16 h-16 text-gray-400 mx-auto" />
-                    <p className="text-gray-500 mt-2">QR Code đang được tạo...</p>
+                    <RefreshCw className="w-16 h-16 text-gray-400 mx-auto animate-spin" />
+                    <p className="text-gray-500 mt-2">Đang tạo QR Code...</p>
                   </div>
-                )}
+                ) : (() => {
+                  // Luôn tạo QR data từ drug info, kể cả khi chưa có qrCode.data từ server
+                  const qrData = getQRData(selectedDrug);
+                  
+                  if (qrData) {
+                    const qrDataString = JSON.stringify(qrData);
+                    
+                    return (
+                      <div className="bg-white p-4 rounded-lg border flex flex-col items-center">
+                        <QRCode
+                          value={qrDataString}
+                          size={250}
+                          level="H"
+                          fgColor="#000000"
+                          bgColor="#ffffff"
+                        />
+                        {selectedDrug.blockchain?.blockchainId && (
+                          <div className="mt-4 text-xs text-gray-600 bg-blue-50 p-2 rounded max-w-full">
+                            <p className="font-medium">Blockchain ID:</p>
+                            <p className="font-mono text-xs break-all">
+                              {selectedDrug.blockchain.blockchainId}
+                            </p>
+                          </div>
+                        )}
+                        {!selectedDrug.qrCode?.data && (
+                          <div className="mt-2">
+                            <button
+                              onClick={async () => {
+                                try {
+                                  setLoading(true);
+                                  const response = await drugAPI.generateQRCode(selectedDrug._id);
+                                  if (response.success) {
+                                    let updatedDrug;
+                                    if (response.data.drug) {
+                                      updatedDrug = response.data.drug;
+                                    } else {
+                                      updatedDrug = {
+                                        ...selectedDrug,
+                                        qrCode: {
+                                          ...selectedDrug.qrCode,
+                                          data: response.data.qrData ? JSON.stringify(response.data.qrData) : selectedDrug.qrCode?.data,
+                                          imageUrl: response.data.qrCode || selectedDrug.qrCode?.imageUrl
+                                        }
+                                      };
+                                    }
+                                    setSelectedDrug(updatedDrug);
+                                    loadDrugs(); // Refresh danh sách
+                                  } else {
+                                    setError('Không thể tạo QR code');
+                                  }
+                                } catch (error) {
+                                  setError('Không thể tạo QR code: ' + (error.response?.data?.message || error.message));
+                                } finally {
+                                  setLoading(false);
+                                }
+                              }}
+                              className="mt-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm"
+                            >
+                              Lưu QR Code vào hệ thống
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  } else {
+                    return (
+                      <div className="bg-gray-100 p-8 rounded-lg">
+                        <QrCode className="w-16 h-16 text-gray-400 mx-auto" />
+                        <p className="text-gray-500 mt-2">Không thể tạo QR Code</p>
+                        <p className="text-gray-400 text-xs mt-1">Thiếu thông tin cần thiết</p>
+                      </div>
+                    );
+                  }
+                })()}
                 
                 <div className="mt-4 text-sm text-gray-600">
                   <p>Quét mã QR để xem thông tin chi tiết</p>
@@ -802,7 +978,7 @@ const Drugs = () => {
                       </button>
                       <button
                         onClick={() => {
-                          window.open(`/verify/${selectedDrug.blockchain.blockchainId}`, '_blank');
+                          navigate(`/verify/${selectedDrug.blockchain.blockchainId}`);
                         }}
                         className="flex-1 bg-green-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-green-700"
                       >

@@ -8,13 +8,13 @@ const getAllUsers = async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
-    const role = req.query.role;
-    const search = req.query.search;
+    const role = req.query.role?.trim();
+    const search = req.query.search?.trim();
     
     // Tạo filter
     const filter = {};
-    if (role) filter.role = role;
-    if (search) {
+    if (role && role !== '') filter.role = role;
+    if (search && search !== '') {
       filter.$or = [
         { fullName: { $regex: search, $options: 'i' } },
         { username: { $regex: search, $options: 'i' } },

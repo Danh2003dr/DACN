@@ -1,0 +1,33 @@
+{
+  "generatedAt": "2025-10-24T07:02:59.587Z",
+  "dailyStats": [
+    {
+      "date": "2025-10-05",
+      "totalCreated": 2,
+      "totalSteps": 6,
+      "totalQualityChecks": 4,
+      "statusDistribution": {
+        "active": 1,
+        "recalled": 1
+      }
+    }
+  ],
+  "monthlyStats": [
+    {
+      "month": "2025-10",
+      "totalCreated": 2,
+      "totalSteps": 6,
+      "totalQualityChecks": 4,
+      "statusDistribution": {
+        "active": 1,
+        "recalled": 1
+      }
+    }
+  ],
+  "summary": {
+    "totalDays": 1,
+    "totalMonths": 1,
+    "averageDailyCreated": 2,
+    "averageMonthlyCreated": 2
+  }
+}

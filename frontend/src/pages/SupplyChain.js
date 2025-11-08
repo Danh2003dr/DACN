@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useForm } from 'react-hook-form';
+import { QRCode } from 'react-qr-code';
 import {
   Package,
   Truck,
@@ -21,7 +22,8 @@ import {
   Sun,
   FileText,
   Shield,
-  Bell
+  Bell,
+  X
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { supplyChainAPI } from '../utils/api';
@@ -35,6 +37,8 @@ const SupplyChain = () => {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showStepModal, setShowStepModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
+  const [showQRModal, setShowQRModal] = useState(false);
+  const [selectedQRData, setSelectedQRData] = useState(null);
   const [pagination, setPagination] = useState({
     current: 1,
     pages: 1,
@@ -364,7 +368,15 @@ const SupplyChain = () => {
                           </button>
                           
                           <button
-                            onClick={() => window.open(supplyChain.qrCode?.verificationUrl, '_blank')}
+                            onClick={() => {
+                              setSelectedQRData({
+                                batchNumber: supplyChain.drugBatchNumber,
+                                blockchainId: supplyChain.qrCode?.blockchainId,
+                                verificationUrl: supplyChain.qrCode?.verificationUrl,
+                                drugName: supplyChain.drugId?.name
+                              });
+                              setShowQRModal(true);
+                            }}
                             className="text-green-600 hover:text-green-900"
                             title="Xem QR Code"
                           >
@@ -438,6 +450,17 @@ const SupplyChain = () => {
           onAddStep={() => {
             setShowDetailModal(false);
             setShowStepModal(true);
+          }}
+        />
+      )}
+
+      {/* QR Code Modal */}
+      {showQRModal && selectedQRData && (
+        <QRCodeModal
+          qrData={selectedQRData}
+          onClose={() => {
+            setShowQRModal(false);
+            setSelectedQRData(null);
           }}
         />
       )}
@@ -712,6 +735,191 @@ const SupplyChainDetailModal = ({ supplyChain, onClose, onAddStep }) => {
           >
             Đóng
           </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// QR Code Modal Component
+const QRCodeModal = ({ qrData, onClose }) => {
+  // Tạo verification URL nếu chưa có
+  const getVerificationUrl = () => {
+    if (qrData.verificationUrl) {
+      // Nếu có verificationUrl nhưng là localhost, thay bằng hostname hiện tại
+      if (qrData.verificationUrl.includes('localhost')) {
+        const currentHost = window.location.origin;
+        const urlPath = qrData.verificationUrl.split('/verify/')[1];
+        return `${currentHost}/verify/${urlPath || qrData.blockchainId || qrData.batchNumber}`;
+      }
+      return qrData.verificationUrl;
+    }
+    
+    // Tạo verification URL từ blockchainId hoặc batchNumber
+    const currentHost = window.location.origin;
+    const id = qrData.blockchainId || qrData.batchNumber;
+    return `${currentHost}/verify/${id}`;
+  };
+  
+  const verificationUrl = getVerificationUrl();
+  
+  // Tạo QR code data - ưu tiên verificationUrl để có thể quét và mở trực tiếp
+  const qrValue = verificationUrl;
+
+  // Nếu không có dữ liệu để tạo QR code
+  if (!qrValue) {
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-lg font-semibold">QR Code</h3>
+            <button
+              onClick={onClose}
+              className="text-gray-500 hover:text-gray-700"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+          <div className="text-center py-8">
+            <AlertTriangle className="h-12 w-12 text-yellow-500 mx-auto mb-4" />
+            <p className="text-gray-600">Không có dữ liệu QR code cho lô thuốc này</p>
+            <button
+              onClick={onClose}
+              className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            >
+              Đóng
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const handleDownload = () => {
+    try {
+      // Tìm SVG element trong container
+      const container = document.getElementById('qrcode-container');
+      if (!container) return;
+
+      const svg = container.querySelector('svg');
+      if (!svg) return;
+
+      // Serialize SVG
+      const svgData = new XMLSerializer().serializeToString(svg);
+      const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
+      const url = URL.createObjectURL(svgBlob);
+
+      // Tạo canvas để convert sang PNG
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      const img = new Image();
+
+      img.onload = () => {
+        canvas.width = img.width;
+        canvas.height = img.height;
+        ctx.drawImage(img, 0, 0);
+        
+        // Download
+        canvas.toBlob((blob) => {
+          const downloadLink = document.createElement('a');
+          downloadLink.download = `QR_${qrData.batchNumber || 'code'}.png`;
+          downloadLink.href = URL.createObjectURL(blob);
+          downloadLink.click();
+          URL.revokeObjectURL(downloadLink.href);
+        });
+        
+        URL.revokeObjectURL(url);
+      };
+
+      img.src = url;
+    } catch (error) {
+      console.error('Error downloading QR code:', error);
+      toast.error('Không thể tải QR code');
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-lg font-semibold">QR Code</h3>
+          <button
+            onClick={onClose}
+            className="text-gray-500 hover:text-gray-700"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+        
+        <div className="space-y-4">
+          {/* Thông tin lô thuốc */}
+          {qrData.drugName && (
+            <div>
+              <p className="text-sm text-gray-600">Tên thuốc:</p>
+              <p className="font-medium text-gray-900">{qrData.drugName}</p>
+            </div>
+          )}
+          
+          {qrData.batchNumber && (
+            <div>
+              <p className="text-sm text-gray-600">Số lô:</p>
+              <p className="font-medium text-gray-900">{qrData.batchNumber}</p>
+            </div>
+          )}
+
+          {qrData.blockchainId && (
+            <div>
+              <p className="text-sm text-gray-600">Blockchain ID:</p>
+              <p className="font-medium text-gray-900 text-xs break-all">{qrData.blockchainId}</p>
+            </div>
+          )}
+          
+          <div>
+            <p className="text-sm text-gray-600">Verification URL:</p>
+            <p className="font-medium text-gray-900 text-xs break-all">{verificationUrl}</p>
+          </div>
+
+          {/* QR Code */}
+          <div className="flex justify-center p-4 bg-gray-50 rounded-lg">
+            <div id="qrcode-container" className="bg-white p-4 rounded-lg">
+              <QRCode
+                id="qrcode-svg"
+                value={qrValue}
+                size={256}
+                level="H"
+                fgColor="#000000"
+                bgColor="#ffffff"
+              />
+            </div>
+          </div>
+
+          {/* Actions */}
+          <div className="flex justify-center space-x-3">
+            <button
+              onClick={handleDownload}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            >
+              <Download className="h-4 w-4" />
+              <span>Tải xuống</span>
+            </button>
+            
+            {qrData.verificationUrl && (
+              <button
+                onClick={() => window.open(qrData.verificationUrl, '_blank')}
+                className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+              >
+                <QrCode className="h-4 w-4" />
+                <span>Xác minh</span>
+              </button>
+            )}
+            
+            <button
+              onClick={onClose}
+              className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
+            >
+              Đóng
+            </button>
+          </div>
         </div>
       </div>
     </div>

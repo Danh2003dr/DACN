@@ -74,13 +74,13 @@ npm start
 
 ## 📱 **TÀI KHOẢN DEMO:**
 
-| Vai trò | Username | Password | Quyền hạn |
-|---------|----------|----------|-----------|
-| **Admin** | admin | default123 | Quản lý toàn hệ thống |
-| **Manufacturer** | manufacturer1 | default123 | Quản lý lô thuốc |
-| **Distributor** | distributor1 | default123 | Vận chuyển thuốc |
-| **Hospital** | hospital1 | default123 | Quản lý kho thuốc |
-| **Patient** | patient1 | default123 | Tra cứu thuốc |
+| Vai trò            | Username        | Password     | Quyền hạn             |
+|---------           |----------       |----------    |-----------            |
+| **Admin**          | admin           | default123   | Quản lý toàn hệ thống |
+| **Manufacturer**   | manufacturer1   | default123   | Quản lý lô thuốc      |
+| **Distributor**    | distributor1    | default123   | Vận chuyển thuốc      |
+| **Hospital**       | hospital1       | default123   | Quản lý kho thuốc     |
+| **Patient**        | patient1        | default123   | Tra cứu thuốc         |
 
 ## 🔗 **TRUY CẬP HỆ THỐNG:**
 - **Frontend**: http://localhost:3000

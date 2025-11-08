@@ -14,7 +14,8 @@ const Verify = () => {
       try {
         setLoading(true);
         const response = await api.get(`/drugs/verify/${blockchainId}`);
-        setVerificationData(response.data);
+        // API trả về { success, message, data: { drug, blockchain, verification } }
+        setVerificationData(response.data?.data || response.data);
       } catch (err) {
         setError(err.response?.data?.message || 'Không thể xác minh thông tin lô thuốc');
       } finally {
@@ -65,7 +66,7 @@ const Verify = () => {
     );
   }
 
-  const { drug, blockchain, verification } = verificationData;
+  const { drug, blockchain, verification } = verificationData || {};
 
   return (
     <div className="min-h-screen bg-gray-50 py-8">
@@ -86,7 +87,7 @@ const Verify = () => {
                 <span className="font-medium">Đã xác minh</span>
               </div>
               <p className="text-sm text-gray-500">
-                {new Date(verification.verifiedAt).toLocaleString('vi-VN')}
+                {verification?.verifiedAt ? new Date(verification.verifiedAt).toLocaleString('vi-VN') : '—'}
               </p>
             </div>
           </div>

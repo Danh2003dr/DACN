@@ -1,619 +1,497 @@
-import React, { useState, useEffect } from 'react';
-import { useForm } from 'react-hook-form';
-import {
-  User,
-  Mail,
-  Phone,
-  MapPin,
-  Building,
-  Shield,
-  Key,
-  Save,
-  Edit3,
-  Eye,
-  EyeOff,
-  CheckCircle,
-  AlertTriangle,
-  Calendar,
-  Clock,
-  Camera,
-  Upload
-} from 'lucide-react';
+import React, { useRef, useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { authAPI } from '../utils/api';
-import toast from 'react-hot-toast';
+import SimpleAddressMap from '../components/SimpleAddressMap';
 import AvatarCropper from '../components/AvatarCropper';
-import AddressMap from '../components/AddressMap';
+import api from '../utils/api';
 
 const Profile = () => {
-  const { user, updateUser } = useAuth();
+  const { user, updateUser, changePassword } = useAuth();
   const [loading, setLoading] = useState(false);
-  const [showPasswordForm, setShowPasswordForm] = useState(false);
-  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
-  const [showNewPassword, setShowNewPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [avatarFile, setAvatarFile] = useState(null);
-  const [avatarPreview, setAvatarPreview] = useState(null);
-  const [showCropper, setShowCropper] = useState(false);
-  const [cropperImageSrc, setCropperImageSrc] = useState(null);
-  const [showAddressMap, setShowAddressMap] = useState(false);
-
-  const { register, handleSubmit, reset, setValue, formState: { errors }, watch } = useForm();
-  const newPassword = watch('newPassword');
+  const [message, setMessage] = useState('');
+  const [avatarModalOpen, setAvatarModalOpen] = useState(false);
+  const [avatarSrc, setAvatarSrc] = useState(null);
+  const fileInputRef = useRef(null);
+  const [pwdLoading, setPwdLoading] = useState(false);
+  const [pwdMessage, setPwdMessage] = useState('');
+  const [pwdForm, setPwdForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
+  const [formData, setFormData] = useState({
+    fullName: '',
+    email: '',
+    phone: '',
+    address: '',
+    organizationInfo: {
+      name: '',
+      address: '',
+      phone: '',
+      email: ''
+    }
+  });
 
   useEffect(() => {
     if (user) {
-      setValue('fullName', user.fullName || '');
-      setValue('email', user.email || '');
-      setValue('phone', user.phone || '');
-      setValue('address', user.address || '');
-      setValue('organizationInfo.name', user.organizationInfo?.name || '');
-      setValue('organizationInfo.address', user.organizationInfo?.address || '');
-      setValue('organizationInfo.phone', user.organizationInfo?.phone || '');
-      setValue('organizationInfo.email', user.organizationInfo?.email || '');
-      
-      // Set avatar preview if user has avatar
-      if (user.avatar) {
-        setAvatarPreview(`http://localhost:5000${user.avatar}`);
-      }
-    }
-  }, [user, setValue]);
-
-  // Handle avatar file change
-  const handleAvatarChange = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      // Validate file type
-      if (!file.type.startsWith('image/')) {
-        toast.error('Vui lòng chọn file ảnh!');
-        return;
-      }
-      
-      // Validate file size (5MB)
-      if (file.size > 5 * 1024 * 1024) {
-        toast.error('Kích thước file không được vượt quá 5MB!');
-        return;
-      }
-      
-      // Show cropper
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        setCropperImageSrc(e.target.result);
-        setShowCropper(true);
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
-  // Handle cropped image save
-  const handleCroppedImageSave = async (croppedImageBlob) => {
-    try {
-      setLoading(true);
-      console.log('Uploading avatar blob:', croppedImageBlob);
-      
-      const response = await authAPI.uploadAvatar(croppedImageBlob);
-      console.log('Upload response:', response);
-      
-      if (response.success) {
-        updateUser(response.data.user);
-        setAvatarPreview(URL.createObjectURL(croppedImageBlob));
-        toast.success('Cập nhật ảnh đại diện thành công!');
-      }
-    } catch (error) {
-      console.error('Upload avatar error:', error);
-      toast.error(error.response?.data?.message || 'Có lỗi xảy ra khi cập nhật ảnh đại diện');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Update profile
-  const onSubmitProfile = async (data) => {
-    try {
-      setLoading(true);
-      
-      const updateData = {
-        fullName: data.fullName,
-        email: data.email,
-        phone: data.phone || '',
-        address: data.address || '',
-        organizationInfo: data.organizationInfo ? {
-          name: data.organizationInfo.name || '',
-          address: data.organizationInfo.address || '',
-          phone: data.organizationInfo.phone || '',
-          email: data.organizationInfo.email || ''
-        } : null
-      };
-
-      // Thêm location data nếu có
-      if (data.location) {
-        try {
-          updateData.location = data.location;
-        } catch (e) {
-          console.error('Error parsing location data:', e);
+      setFormData({
+        fullName: user.fullName || '',
+        email: user.email || '',
+        phone: user.phone || '',
+        address: user.address ? 
+          (typeof user.address === 'string' ? user.address : 
+           `${user.address.street || ''}, ${user.address.ward || ''}, ${user.address.district || ''}, ${user.address.city || ''}`.replace(/^,\s*|,\s*$/g, '')) : '',
+        organizationInfo: {
+          name: user.organizationInfo?.name || '',
+          address: user.organizationInfo?.address || '',
+          phone: user.organizationInfo?.phone || '',
+          email: user.organizationInfo?.email || ''
         }
-      }
-
-      const response = await authAPI.updateProfile(updateData);
-      
-      if (response.success) {
-        updateUser(response.data.user);
-        toast.success('Cập nhật hồ sơ thành công!');
-      }
-    } catch (error) {
-      toast.error(error.response?.data?.message || 'Có lỗi xảy ra khi cập nhật hồ sơ');
-    } finally {
-      setLoading(false);
+      });
     }
+  }, [user]);
+
+  const handleInputChange = (e) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      [name]: value
+    }));
   };
 
-  // Change password
-  const onSubmitPassword = async (data) => {
+  const handleOrganizationChange = (e) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      organizationInfo: {
+        ...prev.organizationInfo,
+        [name]: value
+      }
+    }));
+  };
+
+  const onAvatarButtonClick = () => {
+    if (fileInputRef.current) fileInputRef.current.click();
+  };
+
+  const onAvatarFileSelected = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const src = URL.createObjectURL(file);
+    setAvatarSrc(src);
+    setAvatarModalOpen(true);
+    // reset input so the same file can be picked again later
+    e.target.value = '';
+  };
+
+  const onSaveCroppedAvatar = async (croppedBlob) => {
     try {
       setLoading(true);
-      const response = await authAPI.changePassword({
-        currentPassword: data.currentPassword,
-        newPassword: data.newPassword
+      const formData = new FormData();
+      formData.append('avatar', croppedBlob, 'avatar.jpg');
+      const response = await api.post('/auth/upload-avatar', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
       });
-      
-      if (response.success) {
-        toast.success('Đổi mật khẩu thành công!');
-        setShowPasswordForm(false);
-        reset({
-          currentPassword: '',
-          newPassword: '',
-          confirmPassword: ''
-        });
+
+      if (response.data?.success) {
+        updateUser(response.data.data.user);
+        setMessage('Cập nhật ảnh đại diện thành công!');
+        setAvatarModalOpen(false);
+        setAvatarSrc(null);
+      } else {
+        const errorMsg = response.data?.message || 'Không thể cập nhật ảnh đại diện';
+        setMessage(errorMsg);
+        throw new Error(errorMsg);
       }
-    } catch (error) {
-      toast.error(error.response?.data?.message || 'Có lỗi xảy ra khi đổi mật khẩu');
+    } catch (err) {
+      const msg = err.response?.data?.message || err.message || 'Không thể cập nhật ảnh đại diện';
+      setMessage(msg);
+      throw err;
     } finally {
       setLoading(false);
     }
   };
 
-  const getRoleDisplayName = (role) => {
-    const roleNames = {
-      admin: 'Quản trị viên hệ thống',
-      manufacturer: 'Nhà sản xuất',
-      distributor: 'Nhà phân phối',
-      hospital: 'Bệnh viện',
-      patient: 'Bệnh nhân'
+  const handleAddressChange = (address) => {
+    // Parse address string thành object format
+    const addressParts = address.split(', ');
+    const addressObj = {
+      street: addressParts[0] || '',
+      ward: addressParts[1] || '',
+      district: addressParts[2] || '',
+      city: addressParts[3] || ''
     };
-    return roleNames[role] || role;
+    
+    setFormData(prev => ({
+      ...prev,
+      address: addressObj
+    }));
   };
 
-  const getRoleIcon = (role) => {
-    const roleIcons = {
-      admin: Shield,
-      manufacturer: Building,
-      distributor: Building,
-      hospital: Building,
-      patient: User
-    };
-    return roleIcons[role] || User;
+  const handleOrganizationAddressChange = (address) => {
+    setFormData(prev => ({
+      ...prev,
+      organizationInfo: {
+        ...prev.organizationInfo,
+        address: address
+      }
+    }));
   };
 
-  const RoleIcon = getRoleIcon(user?.role);
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setMessage('');
+
+    try {
+      const response = await api.put('/auth/update-profile', formData);
+      
+      if (response.data.success) {
+        setMessage('Cập nhật hồ sơ thành công!');
+        updateUser(response.data.data.user);
+      } else {
+        setMessage('Có lỗi xảy ra khi cập nhật hồ sơ');
+      }
+    } catch (error) {
+      setMessage(error.response?.data?.message || 'Có lỗi xảy ra khi cập nhật hồ sơ');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handlePwdChange = async (e) => {
+    e.preventDefault();
+    setPwdMessage('');
+    setPwdLoading(true);
+    try {
+      const res = await changePassword(pwdForm);
+      if (res?.success) {
+        setPwdMessage('Đổi mật khẩu thành công!');
+        setPwdForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+      } else if (res?.error) {
+        setPwdMessage(res.error);
+      }
+    } finally {
+      setPwdLoading(false);
+    }
+  };
+
+  const formatDate = (dateString) => {
+    if (!dateString) return 'N/A';
+    return new Date(dateString).toLocaleDateString('vi-VN');
+  };
 
   return (
-    <div className="max-w-4xl mx-auto p-6 space-y-6">
-      {/* Header */}
-      <div className="bg-white rounded-lg shadow p-6">
-        <div className="flex items-center space-x-4">
-          <div className="relative">
-            <div className="h-20 w-20 rounded-full overflow-hidden bg-blue-100 flex items-center justify-center">
-              {avatarPreview ? (
-                <img
-                  src={avatarPreview}
-                  alt="Avatar"
-                  className="h-full w-full object-cover"
-                />
-              ) : (
-                <RoleIcon className="h-12 w-12 text-blue-600" />
-              )}
-            </div>
-            <label
-              htmlFor="avatar-upload"
-              className="absolute bottom-0 right-0 h-6 w-6 bg-blue-600 rounded-full flex items-center justify-center cursor-pointer hover:bg-blue-700 transition-colors"
-            >
-              <Camera className="h-3 w-3 text-white" />
-            </label>
-            <input
-              id="avatar-upload"
-              type="file"
-              accept="image/*"
-              onChange={handleAvatarChange}
-              className="hidden"
-            />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">{user?.fullName}</h1>
-            <p className="text-gray-600">{getRoleDisplayName(user?.role)}</p>
-            <div className="flex items-center space-x-4 mt-2 text-sm text-gray-500">
-              <div className="flex items-center">
-                <Calendar className="h-4 w-4 mr-1" />
-                Tham gia: {user?.createdAt ? new Date(user.createdAt).toLocaleDateString('vi-VN') : 'N/A'}
-              </div>
-              <div className="flex items-center">
-                <Clock className="h-4 w-4 mr-1" />
-                Cập nhật: {user?.updatedAt ? new Date(user.updatedAt).toLocaleDateString('vi-VN') : 'N/A'}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Profile Information */}
-        <div className="bg-white rounded-lg shadow">
-          <div className="px-6 py-4 border-b border-gray-200">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-medium text-gray-900">Thông tin cá nhân</h2>
-              <Edit3 className="h-5 w-5 text-gray-400" />
-            </div>
-          </div>
-          
-          <form onSubmit={handleSubmit(onSubmitProfile)} className="p-6 space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Họ và tên *
-              </label>
+    <>
+    <div className="min-h-screen bg-gray-50 py-8">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+        {/* Header */}
+        <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
+          <div className="flex items-center space-x-4">
               <div className="relative">
-                <User className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
-                <input
-                  type="text"
-                  {...register('fullName', { required: 'Họ và tên là bắt buộc' })}
-                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
-              </div>
-              {errors.fullName && (
-                <p className="text-red-500 text-sm mt-1">{errors.fullName.message}</p>
-              )}
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Email *
-              </label>
-              <div className="relative">
-                <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
-                <input
-                  type="email"
-                  {...register('email', { 
-                    required: 'Email là bắt buộc',
-                    pattern: {
-                      value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i,
-                      message: 'Email không hợp lệ'
-                    }
-                  })}
-                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
-              </div>
-              {errors.email && (
-                <p className="text-red-500 text-sm mt-1">{errors.email.message}</p>
-              )}
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Số điện thoại
-              </label>
-              <div className="relative">
-                <Phone className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
-                <input
-                  type="tel"
-                  {...register('phone')}
-                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Địa chỉ
-              </label>
-              <div className="relative">
-                <MapPin className="absolute left-3 top-3 text-gray-400 h-5 w-5" />
-                <textarea
-                  {...register('address')}
-                  rows={3}
-                  className="w-full pl-10 pr-12 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
+                {user?.avatar ? (
+                  <img
+                    src={user.avatar}
+                    alt="avatar"
+                    className="w-20 h-20 rounded-full object-cover border"
+                  />
+                ) : (
+                  <div className="w-20 h-20 bg-blue-100 rounded-full flex items-center justify-center">
+                    <span className="text-2xl font-bold text-blue-600">
+                      {user?.fullName?.charAt(0) || 'A'}
+                    </span>
+                  </div>
+                )}
                 <button
                   type="button"
-                  onClick={() => setShowAddressMap(true)}
-                  className="absolute right-3 top-3 p-1 text-gray-400 hover:text-blue-600"
-                  title="Xem vị trí trên bản đồ"
+                  onClick={onAvatarButtonClick}
+                  className="absolute -bottom-1 -right-1 w-7 h-7 bg-blue-600 rounded-full flex items-center justify-center text-white hover:bg-blue-700 transition-colors"
+                  title="Cập nhật ảnh đại diện"
                 >
-                  <MapPin className="h-5 w-5" />
+                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                    <path d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z" />
+                  </svg>
                 </button>
-              </div>
-            </div>
-
-            {/* Hidden field for location data */}
-            <input type="hidden" {...register('location')} />
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center space-x-2"
-            >
-              <Save className="h-5 w-5" />
-              <span>Cập nhật hồ sơ</span>
-            </button>
-          </form>
-        </div>
-
-        {/* Organization Information */}
-        <div className="bg-white rounded-lg shadow">
-          <div className="px-6 py-4 border-b border-gray-200">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-medium text-gray-900">Thông tin tổ chức</h2>
-              <Building className="h-5 w-5 text-gray-400" />
-            </div>
-          </div>
-          
-          <div className="p-6 space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Tên tổ chức
-              </label>
-              <input
-                type="text"
-                {...register('organizationInfo.name')}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="Tên công ty/tổ chức"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Địa chỉ tổ chức
-              </label>
-              <textarea
-                {...register('organizationInfo.address')}
-                rows={3}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="Địa chỉ công ty/tổ chức"
-              />
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Điện thoại tổ chức
-                </label>
                 <input
-                  type="tel"
-                  {...register('organizationInfo.phone')}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Số điện thoại"
+                  type="file"
+                  accept="image/*"
+                  ref={fileInputRef}
+                  onChange={onAvatarFileSelected}
+                  className="hidden"
                 />
               </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Email tổ chức
-                </label>
-                <input
-                  type="email"
-                  {...register('organizationInfo.email')}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Email công ty"
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Security Settings */}
-      <div className="bg-white rounded-lg shadow">
-        <div className="px-6 py-4 border-b border-gray-200">
-          <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-lg font-medium text-gray-900">Bảo mật</h2>
-              <p className="text-sm text-gray-600">Quản lý mật khẩu và bảo mật tài khoản</p>
+              <h1 className="text-2xl font-bold text-gray-900">{user?.fullName || 'Chưa có tên'}</h1>
+              <p className="text-gray-600">{user?.role === 'admin' ? 'Quản trị viên hệ thống' : 
+                user?.role === 'manufacturer' ? 'Nhà sản xuất' :
+                user?.role === 'distributor' ? 'Nhà phân phối' :
+                user?.role === 'hospital' ? 'Bệnh viện' :
+                user?.role === 'patient' ? 'Bệnh nhân' : 'Người dùng'}</p>
+              <div className="flex items-center space-x-4 mt-2 text-sm text-gray-500">
+                <div className="flex items-center">
+                  <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clipRule="evenodd" />
+                  </svg>
+                  Tham gia: {formatDate(user?.createdAt)}
+                </div>
+                <div className="flex items-center">
+                  <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
+                  </svg>
+                  Cập nhật: {formatDate(user?.updatedAt)}
+                </div>
+              </div>
             </div>
-            <Key className="h-5 w-5 text-gray-400" />
           </div>
         </div>
-        
-        <div className="p-6">
-          {!showPasswordForm ? (
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-medium text-gray-900">Mật khẩu</h3>
-                <p className="text-sm text-gray-600">Cập nhật mật khẩu của bạn</p>
-              </div>
-              <button
-                onClick={() => setShowPasswordForm(true)}
-                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-2"
-              >
-                <Key className="h-4 w-4" />
-                <span>Đổi mật khẩu</span>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Thông tin cá nhân */}
+          <div className="bg-white rounded-lg shadow-sm p-6">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-lg font-semibold text-gray-900">Thông tin cá nhân</h2>
+              <button className="p-2 text-gray-400 hover:text-gray-600">
+                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                  <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
+                </svg>
               </button>
             </div>
-          ) : (
-            <form onSubmit={handleSubmit(onSubmitPassword)} className="space-y-4">
+
+            <form onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Mật khẩu hiện tại *
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Họ và tên *
                 </label>
                 <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <svg className="h-5 w-5 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
+                    </svg>
+                  </div>
                   <input
-                    type={showCurrentPassword ? 'text' : 'password'}
-                    {...register('currentPassword', { required: 'Mật khẩu hiện tại là bắt buộc' })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    type="text"
+                    name="fullName"
+                    value={formData.fullName}
+                    onChange={handleInputChange}
+                    required
+                    className="pl-10 w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
-                  <button
-                    type="button"
-                    onClick={() => setShowCurrentPassword(!showCurrentPassword)}
-                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                  >
-                    {showCurrentPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
-                  </button>
                 </div>
-                {errors.currentPassword && (
-                  <p className="text-red-500 text-sm mt-1">{errors.currentPassword.message}</p>
-                )}
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Mật khẩu mới *
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Email *
                 </label>
                 <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <svg className="h-5 w-5 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
+                      <path d="M2.003 5.884L10 9.882l7.997-3.998A2 2 0 0016 4H4a2 2 0 00-1.997 1.884z" />
+                      <path d="M18 8.118l-8 4-8-4V14a2 2 0 002 2h12a2 2 0 002-2V8.118z" />
+                    </svg>
+                  </div>
                   <input
-                    type={showNewPassword ? 'text' : 'password'}
-                    {...register('newPassword', { 
-                      required: 'Mật khẩu mới là bắt buộc',
-                      minLength: {
-                        value: 6,
-                        message: 'Mật khẩu phải có ít nhất 6 ký tự'
-                      }
-                    })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    type="email"
+                    name="email"
+                    value={formData.email}
+                    onChange={handleInputChange}
+                    required
+                    className="pl-10 w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
-                  <button
-                    type="button"
-                    onClick={() => setShowNewPassword(!showNewPassword)}
-                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                  >
-                    {showNewPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
-                  </button>
                 </div>
-                {errors.newPassword && (
-                  <p className="text-red-500 text-sm mt-1">{errors.newPassword.message}</p>
-                )}
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Xác nhận mật khẩu mới *
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Số điện thoại
                 </label>
                 <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <svg className="h-5 w-5 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
+                      <path d="M2 3a1 1 0 011-1h2.153a1 1 0 01.986.836l.74 4.435a1 1 0 01-.54 1.06l-1.548.773a11.037 11.037 0 006.105 6.105l.774-1.548a1 1 0 011.059-.54l4.435.74a1 1 0 01.836.986V17a1 1 0 01-1 1h-2C7.82 18 2 12.18 2 5V3z" />
+                    </svg>
+                  </div>
                   <input
-                    type={showConfirmPassword ? 'text' : 'password'}
-                    {...register('confirmPassword', { 
-                      required: 'Xác nhận mật khẩu là bắt buộc',
-                      validate: value => value === newPassword || 'Mật khẩu xác nhận không khớp'
-                    })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    type="tel"
+                    name="phone"
+                    value={formData.phone}
+                    onChange={handleInputChange}
+                    className="pl-10 w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
-                  <button
-                    type="button"
-                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                  >
-                    {showConfirmPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
-                  </button>
                 </div>
-                {errors.confirmPassword && (
-                  <p className="text-red-500 text-sm mt-1">{errors.confirmPassword.message}</p>
-                )}
               </div>
 
-              <div className="flex space-x-3">
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center space-x-2"
-                >
-                  <Save className="h-4 w-4" />
-                  <span>Cập nhật mật khẩu</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowPasswordForm(false);
-                    reset({
-                      currentPassword: '',
-                      newPassword: '',
-                      confirmPassword: ''
-                    });
-                  }}
-                  className="bg-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-400"
-                >
-                  Hủy
-                </button>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Địa chỉ
+                </label>
+                <SimpleAddressMap
+                  value={typeof formData.address === 'string' ? formData.address : 
+                    `${formData.address.street || ''}, ${formData.address.ward || ''}, ${formData.address.district || ''}, ${formData.address.city || ''}`.replace(/^,\s*|,\s*$/g, '')}
+                  onChange={handleAddressChange}
+                  placeholder="Nhập địa chỉ hoặc click trên bản đồ để chọn vị trí"
+                  height="250px"
+                />
               </div>
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full bg-blue-500 text-white py-2 px-4 rounded-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+              >
+                {loading ? (
+                  <>
+                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Đang cập nhật...
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                      <path d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z" />
+                    </svg>
+                    Cập nhật hồ sơ
+                  </>
+                )}
+              </button>
             </form>
-          )}
-        </div>
-      </div>
+          </div>
 
-      {/* Account Status */}
-      <div className="bg-white rounded-lg shadow">
-        <div className="px-6 py-4 border-b border-gray-200">
-          <h2 className="text-lg font-medium text-gray-900">Trạng thái tài khoản</h2>
-        </div>
-        
-        <div className="p-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="flex items-center space-x-3">
-              <div className="h-10 w-10 bg-green-100 rounded-full flex items-center justify-center">
-                <CheckCircle className="h-6 w-6 text-green-600" />
-              </div>
-              <div>
-                <p className="text-sm font-medium text-gray-900">Trạng thái</p>
-                <p className="text-sm text-green-600">Hoạt động</p>
+          {/* Thông tin tổ chức */}
+          <div className="bg-white rounded-lg shadow-sm p-6">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-lg font-semibold text-gray-900">Thông tin tổ chức</h2>
+              <div className="flex items-center text-gray-400">
+                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M4 4a2 2 0 012-2h8a2 2 0 012 2v12a1 1 0 110 2h-3a1 1 0 01-1-1v-2a1 1 0 00-1-1H9a1 1 0 00-1 1v2a1 1 0 01-1 1H4a1 1 0 110-2V4zm3 1h2v2H7V5zm2 4H7v2h2V9zm2-4h2v2h-2V5zm2 4h-2v2h2V9z" clipRule="evenodd" />
+                </svg>
               </div>
             </div>
 
-            <div className="flex items-center space-x-3">
-              <div className="h-10 w-10 bg-blue-100 rounded-full flex items-center justify-center">
-                <Shield className="h-6 w-6 text-blue-600" />
-              </div>
+            <div className="space-y-4">
               <div>
-                <p className="text-sm font-medium text-gray-900">Vai trò</p>
-                <p className="text-sm text-blue-600">{getRoleDisplayName(user?.role)}</p>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Tên tổ chức
+                </label>
+                <input
+                  type="text"
+                  name="name"
+                  value={formData.organizationInfo.name}
+                  onChange={handleOrganizationChange}
+                  placeholder="Tên công ty/tổ chức"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
               </div>
-            </div>
 
-            <div className="flex items-center space-x-3">
-              <div className="h-10 w-10 bg-yellow-100 rounded-full flex items-center justify-center">
-                <AlertTriangle className="h-6 w-6 text-yellow-600" />
-              </div>
               <div>
-                <p className="text-sm font-medium text-gray-900">Cập nhật cuối</p>
-                <p className="text-sm text-yellow-600">
-                  {user?.updatedAt ? new Date(user.updatedAt).toLocaleDateString('vi-VN') : 'Chưa có'}
-                </p>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Địa chỉ tổ chức
+                </label>
+                <SimpleAddressMap
+                  value={formData.organizationInfo.address}
+                  onChange={handleOrganizationAddressChange}
+                  placeholder="Nhập địa chỉ tổ chức hoặc click trên bản đồ để chọn vị trí"
+                  height="200px"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Điện thoại tổ chức
+                  </label>
+                  <input
+                    type="tel"
+                    name="phone"
+                    value={formData.organizationInfo.phone}
+                    onChange={handleOrganizationChange}
+                    placeholder="Số điện thoại"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Email tổ chức
+                  </label>
+                  <input
+                    type="email"
+                    name="email"
+                    value={formData.organizationInfo.email}
+                    onChange={handleOrganizationChange}
+                    placeholder="Email công ty"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
               </div>
             </div>
           </div>
         </div>
+
+        {/* Message */}
+        {message && (
+          <div className={`mt-4 p-4 rounded-md ${
+            message.includes('thành công') 
+              ? 'bg-green-50 text-green-800 border border-green-200' 
+              : 'bg-red-50 text-red-800 border border-red-200'
+          }`}>
+            {message}
+          </div>
+        )}
+
+        {/* Change Password */}
+        <div className="bg-white rounded-lg shadow-sm p-6 mt-6 max-w-3xl">
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">Đổi mật khẩu</h2>
+          <form onSubmit={handlePwdChange} className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <input
+              type="password"
+              placeholder="Mật khẩu hiện tại"
+              value={pwdForm.currentPassword}
+              onChange={(e) => setPwdForm({ ...pwdForm, currentPassword: e.target.value })}
+              className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              required
+            />
+            <input
+              type="password"
+              placeholder="Mật khẩu mới"
+              value={pwdForm.newPassword}
+              onChange={(e) => setPwdForm({ ...pwdForm, newPassword: e.target.value })}
+              className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              required
+              minLength={6}
+            />
+            <input
+              type="password"
+              placeholder="Xác nhận mật khẩu"
+              value={pwdForm.confirmPassword}
+              onChange={(e) => setPwdForm({ ...pwdForm, confirmPassword: e.target.value })}
+              className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              required
+              minLength={6}
+            />
+            <div className="md:col-span-3 flex items-center gap-3">
+              <button
+                type="submit"
+                disabled={pwdLoading}
+                className="px-5 py-2 bg-gray-800 text-white rounded-md hover:bg-gray-900 disabled:opacity-50"
+              >
+                {pwdLoading ? 'Đang đổi...' : 'Đổi mật khẩu'}
+              </button>
+              {pwdMessage && (
+                <span className="text-sm text-gray-600">{pwdMessage}</span>
+              )}
+            </div>
+          </form>
+        </div>
       </div>
-
-      {/* Avatar Cropper Modal */}
-      {showCropper && (
-        <AvatarCropper
-          src={cropperImageSrc}
-          onSave={handleCroppedImageSave}
-          onClose={() => {
-            setShowCropper(false);
-            setCropperImageSrc(null);
-          }}
-        />
-      )}
-
-      {/* Address Map Modal */}
-      {showAddressMap && (
-        <AddressMap
-          address={watch('address')}
-          onClose={() => setShowAddressMap(false)}
-          onAddressSelect={(coordinates) => {
-            // Cập nhật địa chỉ và lưu tọa độ
-            setValue('address', coordinates.address);
-            setValue('location', JSON.stringify(coordinates));
-            setShowAddressMap(false);
-            toast.success('Đã cập nhật địa chỉ từ bản đồ!');
-          }}
-        />
-      )}
     </div>
+
+    {/* Avatar Cropper Modal */}
+    {avatarModalOpen && avatarSrc && (
+      <AvatarCropper
+        src={avatarSrc}
+        onClose={() => { setAvatarModalOpen(false); setAvatarSrc(null); }}
+        onSave={onSaveCroppedAvatar}
+      />
+    )}
+    </>
   );
 };
 

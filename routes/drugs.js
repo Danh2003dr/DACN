@@ -9,10 +9,13 @@ const {
   updateDrug,
   updateDistributionStatus,
   scanQRCode,
+  getServerUrl,
   recallDrug,
   getDrugStats,
   deleteDrug,
-  verifyQRCode
+  verifyQRCode,
+  verifyDrugByBlockchainId,
+  generateQRCode
 } = require('../controllers/drugController');
 
 // Import middleware
@@ -63,6 +66,20 @@ router.post('/scan-qr',
   scanQRCode
 );
 
+// @route   GET /api/drugs/server-url
+// @desc    Lấy server URL (cho frontend sử dụng để tạo QR code)
+// @access  Public
+router.get('/server-url', getServerUrl);
+
+// @route   POST /api/drugs/:id/generate-qr
+// @desc    Generate QR code cho drug nếu chưa có
+// @access  Private (Admin, Manufacturer)
+router.post('/:id/generate-qr',
+  authenticate,
+  authorize('admin', 'manufacturer'),
+  generateQRCode
+);
+
 // @route   GET /api/drugs/:id
 // @desc    Lấy thông tin lô thuốc theo ID
 // @access  Private
@@ -110,5 +127,10 @@ router.delete('/:id',
 // @desc    Verify QR code và lấy thông tin từ blockchain
 // @access  Public
 router.get('/verify/:blockchainId', verifyQRCode);
+
+// @route   GET /api/drugs/blockchain-verify/:blockchainId
+// @desc    Xác minh thuốc từ blockchain ID
+// @access  Public
+router.get('/blockchain-verify/:blockchainId', verifyDrugByBlockchainId);
 
 module.exports = router;
