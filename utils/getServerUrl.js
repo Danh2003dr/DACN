@@ -72,9 +72,10 @@ const getServerUrl = () => {
   }
   
   // Nếu không tìm thấy IP, dùng localhost
-  const port = process.env.FRONTEND_PORT || process.env.PORT || 3000;
+  const frontendPort = process.env.FRONTEND_PORT || process.env.CLIENT_PORT || 3000;
+  const protocol = process.env.FRONTEND_PROTOCOL || 'http';
   
-  return `http://${localIP}:${port}`;
+  return `${protocol}://${localIP}:${frontendPort}`;
 };
 
 module.exports = getServerUrl;

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import {
@@ -22,7 +22,7 @@ const Drugs = () => {
   const [drugs, setDrugs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
-  // const [showEditModal, setShowEditModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
   const [showQRModal, setShowQRModal] = useState(false);
   const [showBlockchainModal, setShowBlockchainModal] = useState(false);
   const [selectedDrug, setSelectedDrug] = useState(null);
@@ -32,8 +32,21 @@ const Drugs = () => {
   const [error, setError] = useState(null);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+  const qrCodeRef = useRef(null);
 
-  const { register, handleSubmit, reset, setValue, formState: { errors } } = useForm();
+  const defaultFormValues = {
+    name: '',
+    activeIngredient: '',
+    dosage: '',
+    form: '',
+    batchNumber: '',
+    productionDate: '',
+    expiryDate: '',
+  };
+
+  const { register, handleSubmit, reset, formState: { errors } } = useForm({
+    defaultValues: defaultFormValues,
+  });
 
   // Load drugs data
   const loadDrugs = useCallback(async () => {
@@ -82,9 +95,8 @@ const Drugs = () => {
   const onSubmitCreate = async (data) => {
     try {
       const response = await drugAPI.createDrug(data);
-      if (response.data.success) {
-        setShowCreateModal(false);
-        reset();
+      if (response.success || response.data?.success) {
+        handleCloseCreateModal();
         loadDrugs();
         loadStats();
         alert('Tạo lô thuốc thành công!');
@@ -96,20 +108,31 @@ const Drugs = () => {
   };
 
   // Update drug
-  // const onSubmitEdit = async (data) => {
-  //   try {
-  //     const response = await api.put(`/drugs/${selectedDrug._id}`, data);
-  //     if (response.data.success) {
-  //       setShowEditModal(false);
-  //       reset();
-  //       loadDrugs();
-  //       alert('Cập nhật lô thuốc thành công!');
-  //     }
-  //   } catch (error) {
-  //     setError('Không thể cập nhật lô thuốc');
-  //     console.error('Error updating drug:', error);
-  //   }
-  // };
+  const onSubmitEdit = async (data) => {
+    if (!selectedDrug) return;
+
+    const updatePayload = {
+      name: data.name,
+      activeIngredient: data.activeIngredient,
+      dosage: data.dosage,
+      form: data.form,
+    };
+
+    try {
+      const response = await drugAPI.updateDrug(selectedDrug._id, updatePayload);
+      if (response.success) {
+        setShowEditModal(false);
+        setSelectedDrug(null);
+        reset(defaultFormValues);
+        loadDrugs();
+        loadStats();
+        alert('Cập nhật lô thuốc thành công!');
+      }
+    } catch (error) {
+      setError('Không thể cập nhật lô thuốc');
+      console.error('Error updating drug:', error);
+    }
+  };
 
   // Delete drug
   const handleDelete = async (drugId) => {
@@ -149,20 +172,50 @@ const Drugs = () => {
   // Open edit modal
   const openEditModal = (drug) => {
     setSelectedDrug(drug);
-    setValue('name', drug.name);
-    setValue('activeIngredient', drug.activeIngredient);
-    setValue('dosage', drug.dosage);
-    setValue('form', drug.form);
-    // setShowEditModal(true);
+    reset({
+      name: drug.name || '',
+      activeIngredient: drug.activeIngredient || '',
+      dosage: drug.dosage || '',
+      form: drug.form || '',
+      batchNumber: drug.batchNumber || '',
+      productionDate: drug.productionDate
+        ? new Date(drug.productionDate).toISOString().split('T')[0]
+        : '',
+      expiryDate: drug.expiryDate
+        ? new Date(drug.expiryDate).toISOString().split('T')[0]
+        : '',
+    });
+    setShowEditModal(true);
+  };
+
+  const handleOpenCreateModal = () => {
+    setSelectedDrug(null);
+    reset(defaultFormValues);
+    setShowCreateModal(true);
+  };
+
+  const handleCloseCreateModal = () => {
+    setShowCreateModal(false);
+    reset(defaultFormValues);
+    setSelectedDrug(null);
+  };
+
+  const handleCloseEditModal = () => {
+    setShowEditModal(false);
+    reset(defaultFormValues);
+    setSelectedDrug(null);
   };
 
   // Open QR modal
   const openQRModal = async (drug) => {
     setSelectedDrug(drug);
     setShowQRModal(true);
+    setError(null);
     
     // Nếu chưa có QR code data, tự động generate
-    if (!drug.qrCode?.data && !drug.qrCode?.imageUrl) {
+    const needsGenerate = !drug.qrCode?.data && !drug.qrCode?.imageUrl;
+    
+    if (needsGenerate) {
       try {
         setLoading(true);
         const response = await drugAPI.generateQRCode(drug._id);
@@ -192,6 +245,8 @@ const Drugs = () => {
       } finally {
         setLoading(false);
       }
+    } else {
+      setLoading(false);
     }
   };
 
@@ -273,6 +328,82 @@ const Drugs = () => {
     setShowBlockchainModal(true);
   };
 
+  const handleCloseBlockchainModal = () => {
+    setShowBlockchainModal(false);
+    setSelectedDrug(null);
+  };
+
+  const handleCopyBlockchainId = async () => {
+    if (!selectedDrug?.blockchain?.blockchainId) return;
+    try {
+      await navigator.clipboard.writeText(selectedDrug.blockchain.blockchainId);
+      alert('Đã copy Blockchain ID!');
+    } catch (copyError) {
+      console.error('Error copying blockchain ID:', copyError);
+      alert('Không thể copy Blockchain ID. Vui lòng thử lại.');
+    }
+  };
+
+  const handleViewBlockchainDetail = () => {
+    if (!selectedDrug?.blockchain?.blockchainId) return;
+    navigate(`/verify/${selectedDrug.blockchain.blockchainId}`);
+  };
+
+  const getVerificationUrl = (drug) => {
+    if (!drug) return null;
+    const qrData = getQRData(drug);
+    return qrData?.verificationUrl || '';
+  };
+
+  const handleCloseQRModal = () => {
+    setShowQRModal(false);
+    setSelectedDrug(null);
+    setLoading(false);
+    setError(null);
+  };
+
+  const handleDownloadQR = () => {
+    if (!selectedDrug) return;
+
+    const fallbackFileName = selectedDrug.drugId ? `${selectedDrug.drugId}_qr.svg` : 'qr-code.svg';
+
+    const imageUrl = selectedDrug.qrCode?.imageUrl;
+    if (imageUrl) {
+      const link = document.createElement('a');
+      link.href = imageUrl;
+      link.download = fallbackFileName.replace('.svg', '.png');
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      return;
+    }
+
+    if (qrCodeRef.current) {
+      const serializer = new XMLSerializer();
+      const svgString = serializer.serializeToString(qrCodeRef.current);
+      const blob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = fallbackFileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } else {
+      alert('Không thể tải xuống QR Code. Vui lòng thử lại sau.');
+    }
+  };
+
+  const handleVerify = () => {
+    const verificationUrl = getVerificationUrl(selectedDrug);
+    if (verificationUrl) {
+      window.open(verificationUrl, '_blank', 'noopener');
+    } else {
+      alert('Không tìm thấy đường dẫn xác minh.');
+    }
+  };
+
   // Get status icon
   const getStatusIcon = (drug) => {
     if (drug.isRecalled) return <XCircle className="w-5 h-5 text-red-500" />;
@@ -308,7 +439,7 @@ const Drugs = () => {
         
         {(user?.role === 'admin' || user?.role === 'manufacturer') && (
           <button
-            onClick={() => setShowCreateModal(true)}
+            onClick={handleOpenCreateModal}
             className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center gap-2"
           >
             <Plus className="w-5 h-5" />
@@ -612,10 +743,7 @@ const Drugs = () => {
               <div className="flex justify-between items-center mb-4">
                 <h3 className="text-lg font-medium text-gray-900">Tạo lô thuốc mới</h3>
                 <button
-                  onClick={() => {
-                    setShowCreateModal(false);
-                    reset();
-                  }}
+                  onClick={handleCloseCreateModal}
                   className="text-gray-400 hover:text-gray-600"
                 >
                   <XCircle className="w-6 h-6" />
@@ -736,8 +864,7 @@ const Drugs = () => {
                   <button
                     type="button"
                     onClick={() => {
-                      setShowCreateModal(false);
-                      reset();
+                      handleCloseCreateModal();
                     }}
                     className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
                   >
@@ -756,111 +883,316 @@ const Drugs = () => {
         </div>
       )}
 
-      {/* QR Code Modal */}
-      {showQRModal && selectedDrug && (
+      {/* Edit Drug Modal */}
+      {showEditModal && selectedDrug && (
         <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-          <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+          <div className="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-1/2 shadow-lg rounded-md bg-white">
             <div className="mt-3">
               <div className="flex justify-between items-center mb-4">
-                <h3 className="text-lg font-medium text-gray-900">QR Code</h3>
+                <h3 className="text-lg font-medium text-gray-900">Chỉnh sửa lô thuốc</h3>
                 <button
-                  onClick={() => setShowQRModal(false)}
+                  onClick={handleCloseEditModal}
                   className="text-gray-400 hover:text-gray-600"
                 >
                   <XCircle className="w-6 h-6" />
                 </button>
               </div>
-              
-              <div className="text-center">
-                <div className="mb-4">
-                  <h4 className="font-medium text-gray-900">{selectedDrug.name}</h4>
-                  <p className="text-sm text-gray-600">Mã lô: {selectedDrug.drugId}</p>
+
+              <form onSubmit={handleSubmit(onSubmitEdit)} className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Tên thuốc *
+                    </label>
+                    <input
+                      type="text"
+                      {...register('name', { required: 'Tên thuốc là bắt buộc' })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    {errors.name && (
+                      <p className="text-red-500 text-sm mt-1">{errors.name.message}</p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Thành phần hoạt chất *
+                    </label>
+                    <input
+                      type="text"
+                      {...register('activeIngredient', { required: 'Thành phần hoạt chất là bắt buộc' })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    {errors.activeIngredient && (
+                      <p className="text-red-500 text-sm mt-1">{errors.activeIngredient.message}</p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Liều lượng *
+                    </label>
+                    <input
+                      type="text"
+                      {...register('dosage', { required: 'Liều lượng là bắt buộc' })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    {errors.dosage && (
+                      <p className="text-red-500 text-sm mt-1">{errors.dosage.message}</p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Dạng bào chế *
+                    </label>
+                    <select
+                      {...register('form', { required: 'Dạng bào chế là bắt buộc' })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="">Chọn dạng bào chế</option>
+                      <option value="viên nén">Viên nén</option>
+                      <option value="viên nang">Viên nang</option>
+                      <option value="siro">Siro</option>
+                      <option value="dung dịch tiêm">Dung dịch tiêm</option>
+                      <option value="kem">Kem</option>
+                      <option value="gel">Gel</option>
+                      <option value="thuốc mỡ">Thuốc mỡ</option>
+                      <option value="khác">Khác</option>
+                    </select>
+                    {errors.form && (
+                      <p className="text-red-500 text-sm mt-1">{errors.form.message}</p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Số lô sản xuất
+                    </label>
+                    <input
+                      type="text"
+                      {...register('batchNumber', { required: 'Số lô sản xuất là bắt buộc' })}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-md bg-gray-100 text-gray-500 cursor-not-allowed"
+                      disabled
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Ngày sản xuất
+                    </label>
+                    <input
+                      type="date"
+                      {...register('productionDate', { required: 'Ngày sản xuất là bắt buộc' })}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-md bg-gray-100 text-gray-500 cursor-not-allowed"
+                      disabled
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Hạn sử dụng
+                    </label>
+                    <input
+                      type="date"
+                      {...register('expiryDate', { required: 'Hạn sử dụng là bắt buộc' })}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-md bg-gray-100 text-gray-500 cursor-not-allowed"
+                      disabled
+                    />
+                  </div>
                 </div>
-                
+
+                <div className="flex justify-end gap-3 pt-4">
+                  <button
+                    type="button"
+                    onClick={handleCloseEditModal}
+                    className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+                  >
+                    Hủy
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
+                  >
+                    Lưu thay đổi
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* QR Code Modal */}
+      {showQRModal && selectedDrug && (
+        <div className="fixed inset-0 bg-gray-900 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+          <div className="relative top-16 mx-auto w-11/12 max-w-3xl">
+            <div className="rounded-2xl border border-gray-200 bg-white shadow-2xl">
+              <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-blue-500">QR Code</p>
+                  <h3 className="text-lg font-semibold text-gray-900 mt-1">Thông tin xác thực lô thuốc</h3>
+                </div>
+                <button
+                  onClick={handleCloseQRModal}
+                  className="text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  <XCircle className="w-6 h-6" />
+                </button>
+              </div>
+
+              <div className="px-6 py-6">
                 {loading ? (
-                  <div className="bg-gray-100 p-8 rounded-lg">
-                    <RefreshCw className="w-16 h-16 text-gray-400 mx-auto animate-spin" />
-                    <p className="text-gray-500 mt-2">Đang tạo QR Code...</p>
+                  <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-blue-200 bg-blue-50 p-12">
+                    <RefreshCw className="w-8 h-8 text-blue-500 animate-spin" />
+                    <p className="mt-3 text-sm text-blue-700">Đang tạo QR Code, vui lòng chờ...</p>
                   </div>
                 ) : (() => {
-                  // Luôn tạo QR data từ drug info, kể cả khi chưa có qrCode.data từ server
                   const qrData = getQRData(selectedDrug);
-                  
-                  if (qrData) {
-                    const qrDataString = JSON.stringify(qrData);
-                    
+                  const verificationUrl = getVerificationUrl(selectedDrug);
+
+                  if (!qrData) {
                     return (
-                      <div className="bg-white p-4 rounded-lg border flex flex-col items-center">
-                        <QRCode
-                          value={qrDataString}
-                          size={250}
-                          level="H"
-                          fgColor="#000000"
-                          bgColor="#ffffff"
-                        />
-                        {selectedDrug.blockchain?.blockchainId && (
-                          <div className="mt-4 text-xs text-gray-600 bg-blue-50 p-2 rounded max-w-full">
-                            <p className="font-medium">Blockchain ID:</p>
-                            <p className="font-mono text-xs break-all">
-                              {selectedDrug.blockchain.blockchainId}
-                            </p>
-                          </div>
-                        )}
-                        {!selectedDrug.qrCode?.data && (
-                          <div className="mt-2">
-                            <button
-                              onClick={async () => {
-                                try {
-                                  setLoading(true);
-                                  const response = await drugAPI.generateQRCode(selectedDrug._id);
-                                  if (response.success) {
-                                    let updatedDrug;
-                                    if (response.data.drug) {
-                                      updatedDrug = response.data.drug;
-                                    } else {
-                                      updatedDrug = {
-                                        ...selectedDrug,
-                                        qrCode: {
-                                          ...selectedDrug.qrCode,
-                                          data: response.data.qrData ? JSON.stringify(response.data.qrData) : selectedDrug.qrCode?.data,
-                                          imageUrl: response.data.qrCode || selectedDrug.qrCode?.imageUrl
-                                        }
-                                      };
-                                    }
-                                    setSelectedDrug(updatedDrug);
-                                    loadDrugs(); // Refresh danh sách
-                                  } else {
-                                    setError('Không thể tạo QR code');
-                                  }
-                                } catch (error) {
-                                  setError('Không thể tạo QR code: ' + (error.response?.data?.message || error.message));
-                                } finally {
-                                  setLoading(false);
-                                }
-                              }}
-                              className="mt-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm"
-                            >
-                              Lưu QR Code vào hệ thống
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  } else {
-                    return (
-                      <div className="bg-gray-100 p-8 rounded-lg">
-                        <QrCode className="w-16 h-16 text-gray-400 mx-auto" />
-                        <p className="text-gray-500 mt-2">Không thể tạo QR Code</p>
-                        <p className="text-gray-400 text-xs mt-1">Thiếu thông tin cần thiết</p>
+                      <div className="rounded-xl border border-red-200 bg-red-50 p-8 text-center">
+                        <QrCode className="mx-auto h-12 w-12 text-red-400" />
+                        <p className="mt-3 text-base font-semibold text-red-600">Không thể tạo QR Code</p>
+                        <p className="mt-1 text-sm text-red-500">Thiếu thông tin cần thiết. Vui lòng kiểm tra lại lô thuốc.</p>
                       </div>
                     );
                   }
+
+                  const qrDataString = JSON.stringify(qrData);
+
+                  return (
+                    <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+                      <div className="space-y-4">
+                        <div className="rounded-xl border border-blue-100 bg-blue-50 p-5">
+                          <p className="text-xs font-semibold uppercase tracking-wider text-blue-600">Lô thuốc</p>
+                          <h4 className="mt-2 text-xl font-semibold text-blue-900">{selectedDrug.name}</h4>
+                          <div className="mt-4 space-y-2 text-sm text-blue-800">
+                            <div className="flex justify-between">
+                              <span className="text-blue-600">Mã lô</span>
+                              <span className="font-medium">{selectedDrug.drugId}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-blue-600">Số lô SX</span>
+                              <span className="font-medium">{selectedDrug.batchNumber || '---'}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-blue-600">Hạn sử dụng</span>
+                              <span className="font-medium">
+                                {selectedDrug.expiryDate
+                                  ? new Date(selectedDrug.expiryDate).toLocaleDateString('vi-VN')
+                                  : '---'}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="rounded-xl border border-gray-200 bg-gray-50 p-5 space-y-3">
+                          {selectedDrug.blockchain?.blockchainId && (
+                            <div>
+                              <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">Blockchain ID</p>
+                              <p className="mt-1 text-sm font-mono text-gray-800 break-all">
+                                {selectedDrug.blockchain.blockchainId}
+                              </p>
+                            </div>
+                          )}
+                          {verificationUrl && (
+                            <div>
+                              <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">Verification URL</p>
+                              <p className="mt-1 text-sm text-gray-800 break-all">
+                                {verificationUrl}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col justify-between">
+                        <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+                          <div className="flex justify-center rounded-lg border border-gray-100 bg-white p-4 shadow-inner">
+                            <QRCode
+                              value={qrDataString}
+                              size={260}
+                              level="H"
+                              fgColor="#1f2937"
+                              bgColor="#ffffff"
+                              ref={qrCodeRef}
+                            />
+                          </div>
+                          <p className="mt-3 text-xs text-gray-500 text-center">
+                            Quét mã QR bằng ứng dụng DACN Mobile để xác thực ngay trên hệ thống.
+                          </p>
+                        </div>
+
+                        {!selectedDrug.qrCode?.data && (
+                          <button
+                            onClick={async () => {
+                              try {
+                                setLoading(true);
+                                const response = await drugAPI.generateQRCode(selectedDrug._id);
+                                if (response.success) {
+                                  let updatedDrug;
+                                  if (response.data.drug) {
+                                    updatedDrug = response.data.drug;
+                                  } else {
+                                    updatedDrug = {
+                                      ...selectedDrug,
+                                      qrCode: {
+                                        ...selectedDrug.qrCode,
+                                        data: response.data.qrData ? JSON.stringify(response.data.qrData) : selectedDrug.qrCode?.data,
+                                        imageUrl: response.data.qrCode || selectedDrug.qrCode?.imageUrl
+                                      }
+                                    };
+                                  }
+                                  setSelectedDrug(updatedDrug);
+                                  loadDrugs();
+                                } else {
+                                  setError('Không thể tạo QR code');
+                                }
+                              } catch (error) {
+                                setError('Không thể tạo QR code: ' + (error.response?.data?.message || error.message));
+                              } finally {
+                                setLoading(false);
+                              }
+                            }}
+                            className="mt-4 w-full rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow hover:bg-blue-700"
+                          >
+                            Lưu QR Code vào hệ thống
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
                 })()}
-                
-                <div className="mt-4 text-sm text-gray-600">
-                  <p>Quét mã QR để xem thông tin chi tiết</p>
-                </div>
               </div>
+
+              {!loading && (
+                <div className="flex flex-col-reverse gap-3 border-t border-gray-100 px-6 py-4 md:flex-row md:justify-end">
+                  <button
+                    type="button"
+                    onClick={handleCloseQRModal}
+                    className="w-full rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 md:w-auto"
+                  >
+                    Đóng
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleVerify}
+                    className="w-full rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white shadow hover:bg-green-700 md:w-auto"
+                  >
+                    Xác minh
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleDownloadQR}
+                    className="w-full rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow hover:bg-blue-700 md:w-auto"
+                  >
+                    Tải xuống
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -868,127 +1200,172 @@ const Drugs = () => {
 
       {/* Blockchain Info Modal */}
       {showBlockchainModal && selectedDrug && (
-        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-          <div className="relative top-10 mx-auto p-5 border w-full max-w-2xl shadow-lg rounded-md bg-white">
-            <div className="mt-3">
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="text-lg font-medium text-gray-900">Thông tin Blockchain</h3>
+        <div className="fixed inset-0 bg-gray-900 bg-opacity-60 overflow-y-auto h-full w-full z-50">
+          <div className="relative top-12 mx-auto w-11/12 max-w-3xl">
+            <div className="rounded-2xl border border-gray-200 bg-white shadow-2xl">
+              <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-blue-500">
+                    Blockchain
+                  </p>
+                  <h3 className="mt-1 text-lg font-semibold text-gray-900">
+                    Thông tin xác thực trên Blockchain
+                  </h3>
+                </div>
                 <button
-                  onClick={() => setShowBlockchainModal(false)}
-                  className="text-gray-400 hover:text-gray-600"
+                  onClick={handleCloseBlockchainModal}
+                  className="text-gray-400 transition-colors hover:text-gray-600"
                 >
                   <XCircle className="w-6 h-6" />
                 </button>
               </div>
-              
-              <div className="space-y-4">
-                <div className="bg-blue-50 p-4 rounded-lg">
-                  <h4 className="font-medium text-blue-900 mb-2">Thông tin lô thuốc</h4>
-                  <p className="text-sm text-blue-800">{selectedDrug.name}</p>
-                  <p className="text-sm text-blue-700">Mã lô: {selectedDrug.drugId}</p>
+
+              <div className="px-6 py-6">
+                <div className="rounded-xl border border-blue-100 bg-blue-50 p-5">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-blue-600">
+                    Thông tin lô thuốc
+                  </p>
+                  <div className="mt-3 text-blue-900">
+                    <h4 className="text-xl font-semibold">{selectedDrug.name}</h4>
+                    <p className="mt-1 text-sm">
+                      Mã lô: <span className="font-medium text-blue-800">{selectedDrug.drugId}</span>
+                    </p>
+                    <p className="mt-1 text-sm">
+                      Nhà sản xuất:{' '}
+                      <span className="font-medium text-blue-800">
+                        {selectedDrug.manufacturerId?.fullName || 'Chưa cập nhật'}
+                      </span>
+                    </p>
+                  </div>
                 </div>
 
                 {selectedDrug.blockchain ? (
-                  <div className="space-y-4">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="bg-gray-50 p-4 rounded-lg">
-                        <h5 className="font-medium text-gray-900 mb-2">Blockchain ID</h5>
-                        <p className="text-sm text-gray-600 font-mono break-all">
+                  <div className="mt-6 space-y-5">
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                      <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                        <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">
+                          Blockchain ID
+                        </p>
+                        <p className="mt-2 text-sm font-mono text-gray-800 break-all">
                           {selectedDrug.blockchain.blockchainId}
                         </p>
                       </div>
-                      
-                      <div className="bg-gray-50 p-4 rounded-lg">
-                        <h5 className="font-medium text-gray-900 mb-2">Trạng thái</h5>
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                          selectedDrug.blockchain.blockchainStatus === 'confirmed' 
-                            ? 'bg-green-100 text-green-800' 
-                            : 'bg-yellow-100 text-yellow-800'
-                        }`}>
-                          {selectedDrug.blockchain.blockchainStatus === 'confirmed' ? 'Đã xác nhận' : 'Đang chờ'}
+
+                      <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                        <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">
+                          Trạng thái
+                        </p>
+                        <span
+                          className={`mt-2 inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${
+                            selectedDrug.blockchain.blockchainStatus === 'confirmed'
+                              ? 'bg-green-100 text-green-700'
+                              : 'bg-yellow-100 text-yellow-700'
+                          }`}
+                        >
+                          {selectedDrug.blockchain.blockchainStatus === 'confirmed'
+                            ? 'Đã xác nhận'
+                            : 'Đang chờ'}
                         </span>
                       </div>
 
-                      <div className="bg-gray-50 p-4 rounded-lg">
-                        <h5 className="font-medium text-gray-900 mb-2">Transaction Hash</h5>
-                        <p className="text-sm text-gray-600 font-mono break-all">
-                          {selectedDrug.blockchain.transactionHash}
+                      <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                        <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">
+                          Transaction Hash
+                        </p>
+                        <p className="mt-2 text-sm font-mono text-gray-800 break-all">
+                          {selectedDrug.blockchain.transactionHash || 'N/A'}
                         </p>
                       </div>
 
-                      <div className="bg-gray-50 p-4 rounded-lg">
-                        <h5 className="font-medium text-gray-900 mb-2">Block Number</h5>
-                        <p className="text-sm text-gray-600">
-                          {selectedDrug.blockchain.blockNumber?.toLocaleString() || 'N/A'}
+                      <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                        <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">
+                          Block Number
+                        </p>
+                        <p className="mt-2 text-sm font-semibold text-gray-800">
+                          {selectedDrug.blockchain.blockNumber
+                            ? selectedDrug.blockchain.blockNumber.toLocaleString()
+                            : 'N/A'}
                         </p>
                       </div>
                     </div>
 
-                    <div className="bg-gray-50 p-4 rounded-lg">
-                      <h5 className="font-medium text-gray-900 mb-2">Chữ ký số</h5>
-                      <p className="text-sm text-gray-600 font-mono break-all">
-                        {selectedDrug.blockchain.digitalSignature ? 
-                          selectedDrug.blockchain.digitalSignature.substring(0, 50) + '...' : 
-                          'N/A'
-                        }
-                      </p>
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                      <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+                        <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">
+                          Chữ ký số
+                        </p>
+                        <p className="mt-2 text-sm font-mono text-gray-800 break-all">
+                          {selectedDrug.blockchain.digitalSignature
+                            ? `${selectedDrug.blockchain.digitalSignature.substring(0, 60)}...`
+                            : 'N/A'}
+                        </p>
+                      </div>
+
+                      <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+                        <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">
+                          Hash dữ liệu
+                        </p>
+                        <p className="mt-2 text-sm font-mono text-gray-800 break-all">
+                          {selectedDrug.blockchain.dataHash
+                            ? `${selectedDrug.blockchain.dataHash.substring(0, 60)}...`
+                            : 'N/A'}
+                        </p>
+                      </div>
                     </div>
 
-                    <div className="bg-gray-50 p-4 rounded-lg">
-                      <h5 className="font-medium text-gray-900 mb-2">Hash dữ liệu</h5>
-                      <p className="text-sm text-gray-600 font-mono break-all">
-                        {selectedDrug.blockchain.dataHash ? 
-                          selectedDrug.blockchain.dataHash.substring(0, 50) + '...' : 
-                          'N/A'
-                        }
-                      </p>
-                    </div>
-
-                    {selectedDrug.blockchain.transactionHistory && selectedDrug.blockchain.transactionHistory.length > 0 && (
-                      <div className="bg-gray-50 p-4 rounded-lg">
-                        <h5 className="font-medium text-gray-900 mb-2">Lịch sử giao dịch</h5>
-                        <div className="space-y-2">
-                          {selectedDrug.blockchain.transactionHistory.map((tx, index) => (
-                            <div key={index} className="bg-white p-3 rounded border">
-                              <div className="flex justify-between items-start">
-                                <div>
-                                  <p className="text-sm font-medium text-gray-900">{tx.action}</p>
-                                  <p className="text-xs text-gray-600">{tx.details}</p>
-                                  <p className="text-xs text-gray-500">
-                                    {new Date(tx.timestamp).toLocaleString('vi-VN')}
-                                  </p>
+                    {selectedDrug.blockchain.transactionHistory &&
+                      selectedDrug.blockchain.transactionHistory.length > 0 && (
+                        <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+                          <p className="text-sm font-semibold text-gray-800">Lịch sử giao dịch</p>
+                          <div className="mt-3 space-y-2">
+                            {selectedDrug.blockchain.transactionHistory.map((tx, index) => (
+                              <div
+                                key={index}
+                                className="rounded-lg border border-gray-100 bg-gray-50 p-3"
+                              >
+                                <div className="flex items-start justify-between">
+                                  <div>
+                                    <p className="text-sm font-semibold text-gray-800">{tx.action}</p>
+                                    <p className="text-xs text-gray-600">{tx.details}</p>
+                                    <p className="mt-1 text-xs text-gray-500">
+                                      {tx.timestamp
+                                        ? new Date(tx.timestamp).toLocaleString('vi-VN')
+                                        : '---'}
+                                    </p>
+                                  </div>
+                                  <span className="text-xs font-semibold text-gray-500">
+                                    Block #{tx.blockNumber || '--'}
+                                  </span>
                                 </div>
-                                <span className="text-xs text-gray-500">Block #{tx.blockNumber}</span>
                               </div>
-                            </div>
-                          ))}
+                            ))}
+                          </div>
                         </div>
-                      </div>
-                    )}
+                      )}
 
-                    <div className="flex gap-2">
+                    <div className="flex flex-col gap-3 border-t border-gray-100 pt-4 md:flex-row md:justify-end">
                       <button
-                        onClick={() => {
-                          navigator.clipboard.writeText(selectedDrug.blockchain.blockchainId);
-                          alert('Đã copy Blockchain ID!');
-                        }}
-                        className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-blue-700"
+                        onClick={handleCopyBlockchainId}
+                        className="w-full rounded-md border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-medium text-blue-700 transition-colors hover:bg-blue-100 md:w-auto"
                       >
                         Copy Blockchain ID
                       </button>
                       <button
-                        onClick={() => {
-                          navigate(`/verify/${selectedDrug.blockchain.blockchainId}`);
-                        }}
-                        className="flex-1 bg-green-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-green-700"
+                        onClick={handleViewBlockchainDetail}
+                        className="w-full rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white shadow hover:bg-green-700 md:w-auto"
                       >
                         Xem chi tiết
                       </button>
                     </div>
                   </div>
                 ) : (
-                  <div className="bg-yellow-50 p-4 rounded-lg">
-                    <p className="text-yellow-800">Lô thuốc này chưa được ghi lên blockchain.</p>
+                  <div className="mt-6 rounded-xl border border-yellow-200 bg-yellow-50 p-5 text-center">
+                    <p className="text-sm font-medium text-yellow-800">
+                      Lô thuốc này chưa được ghi nhận trên blockchain.
+                    </p>
+                    <p className="mt-1 text-xs text-yellow-700">
+                      Vui lòng kiểm tra lại trạng thái triển khai smart contract hoặc thử lại sau.
+                    </p>
                   </div>
                 )}
               </div>

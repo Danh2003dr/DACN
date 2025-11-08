@@ -158,6 +158,10 @@ const AppRoutes = () => {
         element={<GoogleCallback />}
       />
 
+      {/* Public verification routes */}
+      <Route path="/verify/:blockchainId" element={<Verify />} />
+      <Route path="/blockchain-verify/:blockchainId" element={<BlockchainVerify />} />
+
       {/* Protected Routes */}
       <Route
         path="/"
@@ -258,18 +262,6 @@ const AppRoutes = () => {
               <BlockchainDashboard />
             </ProtectedRoute>
           }
-        />
-        
-        {/* Verify route - không cần authentication */}
-        <Route
-          path="verify/:blockchainId"
-          element={<Verify />}
-        />
-        
-        {/* Blockchain Verify route - không cần authentication */}
-        <Route
-          path="blockchain-verify/:blockchainId"
-          element={<BlockchainVerify />}
         />
         
         {/* Settings - Admin only */}

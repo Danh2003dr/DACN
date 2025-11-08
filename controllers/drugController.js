@@ -652,6 +652,79 @@ const deleteDrug = async (req, res) => {
   }
 };
 
+const drugPopulateOptions = [
+  {
+    path: 'manufacturerId',
+    select: 'fullName organizationInfo phone email address location'
+  },
+  { path: 'createdBy', select: 'fullName role' },
+  { path: 'distribution.history.updatedBy', select: 'fullName role' }
+];
+
+const formatDrugResponse = (drugDoc) => {
+  if (!drugDoc) return null;
+
+  const manufacturerDoc = drugDoc.manufacturerId;
+  const manufacturer = manufacturerDoc
+    ? {
+        fullName: manufacturerDoc.fullName,
+        organizationInfo: manufacturerDoc.organizationInfo || null,
+        phone: manufacturerDoc.phone || null,
+        email: manufacturerDoc.email || null,
+        address: manufacturerDoc.address || null,
+        location: manufacturerDoc.location || null
+      }
+    : null;
+
+  const distributionHistory = (drugDoc.distribution?.history || [])
+    .slice(-5)
+    .map(entry => ({
+      status: entry.status,
+      location: entry.location,
+      organizationId: entry.organizationId,
+      organizationName: entry.organizationName,
+      note: entry.note,
+      timestamp: entry.timestamp,
+      updatedBy: entry.updatedBy ? {
+        id: entry.updatedBy._id,
+        fullName: entry.updatedBy.fullName,
+        role: entry.updatedBy.role
+      } : null
+    }))
+    .reverse();
+
+  return {
+    drugId: drugDoc.drugId,
+    name: drugDoc.name,
+    activeIngredient: drugDoc.activeIngredient,
+    dosage: drugDoc.dosage,
+    form: drugDoc.form,
+    batchNumber: drugDoc.batchNumber,
+    productionDate: drugDoc.productionDate,
+    expiryDate: drugDoc.expiryDate,
+    packaging: drugDoc.packaging || null,
+    storage: drugDoc.storage || null,
+    qualityTest: drugDoc.qualityTest || null,
+    manufacturer,
+    distribution: drugDoc.distribution
+      ? {
+          status: drugDoc.distribution.status,
+          currentLocation: drugDoc.distribution.currentLocation || null,
+          history: distributionHistory
+        }
+      : null,
+    status: drugDoc.status,
+    isRecalled: drugDoc.isRecalled,
+    recallReason: drugDoc.recallReason || null,
+    recallDate: drugDoc.recallDate || null,
+    daysUntilExpiry: typeof drugDoc.daysUntilExpiry === 'number' ? drugDoc.daysUntilExpiry : null,
+    isNearExpiry: typeof drugDoc.isNearExpiry === 'boolean' ? drugDoc.isNearExpiry : false,
+    blockchain: drugDoc.blockchain || null,
+    createdAt: drugDoc.createdAt,
+    updatedAt: drugDoc.updatedAt
+  };
+};
+
 // @desc    Verify QR code và lấy thông tin từ blockchain
 // @route   GET /api/drugs/verify/:blockchainId
 // @access  Public
@@ -671,28 +744,24 @@ const verifyQRCode = async (req, res) => {
     
     // 1. Thử tìm bằng blockchain.blockchainId
     drug = await Drug.findOne({ 'blockchain.blockchainId': blockchainId })
-      .populate('manufacturerId', 'fullName organizationInfo')
-      .populate('createdBy', 'fullName role');
+      .populate(drugPopulateOptions);
 
     // 2. Nếu không tìm thấy, thử tìm bằng drugId (format DRUG_...)
     if (!drug && blockchainId.startsWith('DRUG_')) {
       drug = await Drug.findOne({ drugId: blockchainId })
-        .populate('manufacturerId', 'fullName organizationInfo')
-        .populate('createdBy', 'fullName role');
+        .populate(drugPopulateOptions);
     }
     
     // 3. Nếu vẫn không tìm thấy, thử tìm bằng batchNumber
     if (!drug) {
       drug = await Drug.findOne({ batchNumber: blockchainId })
-        .populate('manufacturerId', 'fullName organizationInfo')
-        .populate('createdBy', 'fullName role');
+        .populate(drugPopulateOptions);
     }
     
     // 4. Thử tìm bằng drugId nếu chưa tìm thấy (cho các trường hợp khác)
     if (!drug) {
       drug = await Drug.findOne({ drugId: blockchainId })
-        .populate('manufacturerId', 'fullName organizationInfo')
-        .populate('createdBy', 'fullName role');
+        .populate(drugPopulateOptions);
     }
     
     // 5. Nếu vẫn không tìm thấy, thử tìm từ SupplyChain
@@ -707,8 +776,7 @@ const verifyQRCode = async (req, res) => {
       
       if (supplyChain && supplyChain.drugId) {
         drug = await Drug.findById(supplyChain.drugId)
-          .populate('manufacturerId', 'fullName organizationInfo')
-          .populate('createdBy', 'fullName role');
+          .populate(drugPopulateOptions);
       }
     }
 
@@ -737,21 +805,7 @@ const verifyQRCode = async (req, res) => {
       success: true,
       message: 'Thông tin lô thuốc hợp lệ.',
       data: {
-        drug: {
-          drugId: drug.drugId,
-          name: drug.name,
-          activeIngredient: drug.activeIngredient,
-          dosage: drug.dosage,
-          form: drug.form,
-          batchNumber: drug.batchNumber,
-          productionDate: drug.productionDate,
-          expiryDate: drug.expiryDate,
-          qualityTest: drug.qualityTest,
-          manufacturer: drug.manufacturerId,
-          blockchain: drug.blockchain,
-          status: drug.status,
-          isRecalled: drug.isRecalled
-        },
+        drug: formatDrugResponse(drug),
         blockchain: blockchainData,
         verification: {
           isValid: true,
@@ -788,7 +842,7 @@ const verifyDrugByBlockchainId = async (req, res) => {
     // Tìm thuốc theo blockchain ID
     const drug = await Drug.findOne({ 
       'blockchain.blockchainId': blockchainId 
-    }).populate('manufacturerId', 'fullName organizationInfo.name');
+    }).populate(drugPopulateOptions);
 
     if (!drug) {
       return res.status(404).json({
@@ -820,22 +874,7 @@ const verifyDrugByBlockchainId = async (req, res) => {
       success: true,
       message: 'Xác minh thành công.',
       data: {
-        drug: {
-          _id: drug._id,
-          name: drug.name,
-          activeIngredient: drug.activeIngredient,
-          dosage: drug.dosage,
-          form: drug.form,
-          batchNumber: drug.batchNumber,
-          productionDate: drug.productionDate,
-          expiryDate: drug.expiryDate,
-          qualityTest: drug.qualityTest,
-          manufacturer: {
-            name: drug.manufacturerId?.fullName,
-            organization: drug.manufacturerId?.organizationInfo?.name
-          },
-          blockchain: drug.blockchain
-        },
+        drug: formatDrugResponse(drug),
         blockchain: blockchainData,
         verification: {
           isValid: isValid,
