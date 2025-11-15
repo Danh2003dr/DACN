@@ -603,6 +603,18 @@ export const reportAPI = {
   getQualityAssessmentReport: async (params = {}) => {
     const response = await api.get('/reports/quality-assessment', { params });
     return response.data;
+  },
+
+  exportModuleReport: async (module, params = {}, format = 'excel') => {
+    const endpoint = format === 'pdf' ? '/reports/export/pdf' : '/reports/export/excel';
+    const response = await api.get(endpoint, {
+      params: {
+        module,
+        ...params
+      },
+      responseType: 'blob'
+    });
+    return response;
   }
 };
 

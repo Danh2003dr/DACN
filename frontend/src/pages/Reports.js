@@ -87,13 +87,29 @@ const Reports = () => {
     }
   }, [activeTab, selectedModule, dateRange]);
 
-  // Export functions (placeholder)
-  const exportToExcel = () => {
-    toast.success('Tính năng xuất Excel sẽ được triển khai');
-  };
-
-  const exportToPDF = () => {
-    toast.success('Tính năng xuất PDF sẽ được triển khai');
+  const handleExport = async (format) => {
+    try {
+      const params = {};
+      if (dateRange.startDate) params.startDate = dateRange.startDate;
+      if (dateRange.endDate) params.endDate = dateRange.endDate;
+      
+      toast.loading(`Đang chuẩn bị file ${format.toUpperCase()}...`, { id: 'report-export' });
+      const response = await reportAPI.exportModuleReport(selectedModule, params, format);
+      const blob = new Blob([response.data], { type: format === 'pdf' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      const timestamp = new Date().getTime();
+      link.href = url;
+      link.download = `${selectedModule}-report-${timestamp}.${format === 'pdf' ? 'pdf' : 'xlsx'}`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      toast.success(`Xuất file ${format.toUpperCase()} thành công!`, { id: 'report-export' });
+    } catch (error) {
+      console.error('Export error:', error);
+      toast.error('Không thể xuất báo cáo: ' + (error.response?.data?.message || error.message), { id: 'report-export' });
+    }
   };
 
   const printReport = () => {
@@ -376,14 +392,14 @@ const Reports = () => {
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <button
-                    onClick={exportToExcel}
+                    onClick={() => handleExport('excel')}
                     className="inline-flex items-center gap-2 bg-green-50 text-green-700 px-3 py-2 rounded-lg hover:bg-green-100"
                   >
                     <Download className="h-4 w-4" />
                     <span>Excel</span>
                   </button>
                   <button
-                    onClick={exportToPDF}
+                    onClick={() => handleExport('pdf')}
                     className="inline-flex items-center gap-2 bg-red-50 text-red-600 px-3 py-2 rounded-lg hover:bg-red-100"
                   >
                     <FileText className="h-4 w-4" />
