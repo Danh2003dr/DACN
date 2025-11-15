@@ -5,8 +5,10 @@ const jwt = require('jsonwebtoken');
 // Định nghĩa các vai trò trong hệ thống
 const USER_ROLES = {
   ADMIN: 'admin',
-  MANUFACTURER: 'manufacturer', 
+  MANUFACTURER: 'manufacturer',
   DISTRIBUTOR: 'distributor',
+  DEALER: 'dealer',
+  PHARMACY: 'pharmacy',
   HOSPITAL: 'hospital',
   PATIENT: 'patient'
 };
@@ -370,6 +372,22 @@ userSchema.statics.createDefaultAccount = async function(role, identifier, passw
         name: `Công ty Phân phối ${identifier}`,
         license: `LIC_${identifier}`,
         type: 'distribution_company'
+      };
+      break;
+    case USER_ROLES.DEALER:
+      defaultData.organizationId = `DEAL_${identifier}`;
+      defaultData.organizationInfo = {
+        name: `Đại lý ${identifier}`,
+        license: `LIC_${identifier}`,
+        type: 'dealer'
+      };
+      break;
+    case USER_ROLES.PHARMACY:
+      defaultData.organizationId = `PHARM_${identifier}`;
+      defaultData.organizationInfo = {
+        name: `Nhà thuốc ${identifier}`,
+        license: `LIC_${identifier}`,
+        type: 'pharmacy'
       };
       break;
     case USER_ROLES.HOSPITAL:

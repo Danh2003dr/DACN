@@ -7,7 +7,9 @@ const {
   getModuleStats,
   getDistributionJourneyReport,
   getSuspiciousDrugsReport,
-  getQualityAssessmentReport
+  getQualityAssessmentReport,
+  exportReportExcel,
+  exportReportPdf
 } = require('../controllers/reportController');
 
 // @route   GET /api/reports/overview
@@ -57,6 +59,22 @@ router.get('/suspicious-drugs',
 router.get('/quality-assessment',
   authenticate,
   getQualityAssessmentReport
+);
+
+// @route   GET /api/reports/export/excel
+// @desc    Xuất báo cáo Excel theo module
+// @access  Private
+router.get('/export/excel',
+  authenticate,
+  exportReportExcel
+);
+
+// @route   GET /api/reports/export/pdf
+// @desc    Xuất báo cáo PDF theo module
+// @access  Private
+router.get('/export/pdf',
+  authenticate,
+  exportReportPdf
 );
 
 module.exports = router;
