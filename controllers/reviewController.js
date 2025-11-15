@@ -23,7 +23,7 @@ const createReview = async (req, res) => {
     } = req.body;
 
     // Validation cơ bản
-    if (!targetType || !targetId || !targetName || !overallRating) {
+    if (!targetType || !targetName || !overallRating || (!targetId && !targetName)) {
       return res.status(400).json({
         success: false,
         message: 'Thiếu thông tin bắt buộc'
@@ -38,20 +38,35 @@ const createReview = async (req, res) => {
     }
 
     // Kiểm tra đối tượng được đánh giá có tồn tại không
+    let resolvedTargetId = targetId;
     if (targetType === 'drug') {
-      const drug = await Drug.findById(targetId);
+      let drug = null;
+      if (targetId) {
+        drug = await Drug.findById(targetId);
+      } else if (targetName) {
+        drug = await Drug.findOne({
+          $or: [
+            { name: targetName },
+            { drugId: targetName },
+            { batchNumber: targetName }
+          ]
+        });
+      }
+
       if (!drug) {
         return res.status(404).json({
           success: false,
-          message: 'Lô thuốc không tồn tại'
+          message: 'Không tìm thấy lô thuốc hoặc ID không hợp lệ'
         });
       }
+
+      resolvedTargetId = drug._id;
     }
 
     // Tạo đánh giá
     const reviewData = {
       targetType,
-      targetId,
+      targetId: resolvedTargetId,
       targetName,
       overallRating,
       criteriaRatings: criteriaRatings || {},

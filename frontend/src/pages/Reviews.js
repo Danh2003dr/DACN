@@ -96,7 +96,13 @@ const Reviews = () => {
   const onCreateReview = async (data) => {
     try {
       setLoading(true);
-      const response = await reviewAPI.createReview(data);
+      const payload = {
+        ...data,
+        overallRating: Number(data.overallRating),
+        isAnonymous: data.isAnonymous ?? true,
+        reviewType: data.reviewType || 'usage'
+      };
+      const response = await reviewAPI.createReview(payload);
       
       if (response.success) {
         toast.success('Tạo đánh giá thành công');
@@ -312,7 +318,16 @@ const Reviews = () => {
 
 // Create Review Modal Component
 const CreateReviewModal = ({ onSubmit, onClose, loading }) => {
-  const { register, handleSubmit, formState: { errors } } = useForm();
+  const { register, handleSubmit, formState: { errors } } = useForm({
+    defaultValues: {
+      targetType: '',
+      overallRating: '',
+      targetId: '',
+      targetName: '',
+      reviewType: 'usage',
+      isAnonymous: true
+    }
+  });
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -359,8 +374,60 @@ const CreateReviewModal = ({ onSubmit, onClose, loading }) => {
                 <p className="text-red-500 text-sm mt-1">{errors.overallRating.message}</p>
               )}
             </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Điểm đánh giá *
+              </label>
+              <select
+                {...register('overallRating', { required: 'Điểm đánh giá là bắt buộc' })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">Chọn điểm</option>
+                <option value="1">1 sao - Rất tệ</option>
+                <option value="2">2 sao - Tệ</option>
+                <option value="3">3 sao - Trung bình</option>
+                <option value="4">4 sao - Tốt</option>
+                <option value="5">5 sao - Rất tốt</option>
+              </select>
+              {errors.overallRating && (
+                <p className="text-red-500 text-sm mt-1">{errors.overallRating.message}</p>
+              )}
+            </div>
           </div>
-          
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Mã đối tượng (ID) *
+              </label>
+              <input
+                type="text"
+                {...register('targetId', { required: 'Mã đối tượng là bắt buộc' })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                placeholder="Ví dụ: ID thuốc hoặc tổ chức"
+              />
+              {errors.targetId && (
+                <p className="text-red-500 text-sm mt-1">{errors.targetId.message}</p>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Tên đối tượng *
+              </label>
+              <input
+                type="text"
+                {...register('targetName', { required: 'Tên đối tượng là bắt buộc' })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                placeholder="Tên thuốc / tổ chức"
+              />
+              {errors.targetName && (
+                <p className="text-red-500 text-sm mt-1">{errors.targetName.message}</p>
+              )}
+            </div>
+          </div>
+
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Tiêu đề
@@ -372,7 +439,7 @@ const CreateReviewModal = ({ onSubmit, onClose, loading }) => {
               placeholder="Nhập tiêu đề đánh giá"
             />
           </div>
-          
+
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Nội dung đánh giá
@@ -383,6 +450,21 @@ const CreateReviewModal = ({ onSubmit, onClose, loading }) => {
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
               placeholder="Chia sẻ trải nghiệm của bạn..."
             />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Loại đánh giá
+            </label>
+            <select
+              {...register('reviewType')}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="usage">Trải nghiệm sử dụng</option>
+              <option value="service">Dịch vụ</option>
+              <option value="quality">Chất lượng</option>
+              <option value="safety">An toàn</option>
+            </select>
           </div>
           
           <div className="flex items-center">
