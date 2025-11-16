@@ -60,18 +60,22 @@ const Reviews = () => {
 
       let response;
       if (activeTab === 'public') {
-        // Ưu tiên top-rated; nếu chưa đủ dữ liệu (ít hơn 5 review/thuốc), fallback sang danh sách review đã duyệt
+        // Ưu tiên top-rated; chỉ fallback sang danh sách admin nếu user là admin
         response = await reviewAPI.getTopRatedTargets('drug', '10');
         if (response.success && (response.data?.topRated?.length || 0) > 0) {
           setReviews(response.data.topRated);
           setPagination({ current: 1, pages: 1, total: response.data.topRated.length });
-        } else {
-          // Fallback: lấy các review đã được duyệt gần đây
+        } else if (hasRole && hasRole('admin')) {
+          // Chỉ admin mới gọi API danh sách quản trị
           const adminList = await reviewAPI.getReviewsForAdmin(`status=approved&${params.toString()}`);
           if (adminList.success) {
             setReviews(adminList.data.reviews);
             setPagination(adminList.data.pagination || { current: 1, pages: 1, total: 0 });
           }
+        } else {
+          // Người dùng thường: không có dữ liệu, tránh gọi API admin
+          setReviews([]);
+          setPagination({ current: 1, pages: 1, total: 0 });
         }
       } else {
         response = await reviewAPI.getReviewsForAdmin(params.toString());
@@ -86,7 +90,7 @@ const Reviews = () => {
     } finally {
       setLoading(false);
     }
-  }, [pagination.current, filters, activeTab]);
+  }, [pagination.current, filters, activeTab, hasRole]);
 
   useEffect(() => {
     loadReviews();
