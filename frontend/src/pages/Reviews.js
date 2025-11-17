@@ -48,6 +48,17 @@ const Reviews = () => {
 
   const { register, handleSubmit, reset, formState: { errors } } = useForm();
 
+  const handleFilterChange = (field, value) => {
+    setFilters((prev) => ({
+      ...prev,
+      [field]: value
+    }));
+    setPagination((prev) => ({
+      ...prev,
+      current: 1
+    }));
+  };
+
   // Load reviews
   const loadReviews = useCallback(async () => {
     try {
@@ -207,6 +218,50 @@ const Reviews = () => {
           </nav>
         </div>
 
+        {/* Bộ lọc chỉ dành cho tab quản trị */}
+        {activeTab === 'admin' && hasRole('admin') && (
+          <div className="px-6 py-4 border-b border-gray-100 bg-gray-50 flex flex-wrap gap-3 items-center">
+            <div className="flex items-center space-x-2 flex-1 min-w-[200px]">
+              <Search className="h-4 w-4 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Tìm theo tiêu đề, nội dung, tên đối tượng..."
+                value={filters.search}
+                onChange={(e) => handleFilterChange('search', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
+              />
+            </div>
+            <div className="flex items-center space-x-2">
+              <span className="text-sm text-gray-600">Trạng thái:</span>
+              <select
+                value={filters.status}
+                onChange={(e) => handleFilterChange('status', e.target.value)}
+                className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">Tất cả</option>
+                <option value="pending">Chờ duyệt</option>
+                <option value="approved">Đã duyệt</option>
+                <option value="rejected">Từ chối</option>
+                <option value="flagged">Đánh dấu</option>
+              </select>
+            </div>
+            <div className="flex items-center space-x-2">
+              <span className="text-sm text-gray-600">Loại:</span>
+              <select
+                value={filters.targetType}
+                onChange={(e) => handleFilterChange('targetType', e.target.value)}
+                className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">Tất cả</option>
+                <option value="drug">Thuốc</option>
+                <option value="distributor">Nhà phân phối</option>
+                <option value="hospital">Bệnh viện</option>
+                <option value="manufacturer">Nhà sản xuất</option>
+              </select>
+            </div>
+          </div>
+        )}
+
         {/* Reviews List */}
         <div className="divide-y divide-gray-200">
           {loading ? (
@@ -278,6 +333,64 @@ const Reviews = () => {
                         <Flag className="h-4 w-4" />
                         <span>Báo cáo</span>
                       </button>
+
+                      {/* Hành động quản trị */}
+                      {activeTab === 'admin' && hasRole('admin') && (
+                        <div className="flex items-center space-x-2 ml-4">
+                          <button
+                            onClick={async () => {
+                              try {
+                                const response = await reviewAPI.updateReviewStatus(review._id, { status: 'approved' });
+                                if (response.success) {
+                                  toast.success('Đã duyệt đánh giá');
+                                  loadReviews();
+                                }
+                              } catch (error) {
+                                toast.error('Lỗi khi duyệt đánh giá');
+                              }
+                            }}
+                            className="flex items-center space-x-1 text-blue-600 hover:text-blue-800 text-sm"
+                          >
+                            <CheckCircle className="h-4 w-4" />
+                            <span>Duyệt</span>
+                          </button>
+                          <button
+                            onClick={async () => {
+                              try {
+                                const response = await reviewAPI.updateReviewStatus(review._id, { status: 'rejected' });
+                                if (response.success) {
+                                  toast.success('Đã từ chối đánh giá');
+                                  loadReviews();
+                                }
+                              } catch (error) {
+                                toast.error('Lỗi khi từ chối đánh giá');
+                              }
+                            }}
+                            className="flex items-center space-x-1 text-yellow-600 hover:text-yellow-800 text-sm"
+                          >
+                            <AlertTriangle className="h-4 w-4" />
+                            <span>Từ chối</span>
+                          </button>
+                          <button
+                            onClick={async () => {
+                              if (!window.confirm('Bạn chắc chắn muốn xóa đánh giá này?')) return;
+                              try {
+                                const response = await reviewAPI.deleteReview(review._id);
+                                if (response.success) {
+                                  toast.success('Đã xóa đánh giá');
+                                  loadReviews();
+                                }
+                              } catch (error) {
+                                toast.error('Lỗi khi xóa đánh giá');
+                              }
+                            }}
+                            className="flex items-center space-x-1 text-red-600 hover:text-red-800 text-sm"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                            <span>Xóa</span>
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
                   
@@ -378,26 +491,6 @@ const CreateReviewModal = ({ onSubmit, onClose, loading }) => {
                 <p className="text-red-500 text-sm mt-1">{errors.overallRating.message}</p>
               )}
             </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Điểm đánh giá *
-              </label>
-              <select
-                {...register('overallRating', { required: 'Điểm đánh giá là bắt buộc' })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="">Chọn điểm</option>
-                <option value="1">1 sao - Rất tệ</option>
-                <option value="2">2 sao - Tệ</option>
-                <option value="3">3 sao - Trung bình</option>
-                <option value="4">4 sao - Tốt</option>
-                <option value="5">5 sao - Rất tốt</option>
-              </select>
-              {errors.overallRating && (
-                <p className="text-red-500 text-sm mt-1">{errors.overallRating.message}</p>
-              )}
-            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -466,8 +559,9 @@ const CreateReviewModal = ({ onSubmit, onClose, loading }) => {
             >
               <option value="usage">Trải nghiệm sử dụng</option>
               <option value="service">Dịch vụ</option>
-              <option value="quality">Chất lượng</option>
-              <option value="safety">An toàn</option>
+              <option value="quality_check">Kiểm định / chất lượng</option>
+              <option value="complaint">Phản ánh / khiếu nại</option>
+              <option value="recommendation">Đề xuất cải tiến</option>
             </select>
           </div>
           

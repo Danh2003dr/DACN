@@ -21,6 +21,8 @@ import Reports from './pages/Reports';
 import MapDemo from './pages/MapDemo';
 import BlockchainVerify from './pages/BlockchainVerify';
 import BlockchainDashboard from './pages/BlockchainDashboard';
+import DigitalSignatures from './pages/DigitalSignatures';
+import TrustScores from './pages/TrustScores';
 
 // Create a client
 const queryClient = new QueryClient({
@@ -234,6 +236,16 @@ const AppRoutes = () => {
           }
         />
 
+        {/* Trust Scores */}
+        <Route
+          path="trust-scores"
+          element={
+            <ProtectedRoute>
+              <TrustScores />
+            </ProtectedRoute>
+          }
+        />
+
         {/* QR Scanner */}
         <Route
           path="qr-scanner"
@@ -260,6 +272,16 @@ const AppRoutes = () => {
           element={
             <ProtectedRoute>
               <BlockchainDashboard />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Digital Signatures */}
+        <Route
+          path="digital-signatures"
+          element={
+            <ProtectedRoute>
+              <DigitalSignatures />
             </ProtectedRoute>
           }
         />

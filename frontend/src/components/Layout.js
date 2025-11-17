@@ -20,7 +20,9 @@ import {
   FileText,
   Truck,
   MessageSquare,
-  Star
+  Star,
+  FileSignature,
+  Trophy
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -93,10 +95,22 @@ const Layout = () => {
       roles: ['admin', 'hospital', 'patient']
     },
     {
+      name: 'Điểm Tín Nhiệm',
+      href: '/trust-scores',
+      icon: Trophy,
+      roles: ['admin', 'manufacturer', 'distributor', 'hospital']
+    },
+    {
       name: 'Báo cáo',
       href: '/reports',
       icon: BarChart3,
       roles: ['admin', 'manufacturer', 'hospital']
+    },
+    {
+      name: 'Chữ ký số',
+      href: '/digital-signatures',
+      icon: FileSignature,
+      roles: ['admin', 'manufacturer', 'distributor', 'hospital']
     },
     {
       name: 'Demo Bản Đồ',

@@ -410,7 +410,20 @@ const scanQRCode = async (req, res) => {
       });
     }
 
-    const drug = await Drug.findByQRCode(qrData);
+    let drug;
+
+    // Xử lý lỗi QR code không hợp lệ rõ ràng hơn
+    try {
+      drug = await Drug.findByQRCode(qrData);
+    } catch (findError) {
+      if (findError.message && findError.message.startsWith('QR code không hợp lệ')) {
+        return res.status(400).json({
+          success: false,
+          message: findError.message
+        });
+      }
+      throw findError;
+    }
 
     if (!drug) {
       return res.status(404).json({

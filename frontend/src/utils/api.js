@@ -49,6 +49,11 @@ api.interceptors.response.use(
     return response;
   },
   (error) => {
+    // Cho phép bỏ qua xử lý lỗi toàn cục cho một số request (ví dụ: quét QR)
+    if (error.config && error.config.skipErrorHandler) {
+      return Promise.reject(error);
+    }
+
     const { response } = error;
     
     if (response) {
@@ -68,7 +73,7 @@ api.interceptors.response.use(
           break;
           
         case 404:
-          toast.error('Không tìm thấy dữ liệu.');
+          toast.error(data.message || 'Không tìm thấy dữ liệu.');
           break;
           
         case 422:
@@ -253,7 +258,13 @@ export const drugAPI = {
   
   // Scan QR code
   scanQRCode: async (qrData) => {
-    const response = await api.post('/drugs/scan-qr', { qrData });
+    // skipErrorHandler: để QRScanner tự xử lý message chi tiết,
+    // tránh hiện toast lỗi 2 lần và giữ nguyên message từ backend
+    const response = await api.post(
+      '/drugs/scan-qr',
+      { qrData },
+      { skipErrorHandler: true }
+    );
     return response.data;
   },
   
@@ -493,6 +504,31 @@ export const notificationAPI = {
 };
 
 // Review API
+export const digitalSignatureAPI = {
+  // Ký số cho một đối tượng
+  signDocument: (data) => api.post('/digital-signatures/sign', data),
+  
+  // Xác thực chữ ký số
+  verifySignature: (data) => api.post('/digital-signatures/verify', data),
+  
+  // Lấy danh sách chữ ký số
+  getSignatures: (params) => api.get('/digital-signatures', { params }),
+  
+  // Lấy chi tiết chữ ký số
+  getSignatureById: (id) => api.get(`/digital-signatures/${id}`),
+  
+  // Lấy chữ ký số của một đối tượng
+  getSignaturesByTarget: (targetType, targetId) => 
+    api.get(`/digital-signatures/target/${targetType}/${targetId}`),
+  
+  // Thu hồi chữ ký số
+  revokeSignature: (id, reason) => 
+    api.post(`/digital-signatures/${id}/revoke`, { reason }),
+  
+  // Thống kê chữ ký số
+  getStats: (params) => api.get('/digital-signatures/stats', { params })
+};
+
 export const reviewAPI = {
   // Create review
   createReview: async (data) => {
@@ -615,6 +651,85 @@ export const reportAPI = {
       responseType: 'blob'
     });
     return response;
+  },
+
+  // Get KPIs
+  getKPIs: async (params = {}) => {
+    const response = await api.get('/reports/kpi', { params });
+    return response.data;
+  },
+
+  // Get KPI time series
+  getKPITimeSeries: async (kpiType, days = 30) => {
+    const response = await api.get('/reports/kpi/timeseries', {
+      params: { kpiType, days }
+    });
+    return response.data;
+  },
+
+  // Get real-time alerts
+  getAlerts: async () => {
+    const response = await api.get('/reports/alerts');
+    return response.data;
+  },
+
+  // Mark alert as read
+  markAlertAsRead: async (alertId) => {
+    const response = await api.post(`/reports/alerts/${alertId}/read`);
+    return response.data;
+  },
+
+  // Export custom report
+  exportCustomReport: async (data) => {
+    const response = await api.post('/reports/export/custom', data, {
+      responseType: 'blob'
+    });
+    return response;
+  }
+};
+
+// Trust Scores API
+export const trustScoreAPI = {
+  // Get trust score for a supplier
+  getTrustScore: async (supplierId) => {
+    const response = await api.get(`/trust-scores/${supplierId}`);
+    return response.data;
+  },
+
+  // Get ranking
+  getRanking: async (params = {}) => {
+    const response = await api.get('/trust-scores/ranking', { params });
+    return response.data;
+  },
+
+  // Get stats
+  getStats: async () => {
+    const response = await api.get('/trust-scores/stats');
+    return response.data;
+  },
+
+  // Get score history
+  getScoreHistory: async (supplierId, params = {}) => {
+    const response = await api.get(`/trust-scores/${supplierId}/history`, { params });
+    return response.data;
+  },
+
+  // Recalculate trust score (Admin only)
+  recalculateTrustScore: async (supplierId) => {
+    const response = await api.post(`/trust-scores/${supplierId}/recalculate`);
+    return response.data;
+  },
+
+  // Add reward or penalty (Admin only)
+  addRewardOrPenalty: async (supplierId, data) => {
+    const response = await api.post(`/trust-scores/${supplierId}/reward-penalty`, data);
+    return response.data;
+  },
+
+  // Recalculate all trust scores (Admin only)
+  recalculateAll: async () => {
+    const response = await api.post('/trust-scores/recalculate-all');
+    return response.data;
   }
 };
 

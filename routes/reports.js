@@ -77,4 +77,44 @@ router.get('/export/pdf',
   exportReportPdf
 );
 
+// @route   GET /api/reports/kpi
+// @desc    Lấy KPI tổng hợp
+// @access  Private
+router.get('/kpi',
+  authenticate,
+  require('../controllers/reportController').getKPIs
+);
+
+// @route   GET /api/reports/kpi/timeseries
+// @desc    Lấy KPI time series cho biểu đồ
+// @access  Private
+router.get('/kpi/timeseries',
+  authenticate,
+  require('../controllers/reportController').getKPITimeSeries
+);
+
+// @route   GET /api/reports/alerts
+// @desc    Lấy cảnh báo thời gian thực
+// @access  Private
+router.get('/alerts',
+  authenticate,
+  require('../controllers/reportController').getAlerts
+);
+
+// @route   POST /api/reports/alerts/:alertId/read
+// @desc    Đánh dấu cảnh báo đã xem
+// @access  Private
+router.post('/alerts/:alertId/read',
+  authenticate,
+  require('../controllers/reportController').markAlertAsRead
+);
+
+// @route   POST /api/reports/export/custom
+// @desc    Xuất báo cáo động với tùy chọn
+// @access  Private
+router.post('/export/custom',
+  authenticate,
+  require('../controllers/reportController').exportCustomReport
+);
+
 module.exports = router;

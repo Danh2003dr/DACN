@@ -12,7 +12,9 @@
     "test:contract": "cd contracts && truffle test",
     "test:api": "jest",
     "migrate": "cd contracts && truffle migrate",
-    "compile": "cd contracts && truffle compile"
+    "compile": "cd contracts && truffle compile",
+    "seed:signatures": "node scripts/seed-digital-signatures.js",
+    "check:signatures": "node scripts/check-digital-signatures.js"
   },
   "keywords": [
     "blockchain",

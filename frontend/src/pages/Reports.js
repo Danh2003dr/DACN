@@ -19,7 +19,8 @@ import {
   Layers,
   Truck,
   BellRing,
-  ClipboardCheck
+  ClipboardCheck,
+  Clock
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { reportAPI } from '../utils/api';
@@ -32,6 +33,8 @@ const Reports = () => {
   const [overviewData, setOverviewData] = useState(null);
   const [moduleData, setModuleData] = useState(null);
   const [selectedModule, setSelectedModule] = useState('drugs');
+  const [kpiData, setKpiData] = useState(null);
+  const [alerts, setAlerts] = useState(null);
   const [dateRange, setDateRange] = useState({
     startDate: '',
     endDate: ''
@@ -79,11 +82,62 @@ const Reports = () => {
     }
   };
 
+  // Load KPI data
+  const loadKPIData = async () => {
+    try {
+      setLoading(true);
+      const params = {};
+      if (dateRange.startDate) params.startDate = dateRange.startDate;
+      if (dateRange.endDate) params.endDate = dateRange.endDate;
+      
+      const response = await reportAPI.getKPIs(params);
+      if (response.success) {
+        setKpiData(response.data);
+      }
+    } catch (error) {
+      console.error('Error loading KPI data:', error);
+      toast.error('Lỗi khi tải KPI');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Load alerts
+  const loadAlerts = async () => {
+    try {
+      const response = await reportAPI.getAlerts();
+      if (response.success) {
+        setAlerts(response.data);
+      } else {
+        console.error('Error loading alerts:', response.message);
+        // Set empty alerts instead of showing error
+        setAlerts({
+          alerts: [],
+          summary: { total: 0, critical: 0, high: 0, medium: 0, low: 0 }
+        });
+      }
+    } catch (error) {
+      console.error('Error loading alerts:', error);
+      // Set empty alerts instead of showing error
+      setAlerts({
+        alerts: [],
+        summary: { total: 0, critical: 0, high: 0, medium: 0, low: 0 }
+      });
+    }
+  };
+
   useEffect(() => {
     if (hasRole('admin') && activeTab === 'overview') {
       loadOverviewData();
     } else if (activeTab === 'modules') {
       loadModuleData(selectedModule);
+    } else if (activeTab === 'kpi') {
+      loadKPIData();
+    } else if (activeTab === 'alerts') {
+      loadAlerts();
+      // Auto-refresh alerts every 30 seconds
+      const interval = setInterval(loadAlerts, 30000);
+      return () => clearInterval(interval);
     }
   }, [activeTab, selectedModule, dateRange]);
 
@@ -484,6 +538,234 @@ const Reports = () => {
     );
   };
 
+  // Render KPI Tab
+  const renderKPITab = () => {
+    if (!kpiData) return <div className="p-8 text-center text-gray-500">Đang tải KPI...</div>;
+
+    const getGradeColor = (grade) => {
+      switch (grade) {
+        case 'A': return 'text-green-600 bg-green-100';
+        case 'B': return 'text-blue-600 bg-blue-100';
+        case 'C': return 'text-yellow-600 bg-yellow-100';
+        case 'D': return 'text-red-600 bg-red-100';
+        default: return 'text-gray-600 bg-gray-100';
+      }
+    };
+
+    return (
+      <div className="space-y-6">
+        {/* KPI Summary Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+          {kpiData.drug && (
+            <div className="bg-white rounded-lg shadow p-4">
+              <div className="text-sm text-gray-600 mb-1">Thuốc</div>
+              <div className={`text-2xl font-bold mb-1 ${getGradeColor(kpiData.drug.status?.grade).split(' ')[0]}`}>
+                {kpiData.drug.validityRate?.toFixed(1)}%
+              </div>
+              <div className={`text-xs px-2 py-1 rounded-full inline-block ${getGradeColor(kpiData.drug.status?.grade)}`}>
+                {kpiData.drug.status?.grade || 'N/A'} - {kpiData.drug.status?.label || ''}
+              </div>
+            </div>
+          )}
+          {kpiData.supplyChain && (
+            <div className="bg-white rounded-lg shadow p-4">
+              <div className="text-sm text-gray-600 mb-1">Chuỗi cung ứng</div>
+              <div className={`text-2xl font-bold mb-1 ${getGradeColor(kpiData.supplyChain.status?.grade).split(' ')[0]}`}>
+                {kpiData.supplyChain.completionRate?.toFixed(1)}%
+              </div>
+              <div className={`text-xs px-2 py-1 rounded-full inline-block ${getGradeColor(kpiData.supplyChain.status?.grade)}`}>
+                {kpiData.supplyChain.status?.grade || 'N/A'}
+              </div>
+            </div>
+          )}
+          {kpiData.quality && (
+            <div className="bg-white rounded-lg shadow p-4">
+              <div className="text-sm text-gray-600 mb-1">Chất lượng</div>
+              <div className={`text-2xl font-bold mb-1 ${getGradeColor(kpiData.quality.status?.grade).split(' ')[0]}`}>
+                {kpiData.quality.avgRating?.toFixed(1)}/5
+              </div>
+              <div className={`text-xs px-2 py-1 rounded-full inline-block ${getGradeColor(kpiData.quality.status?.grade)}`}>
+                {kpiData.quality.status?.grade || 'N/A'}
+              </div>
+            </div>
+          )}
+          {kpiData.efficiency && (
+            <div className="bg-white rounded-lg shadow p-4">
+              <div className="text-sm text-gray-600 mb-1">Hiệu quả</div>
+              <div className={`text-2xl font-bold mb-1 ${getGradeColor(kpiData.efficiency.status?.grade).split(' ')[0]}`}>
+                {kpiData.efficiency.completionRate?.toFixed(1)}%
+              </div>
+              <div className={`text-xs px-2 py-1 rounded-full inline-block ${getGradeColor(kpiData.efficiency.status?.grade)}`}>
+                {kpiData.efficiency.status?.grade || 'N/A'}
+              </div>
+            </div>
+          )}
+          {kpiData.compliance && (
+            <div className="bg-white rounded-lg shadow p-4">
+              <div className="text-sm text-gray-600 mb-1">Tuân thủ</div>
+              <div className={`text-2xl font-bold mb-1 ${getGradeColor(kpiData.compliance.status?.grade).split(' ')[0]}`}>
+                {kpiData.compliance.signatureValidityRate?.toFixed(1)}%
+              </div>
+              <div className={`text-xs px-2 py-1 rounded-full inline-block ${getGradeColor(kpiData.compliance.status?.grade)}`}>
+                {kpiData.compliance.status?.grade || 'N/A'}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Detailed KPI Cards */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {kpiData.drug && (
+            <div className="bg-white rounded-lg shadow p-6">
+              <h3 className="text-lg font-semibold mb-4">KPI Thuốc</h3>
+              <div className="space-y-3">
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Tỷ lệ hợp lệ</span>
+                  <span className="font-semibold">{kpiData.drug.validityRate?.toFixed(2)}%</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Tỷ lệ thu hồi</span>
+                  <span className="font-semibold text-red-600">{kpiData.drug.recallRate?.toFixed(2)}%</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Blockchain coverage</span>
+                  <span className="font-semibold">{kpiData.drug.blockchainCoverage?.toFixed(2)}%</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Chữ ký số coverage</span>
+                  <span className="font-semibold">{kpiData.drug.signatureCoverage?.toFixed(2)}%</span>
+                </div>
+              </div>
+            </div>
+          )}
+          {kpiData.supplyChain && (
+            <div className="bg-white rounded-lg shadow p-6">
+              <h3 className="text-lg font-semibold mb-4">KPI Chuỗi cung ứng</h3>
+              <div className="space-y-3">
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Tỷ lệ hoàn thành</span>
+                  <span className="font-semibold">{kpiData.supplyChain.completionRate?.toFixed(2)}%</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Trung bình bước/chuỗi</span>
+                  <span className="font-semibold">{kpiData.supplyChain.avgStepsPerChain}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Thời gian hoàn thành TB</span>
+                  <span className="font-semibold">{kpiData.supplyChain.avgDaysToComplete} ngày</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Tỷ lệ có vấn đề</span>
+                  <span className="font-semibold text-red-600">{kpiData.supplyChain.issueRate?.toFixed(2)}%</span>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  // Render Alerts Tab
+  const renderAlertsTab = () => {
+    if (!alerts) return <div className="p-8 text-center text-gray-500">Đang tải cảnh báo...</div>;
+
+    const getPriorityColor = (priority) => {
+      switch (priority) {
+        case 'critical': return 'bg-red-50 border-red-200 text-red-800';
+        case 'high': return 'bg-orange-50 border-orange-200 text-orange-800';
+        case 'medium': return 'bg-yellow-50 border-yellow-200 text-yellow-800';
+        case 'low': return 'bg-blue-50 border-blue-200 text-blue-800';
+        default: return 'bg-gray-50 border-gray-200 text-gray-800';
+      }
+    };
+
+    const getCategoryIcon = (category) => {
+      switch (category) {
+        case 'expired': return AlertTriangle;
+        case 'recalled': return AlertTriangle;
+        case 'delay': return Clock;
+        case 'overdue': return Calendar;
+        default: return Bell;
+      }
+    };
+
+    return (
+      <div className="space-y-6">
+        {/* Alert Summary */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="bg-white rounded-lg shadow p-4">
+            <div className="text-sm text-gray-600 mb-1">Tổng cảnh báo</div>
+            <div className="text-2xl font-bold text-gray-900">{alerts.summary.total}</div>
+          </div>
+          <div className="bg-red-50 rounded-lg shadow p-4">
+            <div className="text-sm text-red-600 mb-1">Khẩn cấp</div>
+            <div className="text-2xl font-bold text-red-900">{alerts.summary.critical}</div>
+          </div>
+          <div className="bg-orange-50 rounded-lg shadow p-4">
+            <div className="text-sm text-orange-600 mb-1">Cao</div>
+            <div className="text-2xl font-bold text-orange-900">{alerts.summary.high}</div>
+          </div>
+          <div className="bg-yellow-50 rounded-lg shadow p-4">
+            <div className="text-sm text-yellow-600 mb-1">Trung bình</div>
+            <div className="text-2xl font-bold text-yellow-900">{alerts.summary.medium}</div>
+          </div>
+        </div>
+
+        {/* Alerts List */}
+        <div className="bg-white rounded-lg shadow">
+          <div className="p-4 border-b">
+            <h3 className="text-lg font-semibold">Danh sách cảnh báo</h3>
+          </div>
+          <div className="divide-y">
+            {alerts.alerts.length === 0 ? (
+              <div className="p-8 text-center text-gray-500">Không có cảnh báo nào</div>
+            ) : (
+              alerts.alerts.map((alert) => {
+                const Icon = getCategoryIcon(alert.category);
+                return (
+                  <div
+                    key={alert.id}
+                    className={`p-4 border-l-4 ${getPriorityColor(alert.priority)}`}
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-start gap-3 flex-1">
+                        <Icon className="w-5 h-5 mt-0.5 flex-shrink-0" />
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <h4 className="font-semibold">{alert.title}</h4>
+                            <span className={`text-xs px-2 py-0.5 rounded-full ${getPriorityColor(alert.priority)}`}>
+                              {alert.priority}
+                            </span>
+                          </div>
+                          <p className="text-sm mb-2">{alert.message}</p>
+                          <div className="text-xs text-gray-600">
+                            {new Date(alert.timestamp).toLocaleString('vi-VN')}
+                          </div>
+                        </div>
+                      </div>
+                      {alert.actionRequired && (
+                        <button
+                          onClick={() => {
+                            reportAPI.markAlertAsRead(alert.id);
+                            loadAlerts();
+                          }}
+                          className="text-sm text-blue-600 hover:text-blue-800"
+                        >
+                          Đánh dấu đã xem
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -518,6 +800,31 @@ const Reports = () => {
             Tổng quan
           </button>
           <button
+            onClick={() => setActiveTab('kpi')}
+            className={`py-2 px-1 border-b-2 font-medium text-sm ${
+              activeTab === 'kpi'
+                ? 'border-blue-500 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            KPI Dashboard
+          </button>
+          <button
+            onClick={() => setActiveTab('alerts')}
+            className={`py-2 px-1 border-b-2 font-medium text-sm relative ${
+              activeTab === 'alerts'
+                ? 'border-blue-500 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            Cảnh báo
+            {alerts?.summary?.critical > 0 && (
+              <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
+                {alerts.summary.critical}
+              </span>
+            )}
+          </button>
+          <button
             onClick={() => setActiveTab('modules')}
             className={`py-2 px-1 border-b-2 font-medium text-sm ${
               activeTab === 'modules'
@@ -542,6 +849,8 @@ const Reports = () => {
       {!loading && (
         <>
           {activeTab === 'overview' && hasRole('admin') && renderOverviewTab()}
+          {activeTab === 'kpi' && renderKPITab()}
+          {activeTab === 'alerts' && renderAlertsTab()}
           {activeTab === 'modules' && renderModulesTab()}
           
           {activeTab === 'overview' && !hasRole('admin') && (

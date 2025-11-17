@@ -117,6 +117,8 @@ app.use('/api/reviews', require('./routes/reviews'));
 app.use('/api/reports', require('./routes/reports'));
 app.use('/api/settings', settingsRoutes);
 app.use('/api/blockchain', blockchainRoutes);
+app.use('/api/digital-signatures', require('./routes/digitalSignatures'));
+app.use('/api/trust-scores', require('./routes/trustScores'));
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {

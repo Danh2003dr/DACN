@@ -34,7 +34,7 @@ import { notificationAPI } from '../utils/api';
 import toast from 'react-hot-toast';
 
 const Notifications = () => {
-  const { user, hasRole } = useAuth();
+  const { user, hasRole, hasAnyRole } = useAuth();
   const [loading, setLoading] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const [stats, setStats] = useState({});
@@ -143,6 +143,21 @@ const Notifications = () => {
     }
   };
 
+  // Delete notification (for sent tab)
+  const deleteNotification = async (id) => {
+    if (!window.confirm('Bạn chắc chắn muốn xóa thông báo này?')) return;
+    try {
+      const response = await notificationAPI.deleteNotification(id);
+      if (response.success) {
+        toast.success('Đã xóa thông báo');
+        loadNotifications();
+        loadStats();
+      }
+    } catch (error) {
+      toast.error('Lỗi khi xóa thông báo');
+    }
+  };
+
   // Mark as read
   const markAsRead = async (id) => {
     try {
@@ -222,7 +237,7 @@ const Notifications = () => {
         </div>
         
         <div className="flex space-x-3">
-          {hasRole(['admin']) && (
+          {hasRole('admin') && (
             <button
               onClick={() => setShowSystemModal(true)}
               className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 flex items-center space-x-2"
@@ -232,7 +247,7 @@ const Notifications = () => {
             </button>
           )}
           
-          {hasRole(['admin', 'manufacturer', 'distributor', 'hospital']) && (
+          {hasAnyRole(['admin', 'manufacturer', 'distributor', 'hospital']) && (
             <button
               onClick={() => setShowCreateModal(true)}
               className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-2"
@@ -487,12 +502,22 @@ const Notifications = () => {
                       )}
                       
                       {activeTab === 'sent' && (notification.sender._id === user.id || user.role === 'admin') && (
-                        <button
-                          className="text-gray-600 hover:text-gray-900"
-                          title="Chỉnh sửa"
-                        >
-                          <Edit className="h-4 w-4" />
-                        </button>
+                        <>
+                          {/* Placeholder button cho tương lai nếu cần chỉnh sửa nội dung */}
+                          {/* <button
+                            className="text-gray-600 hover:text-gray-900"
+                            title="Chỉnh sửa"
+                          >
+                            <Edit className="h-4 w-4" />
+                          </button> */}
+                          <button
+                            onClick={() => deleteNotification(notification._id)}
+                            className="text-red-600 hover:text-red-800"
+                            title="Xóa thông báo"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </>
                       )}
                     </div>
                   </div>

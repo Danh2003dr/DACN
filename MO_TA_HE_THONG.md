@@ -69,52 +69,111 @@ Theo WHO, thuốc giả chiếm khoảng 10% thị trường dược phẩm ở 
 ### 2.4 Module Giao Nhiệm vụ và Theo dõi Tiến độ
 
 #### Tạo nhiệm vụ
-- Tiêu đề, mô tả chi tiết, thời hạn, mức độ ưu tiên
-- Tệp đính kèm (biên bản, tài liệu liên quan)
-- Ví dụ: "Vận chuyển lô thuốc X đến bệnh viện Y trước ngày Z"
+- Nhập đầy đủ: tiêu đề, mô tả chi tiết, loại nhiệm vụ, mức độ ưu tiên, thời hạn, người thực hiện
+- Có thể gắn với lô thuốc hoặc chuỗi cung ứng cụ thể (batchNumber, SupplyChain)
+- Hỗ trợ phân loại theo nhóm (logistics, quality, compliance, maintenance, training, ...)
+- Cho phép ước lượng thời gian/cost thực hiện và đính kèm tài liệu liên quan
+- Tự động gửi thông báo cho người được giao khi tạo nhiệm vụ mới
 
 #### Theo dõi và đánh giá
-- Cập nhật trạng thái: đang xử lý, hoàn thành, quá hạn
-- Ghi chú vấn đề, đính kèm kết quả
-- Đánh giá chất lượng hoàn thành (tốt, trung bình, kém)
+- Bảng nhiệm vụ có lọc theo trạng thái, mức độ ưu tiên, loại nhiệm vụ và từ khóa tìm kiếm
+- Thống kê nhanh: tổng số nhiệm vụ, đang thực hiện, đã hoàn thành, quá hạn
+- Cập nhật tiến độ bằng các bản ghi `update` (trạng thái, % hoàn thành, ghi chú, file đính kèm), hiển thị dạng timeline
+- Chỉ người giao hoặc người được giao mới được cập nhật; Admin có thể xóa nhiệm vụ không còn cần thiết
+- Sau khi hoàn thành, người giao có thể chấm điểm (1–5 sao) và nhận xét chất lượng để đánh giá hiệu quả thực hiện
 
 ### 2.5 Module Quản lý Thông báo
 
 #### Tạo và gửi thông báo
-- Nội dung: tiêu đề, nội dung chính, thời gian
-- Gửi đến toàn hệ thống, nhóm cụ thể, hoặc cá nhân
-- Ví dụ: "Thu hồi lô thuốc X do lỗi sản xuất"
+- Nhập tiêu đề, nội dung, loại thông báo (hệ thống, thu hồi thuốc, giao nhiệm vụ, cập nhật chuỗi cung ứng, cảnh báo chất lượng, khẩn cấp...)
+- Chọn mức độ ưu tiên (thấp, trung bình, cao, khẩn cấp) để phân biệt trên giao diện
+- Chọn phạm vi gửi: toàn hệ thống, theo vai trò (admin, manufacturer, distributor, hospital, patient) hoặc danh sách người dùng cụ thể
+- Có chế độ "Thông báo hệ thống khẩn cấp" dành riêng cho Admin để gửi nhanh các cảnh báo quan trọng (thu hồi thuốc, sự cố chất lượng)
 
 #### Quản lý thông báo
-- Danh sách thông báo theo thứ tự thời gian
-- Đánh dấu "đã đọc" để theo dõi
-- Bệnh nhân chỉ nhận thông báo công khai
+- Phân tách rõ "Thông báo nhận được" và "Thông báo đã gửi", có phân trang và thống kê (tổng, chưa đọc, ưu tiên cao, khẩn cấp)
+- Tìm kiếm theo tiêu đề/nội dung, lọc theo loại thông báo, mức độ ưu tiên, và tùy chọn chỉ xem thông báo chưa đọc
+- Đánh dấu từng thông báo hoặc tất cả thông báo là "đã đọc", xem chi tiết thông tin người gửi, thời gian, số người đã xem
+- Admin và người gửi có thể xóa thông báo của mình; bệnh nhân chỉ nhận các thông báo công khai phù hợp với phạm vi
 
 ### 2.6 Module Đánh giá và Góp ý
 
 #### Đánh giá ẩn danh
-- Đánh giá lô thuốc hoặc nhà phân phối
-- Tiêu chí: chất lượng thuốc, thời gian giao hàng, hỗ trợ khách hàng
-- Gửi góp ý dạng văn bản tự do
-- Bảo vệ danh tính người gửi
+- Hỗ trợ đánh giá cho nhiều đối tượng: lô thuốc, nhà phân phối, bệnh viện, nhà sản xuất
+- Người dùng có thể đánh giá ẩn danh hoặc theo tài khoản; thông tin người đánh giá được bảo vệ khi chọn ẩn danh
+- Điểm tổng thể (1–5 sao) kèm nội dung góp ý; với thuốc có thêm tiêu chí chi tiết như chất lượng, hiệu quả, tác dụng phụ, đóng gói
+- Hỗ trợ nhập thông tin xác minh (batchNumber, blockchainId, đơn hàng...) để phân biệt đánh giá đã mua/đã sử dụng
 
 #### Quản lý đánh giá
-- Xem thống kê đánh giá để cải thiện chuỗi cung ứng
-- Khen thưởng nhà phân phối uy tín
-- Báo cáo lô thuốc nghi vấn
+- Hiển thị danh sách đánh giá công khai với bộ lọc theo điểm số, loại đối tượng và trạng thái
+- Người dùng có thể vote "hữu ích" và báo cáo đánh giá không phù hợp; hệ thống lưu lại số lượng vote và báo cáo
+- Admin có giao diện riêng để duyệt, từ chối hoặc xóa đánh giá; đánh giá vi phạm có thể bị gắn cờ (flagged)
+- Thống kê phân bố điểm số, đánh giá đã xác minh và ẩn danh; liệt kê các đối tượng được đánh giá cao để làm cơ sở cải thiện chuỗi cung ứng
 
 ### 2.7 Module Thống kê và Báo cáo
 
-#### Thống kê hệ thống
-- Số lượng lô thuốc, nhà phân phối, bệnh viện, bệnh nhân
-- Tỷ lệ hoàn thành nhiệm vụ, số lô nghi vấn
-- Thống kê thông báo và đánh giá
+#### Dashboard KPI tự động hóa
+- **KPI Thuốc**: Tỷ lệ hợp lệ, tỷ lệ thu hồi, blockchain coverage, chữ ký số coverage, số ngày trung bình đến hết hạn
+- **KPI Chuỗi cung ứng**: Tỷ lệ hoàn thành, trung bình số bước/chuỗi, thời gian hoàn thành trung bình, tỷ lệ có vấn đề
+- **KPI Chất lượng**: Điểm đánh giá trung bình, tỷ lệ xác minh, tỷ lệ đạt kiểm định, tỷ lệ khiếu nại
+- **KPI Hiệu quả**: Tỷ lệ hoàn thành nhiệm vụ, tỷ lệ đúng hạn, thời gian hoàn thành trung bình, đánh giá hiệu quả
+- **KPI Tuân thủ**: Tỷ lệ chữ ký số hợp lệ, tỷ lệ timestamp, tỷ lệ đọc thông báo, số chứng chỉ hết hạn
+- **Đánh giá KPI**: Hệ thống tự động đánh giá từ A (Xuất sắc) đến D (Cần cải thiện) dựa trên các chỉ số
+- **KPI Time Series**: Dữ liệu KPI theo thời gian (30 ngày, 90 ngày) để vẽ biểu đồ xu hướng
 
-#### Xuất báo cáo
-- Định dạng Excel/PDF
-- Báo cáo hành trình phân phối, đánh giá chất lượng
-- Báo cáo lô thuốc nghi vấn giả
-- Hỗ trợ cơ quan quản lý giám sát
+#### Cảnh báo thời gian thực
+- **Cảnh báo Thuốc**: Thuốc đã hết hạn, sắp hết hạn (7 ngày), bị thu hồi, chưa có blockchain
+- **Cảnh báo Chuỗi cung ứng**: Chuỗi bị trễ, có vấn đề, không hoàn thành đúng hạn
+- **Cảnh báo Nhiệm vụ**: Nhiệm vụ quá hạn, sắp đến hạn (3 ngày), cần xử lý
+- **Cảnh báo Tuân thủ**: Chứng chỉ số hết hạn, chữ ký số chưa có timestamp
+- **Cảnh báo Chất lượng**: Thuốc không đạt kiểm định, đánh giá tiêu cực (1-2 sao)
+- **Tự động làm mới**: Cảnh báo tự động cập nhật mỗi 30 giây, hiển thị badge số lượng cảnh báo khẩn cấp
+- **Phân loại ưu tiên**: Critical (khẩn cấp), High (cao), Medium (trung bình), Low (thấp)
+
+#### Xuất báo cáo động
+- **Định dạng đa dạng**: Excel (.xlsx), PDF (.pdf), CSV (.csv) với template tùy chỉnh
+- **Tùy chọn cột**: Người dùng chọn các cột muốn xuất trong báo cáo
+- **Bộ lọc nâng cao**: Lọc theo ngày, trạng thái, loại, nhóm theo nhiều tiêu chí
+- **Sắp xếp tùy chỉnh**: Sắp xếp dữ liệu theo nhiều cột và thứ tự
+- **Template báo cáo**: Nhiều template sẵn có cho cơ quan quản lý (Bộ Y tế, Sở Y tế, FDA...)
+- **Báo cáo tự động**: Có thể lên lịch xuất báo cáo định kỳ (hàng ngày, tuần, tháng)
+- **Báo cáo chuyên biệt**: Hành trình phân phối, đánh giá chất lượng, thuốc nghi vấn giả
+
+### 2.8 Module Quét mã QR & Xác minh thuốc
+
+#### Chức năng quét QR
+- Trang riêng `Quét QR` hỗ trợ 3 phương thức: quét trực tiếp bằng camera, tải ảnh chứa QR code, hoặc nhập mã thủ công (blockchainId, drugId, batchNumber)
+- Sử dụng thư viện ZXing trên frontend để giải mã QR từ video và ảnh; backend chấp nhận nhiều định dạng dữ liệu (URL verify, JSON, chuỗi thuần)
+
+#### Xử lý và hiển thị kết quả
+- Tự động trích xuất và chuẩn hóa dữ liệu từ QR, tra cứu lô thuốc tương ứng trong cơ sở dữ liệu và trên blockchain
+- Hiển thị chi tiết: thông tin lô thuốc, kết quả kiểm định, hành trình phân phối, trạng thái lưu trữ trên blockchain (blockchainId, transactionHash, blockNumber...)
+- Cảnh báo trực quan khi thuốc bị **thu hồi**, **hết hạn** hoặc **gần hết hạn**, nhưng vẫn cho phép xem đầy đủ thông tin để ra quyết định
+- Lưu lịch sử quét gần đây (thành công/thất bại) để người dùng và quản trị viên có thể theo dõi các lần kiểm tra thuốc nghi vấn
+
+### 2.9 Module Chữ ký số & Tiêu chuẩn
+
+#### Ký số theo chuẩn Việt Nam
+- Hỗ trợ ký số cho các đối tượng: lô thuốc, chuỗi cung ứng, kết quả kiểm định chất lượng, thông báo thu hồi, giao nhận phân phối
+- Tích hợp với **CA Quốc gia Việt Nam** (VNCA) và các nhà cung cấp chứng chỉ số khác (Viettel CA, FPT CA, Bkav CA, Vietnam Post CA)
+- Mỗi chữ ký số bao gồm: thông tin người ký (tên, vai trò, tổ chức), chứng chỉ số (số seri, CA provider, thời hạn hiệu lực), hash dữ liệu (SHA-256), chữ ký (RSA-SHA256), và metadata
+
+#### Timestamp Authority (TSA)
+- Tích hợp **Timestamp Authority** để tăng giá trị pháp lý: mỗi chữ ký số có thể được đóng dấu thời gian từ TSA server (mô phỏng `https://tsa.vnca.gov.vn`)
+- Timestamp token chứa: thời điểm được timestamp, hash của dữ liệu, thông tin TSA, và được lưu kèm với chữ ký số
+- Xác thực timestamp token để đảm bảo tính toàn vẹn và thời điểm ký không thể bị thay đổi
+
+#### Quản lý và xác thực chữ ký số
+- Giao diện quản lý chữ ký số: danh sách tất cả chữ ký (lọc theo trạng thái, loại đối tượng, người ký), thống kê (tổng số, đang hoạt động, đã hết hạn, đã thu hồi)
+- Chức năng ký số: chọn đối tượng cần ký (lô thuốc, chuỗi cung ứng...), chọn CA provider, tùy chọn yêu cầu timestamp, xem trước và xác nhận ký
+- Xác thực chữ ký số: kiểm tra tính hợp lệ của chữ ký (so sánh hash, verify signature với public key, kiểm tra chứng chỉ số còn hiệu lực, xác thực timestamp token nếu có)
+- Thu hồi chữ ký số: chỉ admin hoặc người ký mới được thu hồi, yêu cầu nhập lý do thu hồi, cập nhật trạng thái và lưu lịch sử
+
+#### Bảo mật và tuân thủ
+- Chữ ký số được lưu trữ an toàn trong database với đầy đủ thông tin chứng chỉ số và timestamp
+- Hỗ trợ kiểm tra trạng thái chứng chỉ số (valid, expired, revoked) và cảnh báo khi chứng chỉ sắp hết hạn
+- Mỗi chữ ký số có thể liên kết với blockchain transaction để tăng tính minh bạch và không thể phủ nhận (non-repudiation)
+- Phân quyền: chỉ admin, nhà sản xuất, nhà phân phối, bệnh viện mới được ký số; mọi người dùng đều có thể xác thực chữ ký số
 
 ## 3. KIẾN TRÚC KỸ THUẬT
 
@@ -144,7 +203,8 @@ Theo WHO, thuốc giả chiếm khoảng 10% thị trường dược phẩm ở 
 #### Mã hóa dữ liệu
 - **Mật khẩu**: bcrypt với salt rounds
 - **Dữ liệu nhạy cảm**: AES-256 encryption
-- **Chứng chỉ số**: Digital signature cho nhà sản xuất/phân phối
+- **Chữ ký số**: Digital signature theo chuẩn Việt Nam (CA quốc gia) với thuật toán RSA-SHA256, tích hợp Timestamp Authority (TSA) để tăng giá trị pháp lý
+- **Hash dữ liệu**: SHA-256 để đảm bảo tính toàn vẹn dữ liệu
 
 #### Phân quyền và xác thực
 - **JWT (JSON Web Token)** cho session management
