@@ -443,45 +443,109 @@ drugSchema.methods.generateQRData = function() {
 // Static method để tìm thuốc theo QR code
 drugSchema.statics.findByQRCode = async function(qrData) {
   try {
-    // Nếu là string, thử parse JSON
+    // Nếu là string, thử parse JSON hoặc xử lý text trực tiếp
     let data = qrData;
+
     if (typeof qrData === 'string') {
+      const text = qrData.trim();
+
       // Bỏ qua các URL scheme không hợp lệ
-      if (qrData.startsWith('tel:') || qrData.startsWith('mailto:') || qrData.startsWith('sms:')) {
+      if (text.startsWith('tel:') || text.startsWith('mailto:') || text.startsWith('sms:')) {
         throw new Error('QR code không hợp lệ: Không phải là mã QR của hệ thống');
       }
       
       // Thử parse JSON
       try {
-        data = JSON.parse(qrData);
+        data = JSON.parse(text);
       } catch (e) {
         // Nếu không parse được JSON, có thể là raw text
-        // Nếu là blockchain ID (bắt đầu bằng 0x hoặc dài 66 ký tự)
-        if (qrData.startsWith('0x') || qrData.length === 66) {
-          // Tìm theo blockchain ID
-          return await this.findOne({ 'blockchain.blockchainId': qrData })
-            .populate('manufacturerId', 'fullName organizationInfo')
-            .populate('distribution.history.updatedBy', 'fullName role');
-        } else {
-          // Tìm theo drugId
-          return await this.findOne({ drugId: qrData })
+
+        // 1. Thử tìm theo blockchainId (ưu tiên cho trường hợp user nhập blockchainId)
+        let drug = await this.findOne({ 'blockchain.blockchainId': text })
+          .populate('manufacturerId', 'fullName organizationInfo')
+          .populate('distribution.history.updatedBy', 'fullName role');
+
+        // 2. Nếu không có, thử tìm theo drugId
+        if (!drug) {
+          drug = await this.findOne({ drugId: text })
             .populate('manufacturerId', 'fullName organizationInfo')
             .populate('distribution.history.updatedBy', 'fullName role');
         }
+
+        // 3. Nếu vẫn không có, thử tìm theo batchNumber (để hỗ trợ nhập mã lô)
+        if (!drug) {
+          drug = await this.findOne({ batchNumber: text })
+            .populate('manufacturerId', 'fullName organizationInfo')
+            .populate('distribution.history.updatedBy', 'fullName role');
+        }
+
+        // 4. Nếu vẫn không có, thử coi như Mongo ObjectId (_id)
+        if (!drug && /^[0-9a-fA-F]{24}$/.test(text)) {
+          drug = await this.findById(text)
+            .populate('manufacturerId', 'fullName organizationInfo')
+            .populate('distribution.history.updatedBy', 'fullName role');
+        }
+
+        // 5. Nếu vẫn không có, thử tìm qua SupplyChain (theo blockchainId hoặc mã lô)
+        if (!drug) {
+          const SupplyChain = require('./SupplyChain');
+          const supplyChain = await SupplyChain.findOne({
+            $or: [
+              { 'blockchain.blockchainId': text },
+              { 'qrCode.blockchainId': text },
+              { drugBatchNumber: text }
+            ]
+          }).populate('drugId');
+
+          if (supplyChain && supplyChain.drugId) {
+            drug = await this.findById(supplyChain.drugId)
+              .populate('manufacturerId', 'fullName organizationInfo')
+              .populate('distribution.history.updatedBy', 'fullName role');
+          }
+        }
+
+        return drug;
       }
     }
     
-    // Nếu là object, tìm theo drugId hoặc blockchainId
+    // Nếu là object (QR data đã parse), tìm theo drugId, batchNumber hoặc blockchainId
     if (data.drugId) {
       return await this.findOne({ drugId: data.drugId })
         .populate('manufacturerId', 'fullName organizationInfo')
         .populate('distribution.history.updatedBy', 'fullName role');
     }
-    
-    if (data.blockchainId) {
-      return await this.findOne({ 'blockchain.blockchainId': data.blockchainId })
+
+    if (data.batchNumber) {
+      return await this.findOne({ batchNumber: data.batchNumber })
         .populate('manufacturerId', 'fullName organizationInfo')
         .populate('distribution.history.updatedBy', 'fullName role');
+    }
+    
+    if (data.blockchainId) {
+      // Ưu tiên tìm trực tiếp trên Drug
+      let drug = await this.findOne({ 'blockchain.blockchainId': data.blockchainId })
+        .populate('manufacturerId', 'fullName organizationInfo')
+        .populate('distribution.history.updatedBy', 'fullName role');
+
+      // Nếu không tìm thấy, thử tìm qua SupplyChain
+      if (!drug) {
+        const SupplyChain = require('./SupplyChain');
+        const supplyChain = await SupplyChain.findOne({
+          $or: [
+            { 'blockchain.blockchainId': data.blockchainId },
+            { 'qrCode.blockchainId': data.blockchainId },
+            { drugBatchNumber: data.blockchainId }
+          ]
+        }).populate('drugId');
+
+        if (supplyChain && supplyChain.drugId) {
+          drug = await this.findById(supplyChain.drugId)
+            .populate('manufacturerId', 'fullName organizationInfo')
+            .populate('distribution.history.updatedBy', 'fullName role');
+        }
+      }
+
+      return drug;
     }
     
     // Không tìm thấy

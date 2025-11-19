@@ -81,19 +81,24 @@ const getUserNotifications = async (req, res) => {
       priority,
       unreadOnly,
       fromDate,
-      toDate
+      toDate,
+      search
     } = req.query;
 
     const skip = (page - 1) * limit;
     
-    const notifications = await Notification.getUserNotifications(req.user._id, {
-      type,
-      priority,
-      unreadOnly: unreadOnly === 'true',
-      fromDate,
-      toDate,
-      limit: parseInt(limit)
-    });
+    const notifications = await Notification.getUserNotifications(
+      req.user._id,
+      {
+        type,
+        priority,
+        unreadOnly: unreadOnly === 'true',
+        fromDate,
+        toDate,
+        search,
+        limit: parseInt(limit)
+      }
+    );
 
     const total = await Notification.countDocuments({
       'recipients.user': req.user._id,
@@ -396,7 +401,8 @@ const getSentNotifications = async (req, res) => {
       limit = 10,
       status,
       type,
-      priority
+      priority,
+      search
     } = req.query;
 
     const skip = (page - 1) * limit;
@@ -419,6 +425,13 @@ const getSentNotifications = async (req, res) => {
     
     if (priority) {
       filter.priority = priority;
+    }
+
+    if (search) {
+      filter.$or = [
+        { title: { $regex: search, $options: 'i' } },
+        { content: { $regex: search, $options: 'i' } }
+      ];
     }
 
     const notifications = await Notification.find(filter)

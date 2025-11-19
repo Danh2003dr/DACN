@@ -8,7 +8,9 @@ const {
   getSupplyChain,
   getSupplyChainByQR,
   getSupplyChains,
-  recallSupplyChain
+  recallSupplyChain,
+  getSupplyChainMapData,
+  subscribeSupplyChainEvents
 } = require('../controllers/supplyChainController');
 
 // Import middleware
@@ -29,6 +31,16 @@ router.post('/',
 router.get('/',
   authenticate,
   getSupplyChains
+);
+
+router.get('/map/overview',
+  authenticate,
+  getSupplyChainMapData
+);
+
+router.get('/events/stream',
+  authenticate,
+  subscribeSupplyChainEvents
 );
 
 // @route   GET /api/supply-chain/:id

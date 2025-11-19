@@ -1126,7 +1126,7 @@ const Drugs = () => {
                           </p>
                         </div>
 
-                        {!selectedDrug.qrCode?.data && (
+                        {(!selectedDrug.qrCode?.data || !selectedDrug.qrCode?.imageUrl) && (
                           <button
                             onClick={async () => {
                               try {

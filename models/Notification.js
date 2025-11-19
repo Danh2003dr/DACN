@@ -291,42 +291,61 @@ notificationSchema.methods.getTypeIcon = function() {
 
 // Static methods
 notificationSchema.statics.getUserNotifications = function(userId, options = {}) {
-  const query = {
+  const baseQuery = {
     'recipients.user': userId,
     status: 'published'
   };
   
   // Lọc theo loại
   if (options.type) {
-    query.type = options.type;
+    baseQuery.type = options.type;
   }
   
   // Lọc theo mức độ ưu tiên
   if (options.priority) {
-    query.priority = options.priority;
+    baseQuery.priority = options.priority;
   }
   
   // Lọc theo trạng thái đọc
   if (options.unreadOnly) {
-    query['recipients.isRead'] = false;
+    baseQuery['recipients.isRead'] = false;
   }
   
   // Lọc theo thời gian
   if (options.fromDate) {
-    query.createdAt = { $gte: new Date(options.fromDate) };
+    baseQuery.createdAt = { $gte: new Date(options.fromDate) };
   }
   
   if (options.toDate) {
-    query.createdAt = { ...query.createdAt, $lte: new Date(options.toDate) };
+    baseQuery.createdAt = { ...baseQuery.createdAt, $lte: new Date(options.toDate) };
   }
   
-  // Loại bỏ thông báo hết hạn
-  query.$or = [
-    { expiresAt: null },
-    { expiresAt: { $gt: new Date() } }
+  // Điều kiện chung: chưa hết hạn
+  const andConditions = [
+    {
+      $or: [
+        { expiresAt: null },
+        { expiresAt: { $gt: new Date() } }
+      ]
+    }
   ];
   
-  return this.find(query)
+  // Tìm kiếm theo tiêu đề/nội dung nếu có search
+  if (options.search) {
+    const searchRegex = new RegExp(options.search, 'i');
+    andConditions.push({
+      $or: [
+        { title: searchRegex },
+        { content: searchRegex }
+      ]
+    });
+  }
+  
+  const finalQuery = andConditions.length
+    ? { ...baseQuery, $and: andConditions }
+    : baseQuery;
+  
+  return this.find(finalQuery)
     .populate('sender', 'fullName email role avatar')
     .populate('recipients.user', 'fullName email role')
     .sort({ createdAt: -1 })

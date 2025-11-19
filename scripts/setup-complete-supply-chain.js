@@ -181,7 +181,7 @@ const createRealOrganizations = async () => {
           city: 'Hà Nội'
         },
         role: 'patient',
-        organizationId: 'PATIENT_001',
+        patientId: 'PATIENT_001',
         organizationInfo: {
           name: 'Bệnh nhân cá nhân',
           license: null,
@@ -208,7 +208,7 @@ const createRealOrganizations = async () => {
           city: 'TP. Hồ Chí Minh'
         },
         role: 'patient',
-        organizationId: 'PATIENT_002',
+        patientId: 'PATIENT_002',
         organizationInfo: {
           name: 'Bệnh nhân cá nhân',
           license: null,

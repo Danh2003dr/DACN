@@ -1,30 +1,30 @@
 {
-  "generatedAt": "2025-10-24T07:02:59.592Z",
-  "totalSupplyChains": 2,
+  "generatedAt": "2025-11-11T20:10:46.199Z",
+  "totalSupplyChains": 0,
   "qualitySummary": {
-    "totalChecks": 4,
-    "passedChecks": 3,
-    "failedChecks": 1,
+    "totalChecks": 0,
+    "passedChecks": 0,
+    "failedChecks": 0,
     "warningChecks": 0,
-    "successRate": 75
+    "successRate": 0
   },
   "checkTypes": {
     "temperature": {
-      "total": 1,
-      "passed": 1,
+      "total": 0,
+      "passed": 0,
       "failed": 0,
       "warning": 0
     },
     "humidity": {
-      "total": 1,
-      "passed": 1,
+      "total": 0,
+      "passed": 0,
       "failed": 0,
       "warning": 0
     },
     "integrity": {
-      "total": 2,
-      "passed": 1,
-      "failed": 1,
+      "total": 0,
+      "passed": 0,
+      "failed": 0,
       "warning": 0
     },
     "expiry": {
@@ -52,62 +52,5 @@
       "warning": 0
     }
   },
-  "supplyChains": [
-    {
-      "drugBatchNumber": "BATCH-001-2024",
-      "drugName": "Paracetamol 500mg",
-      "drugForm": "viên nén",
-      "totalChecks": 3,
-      "passedChecks": 3,
-      "failedChecks": 0,
-      "warningChecks": 0,
-      "successRate": 100,
-      "checks": [
-        {
-          "type": "temperature",
-          "result": "pass",
-          "value": "22°C",
-          "checkedBy": "Bệnh viện GHI",
-          "checkedAt": "2025-10-03T18:01:28.425Z",
-          "notes": "Nhiệt độ phù hợp"
-        },
-        {
-          "type": "humidity",
-          "result": "pass",
-          "value": "55%",
-          "checkedBy": "Bệnh viện GHI",
-          "checkedAt": "2025-10-03T18:01:28.425Z",
-          "notes": "Độ ẩm trong phạm vi cho phép"
-        },
-        {
-          "type": "integrity",
-          "result": "pass",
-          "value": "Good",
-          "checkedBy": "Bệnh viện GHI",
-          "checkedAt": "2025-10-03T18:01:28.425Z",
-          "notes": "Bao bì nguyên vẹn"
-        }
-      ]
-    },
-    {
-      "drugBatchNumber": "BATCH-002-2024",
-      "drugName": "Amoxicillin 250mg",
-      "drugForm": "viên nang",
-      "totalChecks": 1,
-      "passedChecks": 0,
-      "failedChecks": 1,
-      "warningChecks": 0,
-      "successRate": 0,
-      "checks": [
-        {
-          "type": "integrity",
-          "result": "fail",
-          "value": "Contaminated",
-          "checkedBy": "Công ty Phân phối DEF",
-          "checkedAt": "2025-09-25T18:01:28.425Z",
-          "notes": "Phát hiện tạp chất, cần thu hồi"
-        }
-      ]
-    }
-  ]
+  "supplyChains": []
 }

@@ -48,6 +48,17 @@ const Reviews = () => {
 
   const { register, handleSubmit, reset, formState: { errors } } = useForm();
 
+  const handleFilterChange = (field, value) => {
+    setFilters((prev) => ({
+      ...prev,
+      [field]: value
+    }));
+    setPagination((prev) => ({
+      ...prev,
+      current: 1
+    }));
+  };
+
   // Load reviews
   const loadReviews = useCallback(async () => {
     try {
@@ -60,18 +71,22 @@ const Reviews = () => {
 
       let response;
       if (activeTab === 'public') {
-        // Ưu tiên top-rated; nếu chưa đủ dữ liệu (ít hơn 5 review/thuốc), fallback sang danh sách review đã duyệt
+        // Ưu tiên top-rated; chỉ fallback sang danh sách admin nếu user là admin
         response = await reviewAPI.getTopRatedTargets('drug', '10');
         if (response.success && (response.data?.topRated?.length || 0) > 0) {
           setReviews(response.data.topRated);
           setPagination({ current: 1, pages: 1, total: response.data.topRated.length });
-        } else {
-          // Fallback: lấy các review đã được duyệt gần đây
+        } else if (hasRole && hasRole('admin')) {
+          // Chỉ admin mới gọi API danh sách quản trị
           const adminList = await reviewAPI.getReviewsForAdmin(`status=approved&${params.toString()}`);
           if (adminList.success) {
             setReviews(adminList.data.reviews);
             setPagination(adminList.data.pagination || { current: 1, pages: 1, total: 0 });
           }
+        } else {
+          // Người dùng thường: không có dữ liệu, tránh gọi API admin
+          setReviews([]);
+          setPagination({ current: 1, pages: 1, total: 0 });
         }
       } else {
         response = await reviewAPI.getReviewsForAdmin(params.toString());
@@ -86,7 +101,7 @@ const Reviews = () => {
     } finally {
       setLoading(false);
     }
-  }, [pagination.current, filters, activeTab]);
+  }, [pagination.current, filters, activeTab, hasRole]);
 
   useEffect(() => {
     loadReviews();
@@ -96,7 +111,13 @@ const Reviews = () => {
   const onCreateReview = async (data) => {
     try {
       setLoading(true);
-      const response = await reviewAPI.createReview(data);
+      const payload = {
+        ...data,
+        overallRating: Number(data.overallRating),
+        isAnonymous: data.isAnonymous ?? true,
+        reviewType: data.reviewType || 'usage'
+      };
+      const response = await reviewAPI.createReview(payload);
       
       if (response.success) {
         toast.success('Tạo đánh giá thành công');
@@ -197,6 +218,50 @@ const Reviews = () => {
           </nav>
         </div>
 
+        {/* Bộ lọc chỉ dành cho tab quản trị */}
+        {activeTab === 'admin' && hasRole('admin') && (
+          <div className="px-6 py-4 border-b border-gray-100 bg-gray-50 flex flex-wrap gap-3 items-center">
+            <div className="flex items-center space-x-2 flex-1 min-w-[200px]">
+              <Search className="h-4 w-4 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Tìm theo tiêu đề, nội dung, tên đối tượng..."
+                value={filters.search}
+                onChange={(e) => handleFilterChange('search', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
+              />
+            </div>
+            <div className="flex items-center space-x-2">
+              <span className="text-sm text-gray-600">Trạng thái:</span>
+              <select
+                value={filters.status}
+                onChange={(e) => handleFilterChange('status', e.target.value)}
+                className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">Tất cả</option>
+                <option value="pending">Chờ duyệt</option>
+                <option value="approved">Đã duyệt</option>
+                <option value="rejected">Từ chối</option>
+                <option value="flagged">Đánh dấu</option>
+              </select>
+            </div>
+            <div className="flex items-center space-x-2">
+              <span className="text-sm text-gray-600">Loại:</span>
+              <select
+                value={filters.targetType}
+                onChange={(e) => handleFilterChange('targetType', e.target.value)}
+                className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">Tất cả</option>
+                <option value="drug">Thuốc</option>
+                <option value="distributor">Nhà phân phối</option>
+                <option value="hospital">Bệnh viện</option>
+                <option value="manufacturer">Nhà sản xuất</option>
+              </select>
+            </div>
+          </div>
+        )}
+
         {/* Reviews List */}
         <div className="divide-y divide-gray-200">
           {loading ? (
@@ -268,6 +333,64 @@ const Reviews = () => {
                         <Flag className="h-4 w-4" />
                         <span>Báo cáo</span>
                       </button>
+
+                      {/* Hành động quản trị */}
+                      {activeTab === 'admin' && hasRole('admin') && (
+                        <div className="flex items-center space-x-2 ml-4">
+                          <button
+                            onClick={async () => {
+                              try {
+                                const response = await reviewAPI.updateReviewStatus(review._id, { status: 'approved' });
+                                if (response.success) {
+                                  toast.success('Đã duyệt đánh giá');
+                                  loadReviews();
+                                }
+                              } catch (error) {
+                                toast.error('Lỗi khi duyệt đánh giá');
+                              }
+                            }}
+                            className="flex items-center space-x-1 text-blue-600 hover:text-blue-800 text-sm"
+                          >
+                            <CheckCircle className="h-4 w-4" />
+                            <span>Duyệt</span>
+                          </button>
+                          <button
+                            onClick={async () => {
+                              try {
+                                const response = await reviewAPI.updateReviewStatus(review._id, { status: 'rejected' });
+                                if (response.success) {
+                                  toast.success('Đã từ chối đánh giá');
+                                  loadReviews();
+                                }
+                              } catch (error) {
+                                toast.error('Lỗi khi từ chối đánh giá');
+                              }
+                            }}
+                            className="flex items-center space-x-1 text-yellow-600 hover:text-yellow-800 text-sm"
+                          >
+                            <AlertTriangle className="h-4 w-4" />
+                            <span>Từ chối</span>
+                          </button>
+                          <button
+                            onClick={async () => {
+                              if (!window.confirm('Bạn chắc chắn muốn xóa đánh giá này?')) return;
+                              try {
+                                const response = await reviewAPI.deleteReview(review._id);
+                                if (response.success) {
+                                  toast.success('Đã xóa đánh giá');
+                                  loadReviews();
+                                }
+                              } catch (error) {
+                                toast.error('Lỗi khi xóa đánh giá');
+                              }
+                            }}
+                            className="flex items-center space-x-1 text-red-600 hover:text-red-800 text-sm"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                            <span>Xóa</span>
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
                   
@@ -312,7 +435,16 @@ const Reviews = () => {
 
 // Create Review Modal Component
 const CreateReviewModal = ({ onSubmit, onClose, loading }) => {
-  const { register, handleSubmit, formState: { errors } } = useForm();
+  const { register, handleSubmit, formState: { errors } } = useForm({
+    defaultValues: {
+      targetType: '',
+      overallRating: '',
+      targetId: '',
+      targetName: '',
+      reviewType: 'usage',
+      isAnonymous: true
+    }
+  });
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -360,7 +492,39 @@ const CreateReviewModal = ({ onSubmit, onClose, loading }) => {
               )}
             </div>
           </div>
-          
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Mã đối tượng (ID) *
+              </label>
+              <input
+                type="text"
+                {...register('targetId', { required: 'Mã đối tượng là bắt buộc' })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                placeholder="Ví dụ: ID thuốc hoặc tổ chức"
+              />
+              {errors.targetId && (
+                <p className="text-red-500 text-sm mt-1">{errors.targetId.message}</p>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Tên đối tượng *
+              </label>
+              <input
+                type="text"
+                {...register('targetName', { required: 'Tên đối tượng là bắt buộc' })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                placeholder="Tên thuốc / tổ chức"
+              />
+              {errors.targetName && (
+                <p className="text-red-500 text-sm mt-1">{errors.targetName.message}</p>
+              )}
+            </div>
+          </div>
+
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Tiêu đề
@@ -372,7 +536,7 @@ const CreateReviewModal = ({ onSubmit, onClose, loading }) => {
               placeholder="Nhập tiêu đề đánh giá"
             />
           </div>
-          
+
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Nội dung đánh giá
@@ -383,6 +547,22 @@ const CreateReviewModal = ({ onSubmit, onClose, loading }) => {
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
               placeholder="Chia sẻ trải nghiệm của bạn..."
             />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Loại đánh giá
+            </label>
+            <select
+              {...register('reviewType')}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="usage">Trải nghiệm sử dụng</option>
+              <option value="service">Dịch vụ</option>
+              <option value="quality_check">Kiểm định / chất lượng</option>
+              <option value="complaint">Phản ánh / khiếu nại</option>
+              <option value="recommendation">Đề xuất cải tiến</option>
+            </select>
           </div>
           
           <div className="flex items-center">

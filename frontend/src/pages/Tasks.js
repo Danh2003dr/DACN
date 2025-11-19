@@ -33,7 +33,7 @@ import { taskAPI } from '../utils/api';
 import toast from 'react-hot-toast';
 
 const Tasks = () => {
-  const { user, hasRole } = useAuth();
+  const { user, hasRole, hasAnyRole } = useAuth();
   const [loading, setLoading] = useState(false);
   const [tasks, setTasks] = useState([]);
   const [stats, setStats] = useState({});
@@ -157,6 +157,24 @@ const Tasks = () => {
     }
   };
 
+  // Delete task (admin only)
+  const deleteTask = async (id) => {
+    if (!window.confirm('Bạn chắc chắn muốn xóa nhiệm vụ này?')) return;
+    try {
+      setLoading(true);
+      const response = await taskAPI.deleteTask(id);
+      if (response.success) {
+        toast.success('Đã xóa nhiệm vụ');
+        loadTasks();
+        loadStats();
+      }
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Lỗi khi xóa nhiệm vụ');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Get task details
   const getTaskDetails = async (id) => {
     try {
@@ -229,7 +247,7 @@ const Tasks = () => {
           <p className="text-gray-600">Giao nhiệm vụ và theo dõi tiến độ công việc</p>
         </div>
         
-        {hasRole(['admin', 'manufacturer', 'distributor']) && (
+        {hasAnyRole(['admin', 'manufacturer', 'distributor']) && (
           <button
             onClick={() => setShowCreateModal(true)}
             className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-2"
@@ -509,6 +527,16 @@ const Tasks = () => {
                               title="Đánh giá"
                             >
                               <Star className="h-4 w-4" />
+                            </button>
+                          )}
+
+                          {hasRole('admin') && (
+                            <button
+                              onClick={() => deleteTask(task._id)}
+                              className="text-red-600 hover:text-red-800"
+                              title="Xóa nhiệm vụ"
+                            >
+                              <XCircle className="h-4 w-4" />
                             </button>
                           )}
                         </div>

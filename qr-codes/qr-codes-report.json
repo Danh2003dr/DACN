@@ -1,0 +1,117 @@
+{
+  "generatedAt": "2025-11-11T20:10:43.669Z",
+  "totalQRCodes": 23,
+  "drugQRCodes": [
+    {
+      "drugId": "DRUG_C9E28B7D",
+      "name": "Paracetamol 500mg",
+      "batchNumber": "BATCH001",
+      "manufacturer": "Công ty Dược phẩm ABC",
+      "qrCodeUrl": "/qr-codes/DRUG_C9E28B7D.png",
+      "isOnBlockchain": false
+    },
+    {
+      "drugId": "DRUG_9A21F7B9",
+      "name": "Amoxicillin 250mg",
+      "batchNumber": "BATCH002",
+      "manufacturer": "Công ty Dược phẩm ABC",
+      "qrCodeUrl": "/qr-codes/DRUG_9A21F7B9.png",
+      "isOnBlockchain": false
+    },
+    {
+      "drugId": "DRUG_DBF4AECA",
+      "name": "Ibuprofen 400mg",
+      "batchNumber": "BATCH003",
+      "manufacturer": "Công ty Dược phẩm ABC",
+      "qrCodeUrl": "/qr-codes/DRUG_DBF4AECA.png",
+      "isOnBlockchain": false
+    },
+    {
+      "drugId": "DRUG_DF8C01F7",
+      "name": "Cao khô dược liệu - Lô 218",
+      "batchNumber": "BATCH_218_001",
+      "manufacturer": "Công ty TNHH Dược liệu Hà Nội GMP",
+      "qrCodeUrl": "/qr-codes/DRUG_DF8C01F7.png",
+      "isOnBlockchain": false
+    },
+    {
+      "drugId": "DRUG_69BF2647",
+      "name": "Cao đặc dược liệu - Lô 218",
+      "batchNumber": "BATCH_218_002",
+      "manufacturer": "Công ty TNHH Dược liệu Hà Nội GMP",
+      "qrCodeUrl": "/qr-codes/DRUG_69BF2647.png",
+      "isOnBlockchain": false
+    },
+    {
+      "drugId": "DRUG_CFB4DC79",
+      "name": "Cao khô dược liệu - Lô 218 (Phúc Hưng)",
+      "batchNumber": "BATCH_218_003",
+      "manufacturer": "Công ty TNHH Đông dược Phúc Hưng",
+      "qrCodeUrl": "/qr-codes/DRUG_CFB4DC79.png",
+      "isOnBlockchain": false
+    },
+    {
+      "drugId": "DRUG_49A99EDD",
+      "name": "Cao khô dược liệu - Lô 219",
+      "batchNumber": "BATCH_219_001",
+      "manufacturer": "Công ty TNHH Dược liệu Hà Nội GMP",
+      "qrCodeUrl": "/qr-codes/DRUG_49A99EDD.png",
+      "isOnBlockchain": false
+    },
+    {
+      "drugId": "DRUG_ADC57852",
+      "name": "Cao đặc dược liệu - Lô 220",
+      "batchNumber": "BATCH_220_001",
+      "manufacturer": "Công ty TNHH Đông dược Phúc Hưng",
+      "qrCodeUrl": "/qr-codes/DRUG_ADC57852.png",
+      "isOnBlockchain": false
+    },
+    {
+      "drugId": "DRUG_1955F3ED",
+      "name": "Cao khô dược liệu - Lô 218",
+      "batchNumber": "BATCH_218_001",
+      "manufacturer": "Công ty TNHH Dược liệu Hà Nội GMP",
+      "qrCodeUrl": "/qr-codes/DRUG_1955F3ED.png",
+      "isOnBlockchain": false
+    },
+    {
+      "drugId": "DRUG_26ED2570",
+      "name": "Cao đặc dược liệu - Lô 218",
+      "batchNumber": "BATCH_218_002",
+      "manufacturer": "Công ty TNHH Dược liệu Hà Nội GMP",
+      "qrCodeUrl": "/qr-codes/DRUG_26ED2570.png",
+      "isOnBlockchain": false
+    },
+    {
+      "drugId": "DRUG_17A46A4B",
+      "name": "Cao khô dược liệu - Lô 218 (Phúc Hưng)",
+      "batchNumber": "BATCH_218_003",
+      "manufacturer": "Công ty TNHH Đông dược Phúc Hưng",
+      "qrCodeUrl": "/qr-codes/DRUG_17A46A4B.png",
+      "isOnBlockchain": false
+    },
+    {
+      "drugId": "DRUG_2CDE11F8",
+      "name": "Cao khô dược liệu - Lô 219",
+      "batchNumber": "BATCH_219_001",
+      "manufacturer": "Công ty TNHH Dược liệu Hà Nội GMP",
+      "qrCodeUrl": "/qr-codes/DRUG_2CDE11F8.png",
+      "isOnBlockchain": false
+    },
+    {
+      "drugId": "DRUG_125D08DC",
+      "name": "Cao đặc dược liệu - Lô 220",
+      "batchNumber": "BATCH_220_001",
+      "manufacturer": "Công ty TNHH Đông dược Phúc Hưng",
+      "qrCodeUrl": "/qr-codes/DRUG_125D08DC.png",
+      "isOnBlockchain": false
+    }
+  ],
+  "supplyChainQRCodes": [],
+  "blockchainIntegrations": [],
+  "summary": {
+    "totalDrugs": 13,
+    "totalSupplyChains": 0,
+    "totalBlockchainIntegrations": 0
+  }
+}

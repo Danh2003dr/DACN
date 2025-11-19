@@ -150,33 +150,35 @@ const QRScanner = () => {
       setError(null);
       setScanMode('upload');
 
-      // Create image element
-      const img = new Image();
       const reader = new FileReader();
 
       reader.onload = async (e) => {
-        img.src = e.target.result;
-        img.onload = async () => {
-          try {
-            // Decode QR code from image
-            const result = await codeReader.current.decodeFromImage(img);
-            if (result) {
-              await handleScanResult(result.getText());
-            } else {
-              throw new Error('Không tìm thấy QR code trong ảnh');
-            }
-          } catch (error) {
-            console.error('Decode error:', error);
-            setError('Không thể đọc QR code từ ảnh. Vui lòng kiểm tra chất lượng ảnh.');
-            toast.error('Không thể đọc QR code từ ảnh');
-          } finally {
-            setLoading(false);
-            // Reset file input
-            if (fileInputRef.current) {
-              fileInputRef.current.value = '';
-            }
+        try {
+          // Decode QR code trực tiếp từ DataURL của ảnh
+          if (!codeReader.current) {
+            throw new Error('Bộ đọc QR chưa được khởi tạo');
           }
-        };
+
+          const imageDataUrl = e.target.result;
+
+          const result = await codeReader.current.decodeFromImageUrl(imageDataUrl);
+
+          if (result) {
+            await handleScanResult(result.getText());
+          } else {
+            throw new Error('Không tìm thấy QR code trong ảnh');
+          }
+        } catch (error) {
+          console.error('Decode error:', error);
+          setError('Không thể đọc QR code từ ảnh. Vui lòng kiểm tra chất lượng ảnh.');
+          toast.error('Không thể đọc QR code từ ảnh');
+        } finally {
+          setLoading(false);
+          // Reset file input
+          if (fileInputRef.current) {
+            fileInputRef.current.value = '';
+          }
+        }
       };
 
       reader.onerror = () => {

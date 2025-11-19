@@ -5,6 +5,28 @@ const Task = require('../models/Task');
 const Notification = require('../models/Notification');
 const Review = require('../models/Review');
 const mongoose = require('mongoose');
+const ExcelJS = require('exceljs');
+const PDFDocument = require('pdfkit');
+
+const MODULE_LABELS = {
+  drugs: 'Thuốc',
+  'supply-chain': 'Chuỗi cung ứng',
+  tasks: 'Nhiệm vụ',
+  notifications: 'Thông báo',
+  reviews: 'Đánh giá'
+};
+
+const buildDateFilter = (startDate, endDate) => {
+  if (startDate && endDate) {
+    return {
+      createdAt: {
+        $gte: new Date(startDate),
+        $lte: new Date(endDate)
+      }
+    };
+  }
+  return {};
+};
 
 // @desc    Lấy thống kê tổng quan hệ thống
 // @route   GET /api/reports/overview
@@ -343,39 +365,8 @@ const getModuleStats = async (req, res) => {
     const { module } = req.params;
     const { startDate, endDate } = req.query;
 
-    // Tạo filter theo thời gian
-    const dateFilter = {};
-    if (startDate && endDate) {
-      dateFilter.createdAt = {
-        $gte: new Date(startDate),
-        $lte: new Date(endDate)
-      };
-    }
-
-    let stats = {};
-
-    switch (module) {
-      case 'drugs':
-        stats = await getDrugStats(dateFilter);
-        break;
-      case 'supply-chain':
-        stats = await getSupplyChainStats(dateFilter);
-        break;
-      case 'tasks':
-        stats = await getTaskStats(dateFilter);
-        break;
-      case 'notifications':
-        stats = await getNotificationStats(dateFilter);
-        break;
-      case 'reviews':
-        stats = await getReviewStats(dateFilter);
-        break;
-      default:
-        return res.status(400).json({
-          success: false,
-          message: 'Module không hợp lệ.'
-        });
-    }
+    const dateFilter = buildDateFilter(startDate, endDate);
+    const stats = await resolveModuleStats(module, dateFilter);
 
     res.status(200).json({
       success: true,
@@ -383,6 +374,12 @@ const getModuleStats = async (req, res) => {
     });
 
   } catch (error) {
+    if (error.message === 'MODULE_INVALID') {
+      return res.status(400).json({
+        success: false,
+        message: 'Module không hợp lệ.'
+      });
+    }
     res.status(500).json({
       success: false,
       message: `Lỗi server khi lấy thống kê ${req.params.module}.`,
@@ -631,6 +628,25 @@ const getReviewStats = async (dateFilter) => {
   };
 };
 
+const resolveModuleStats = async (module, dateFilter) => {
+  switch (module) {
+    case 'drugs':
+      return getDrugStats(dateFilter);
+    case 'supply-chain':
+      return getSupplyChainStats(dateFilter);
+    case 'tasks':
+      return getTaskStats(dateFilter);
+    case 'notifications':
+      return getNotificationStats(dateFilter);
+    case 'reviews':
+      return getReviewStats(dateFilter);
+    default: {
+      const err = new Error('MODULE_INVALID');
+      throw err;
+    }
+  }
+};
+
 // @desc    Lấy báo cáo hành trình phân phối
 // @route   GET /api/reports/distribution-journey
 // @access  Private
@@ -753,11 +769,480 @@ const getQualityAssessmentReport = async (req, res) => {
   }
 };
 
+const exportReportExcel = async (req, res) => {
+  try {
+    const { module = 'drugs', startDate, endDate } = req.query;
+    const dateFilter = buildDateFilter(startDate, endDate);
+    const stats = await resolveModuleStats(module, dateFilter);
+    const moduleLabel = MODULE_LABELS[module] || module;
+
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('Report');
+
+    const titleRow = sheet.addRow([`Báo cáo ${moduleLabel}`]);
+    titleRow.font = { bold: true, size: 16 };
+    sheet.addRow([`Khoảng thời gian`, formatRangeLabel(startDate, endDate)]);
+    sheet.addRow([`Thời gian xuất`, formatDateTime(new Date())]);
+    sheet.addRow([]);
+
+    const summaryRows = buildSummaryRows(stats);
+    if (summaryRows.length > 0) {
+      writeExcelSummarySection(sheet, 'Tổng quan', summaryRows);
+    }
+
+    const sections = buildArraySections(stats);
+    sections.forEach(section => {
+      writeExcelTableSection(sheet, section.title, section.columns, section.rows);
+    });
+
+    const filename = `${module}-report-${Date.now()}.xlsx`;
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename=${filename}`);
+    await workbook.xlsx.write(res);
+    res.end();
+  } catch (error) {
+    if (error.message === 'MODULE_INVALID') {
+      return res.status(400).json({
+        success: false,
+        message: 'Module không hợp lệ.'
+      });
+    }
+    console.error('Export Excel error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Lỗi server khi xuất báo cáo Excel.'
+    });
+  }
+};
+
+const exportReportPdf = async (req, res) => {
+  try {
+    const { module = 'drugs', startDate, endDate } = req.query;
+    const dateFilter = buildDateFilter(startDate, endDate);
+    const stats = await resolveModuleStats(module, dateFilter);
+    const moduleLabel = MODULE_LABELS[module] || module;
+
+    const filename = `${module}-report-${Date.now()}.pdf`;
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename=${filename}`);
+
+    const doc = new PDFDocument({ margin: 40 });
+    doc.pipe(res);
+
+    doc.fontSize(18).text(`Báo cáo ${moduleLabel}`);
+    doc.moveDown(0.5);
+    doc.fontSize(11).text(`Khoảng thời gian: ${formatRangeLabel(startDate, endDate)}`);
+    doc.text(`Thời gian xuất: ${formatDateTime(new Date())}`);
+    doc.moveDown();
+
+    const summaryRows = buildSummaryRows(stats);
+    if (summaryRows.length > 0) {
+      writePdfSummarySection(doc, 'Tổng quan', summaryRows);
+    }
+
+    const sections = buildArraySections(stats);
+    sections.forEach(section => {
+      writePdfTableSection(doc, section.title, section.columns, section.rows);
+    });
+
+    doc.end();
+  } catch (error) {
+    if (error.message === 'MODULE_INVALID') {
+      return res.status(400).json({
+        success: false,
+        message: 'Module không hợp lệ.'
+      });
+    }
+    console.error('Export PDF error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Lỗi server khi xuất báo cáo PDF.'
+    });
+  }
+};
+
+const humanizeKey = (key) => {
+  if (!key) return '';
+  return key
+    .toString()
+    .replace(/_/g, ' ')
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+};
+
+const formatCellValue = (value) => {
+  if (value == null) return '';
+  if (typeof value === 'object') {
+    if (value.year && value.month && Object.keys(value).length <= 2) {
+      return `${value.month}/${value.year}`;
+    }
+    return JSON.stringify(value);
+  }
+  return value;
+};
+
+const buildSummaryRows = (stats) => {
+  const rows = [];
+  Object.entries(stats || {}).forEach(([key, value]) => {
+    if (value == null) return;
+    if (Array.isArray(value)) return;
+    if (typeof value === 'object') return;
+    rows.push([humanizeKey(key), value]);
+  });
+  return rows;
+};
+
+const buildArraySections = (stats) => {
+  const sections = [];
+  Object.entries(stats || {}).forEach(([key, value]) => {
+    if (!Array.isArray(value) || value.length === 0) return;
+    const columns = Array.from(new Set(value.flatMap((row) => Object.keys(row))));
+    sections.push({
+      title: humanizeKey(key),
+      columns,
+      rows: value
+    });
+  });
+  return sections;
+};
+
+const writeExcelSummarySection = (sheet, title, rows) => {
+  sheet.addRow([]);
+  const header = sheet.addRow([title]);
+  header.font = { bold: true };
+  rows.forEach(([label, value]) => {
+    sheet.addRow([label, value]);
+  });
+};
+
+const writeExcelTableSection = (sheet, title, columns, rows) => {
+  sheet.addRow([]);
+  const header = sheet.addRow([title]);
+  header.font = { bold: true };
+  sheet.addRow(columns.map((col) => humanizeKey(col)));
+  rows.forEach((row) => {
+    sheet.addRow(columns.map((col) => formatCellValue(row[col])));
+  });
+};
+
+const writePdfSummarySection = (doc, title, rows) => {
+  doc.font('Helvetica-Bold').fontSize(13).text(title);
+  doc.moveDown(0.3);
+  rows.forEach(([label, value]) => {
+    doc.font('Helvetica-Bold').text(`${label}: `, { continued: true });
+    doc.font('Helvetica').text(String(value));
+  });
+  doc.moveDown();
+};
+
+const writePdfTableSection = (doc, title, columns, rows) => {
+  doc.font('Helvetica-Bold').fontSize(13).text(title);
+  doc.moveDown(0.2);
+  doc.font('Helvetica').fontSize(11);
+  rows.forEach((row) => {
+    const line = columns
+      .map((col) => `${humanizeKey(col)}: ${formatCellValue(row[col])}`)
+      .join(' | ');
+    doc.text(line);
+  });
+  doc.moveDown();
+};
+
+const formatRangeLabel = (startDate, endDate) => {
+  if (startDate && endDate) {
+    return `${formatDate(startDate)} - ${formatDate(endDate)}`;
+  }
+  return 'Toàn bộ dữ liệu';
+};
+
+const formatDate = (value) => {
+  if (!value) return '';
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleDateString('vi-VN');
+};
+
+const formatDateTime = (value) => {
+  if (!value) return '';
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleString('vi-VN');
+};
+
+const kpiService = require('../services/kpiService');
+const alertService = require('../services/alertService');
+
+// @desc    Lấy KPI tổng hợp
+// @route   GET /api/reports/kpi
+// @access  Private
+const getKPIs = async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query;
+    const dateRange = (startDate || endDate) ? { startDate, endDate } : null;
+    
+    const kpis = await kpiService.calculateOverallKPIs(dateRange);
+    
+    res.status(200).json({
+      success: true,
+      data: kpis
+    });
+  } catch (error) {
+    console.error('Error getting KPIs:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Lỗi server khi lấy KPI.',
+      error: error.message
+    });
+  }
+};
+
+// @desc    Lấy KPI time series cho biểu đồ
+// @route   GET /api/reports/kpi/timeseries
+// @access  Private
+const getKPITimeSeries = async (req, res) => {
+  try {
+    const { kpiType = 'drug.validityRate', days = 30 } = req.query;
+    
+    const timeSeries = await kpiService.getKPITimeSeries(kpiType, parseInt(days));
+    
+    res.status(200).json({
+      success: true,
+      data: {
+        kpiType,
+        days: parseInt(days),
+        timeSeries
+      }
+    });
+  } catch (error) {
+    console.error('Error getting KPI time series:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Lỗi server khi lấy KPI time series.',
+      error: error.message
+    });
+  }
+};
+
+// @desc    Lấy cảnh báo thời gian thực
+// @route   GET /api/reports/alerts
+// @access  Private
+const getAlerts = async (req, res) => {
+  try {
+    const userRole = req.user?.role;
+    const userId = req.user?.id;
+    
+    const alerts = await alertService.getAllAlerts(userRole, userId);
+    
+    res.status(200).json({
+      success: true,
+      data: alerts
+    });
+  } catch (error) {
+    console.error('Error getting alerts:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Lỗi server khi lấy cảnh báo.',
+      error: error.message
+    });
+  }
+};
+
+// @desc    Đánh dấu cảnh báo đã xem
+// @route   POST /api/reports/alerts/:alertId/read
+// @access  Private
+const markAlertAsRead = async (req, res) => {
+  try {
+    const { alertId } = req.params;
+    const userId = req.user?.id;
+    
+    const result = await alertService.markAlertAsRead(alertId, userId);
+    
+    res.status(200).json({
+      success: true,
+      data: result
+    });
+  } catch (error) {
+    console.error('Error marking alert as read:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Lỗi server khi đánh dấu cảnh báo.',
+      error: error.message
+    });
+  }
+};
+
+// @desc    Xuất báo cáo động với tùy chọn
+// @route   POST /api/reports/export/custom
+// @access  Private
+const exportCustomReport = async (req, res) => {
+  try {
+    const {
+      module = 'drugs',
+      format = 'excel',
+      startDate,
+      endDate,
+      columns = [],
+      filters = {},
+      groupBy = [],
+      sortBy = [],
+      template = 'default'
+    } = req.body;
+
+    const dateFilter = buildDateFilter(startDate, endDate);
+    const stats = await resolveModuleStats(module, dateFilter);
+    const moduleLabel = MODULE_LABELS[module] || module;
+
+    // Áp dụng filters bổ sung
+    let filteredData = stats;
+    if (Object.keys(filters).length > 0) {
+      // Logic filter dữ liệu
+      // Tùy thuộc vào module và filters
+    }
+
+    // Áp dụng groupBy
+    if (groupBy.length > 0) {
+      // Logic group dữ liệu
+    }
+
+    // Áp dụng sortBy
+    if (sortBy.length > 0) {
+      // Logic sort dữ liệu
+    }
+
+    if (format === 'excel') {
+      const workbook = new ExcelJS.Workbook();
+      const sheet = workbook.addWorksheet('Report');
+
+      // Header với template
+      const titleRow = sheet.addRow([`Báo cáo ${moduleLabel} - ${template}`]);
+      titleRow.font = { bold: true, size: 16 };
+      sheet.addRow([`Khoảng thời gian`, formatRangeLabel(startDate, endDate)]);
+      sheet.addRow([`Thời gian xuất`, formatDateTime(new Date())]);
+      sheet.addRow([]);
+
+      // Chỉ xuất các cột được chọn
+      const selectedColumns = columns.length > 0 ? columns : Object.keys(stats);
+      const summaryRows = buildSummaryRowsWithColumns(stats, selectedColumns);
+      if (summaryRows.length > 0) {
+        writeExcelSummarySection(sheet, 'Tổng quan', summaryRows);
+      }
+
+      const sections = buildArraySectionsWithColumns(stats, selectedColumns);
+      sections.forEach(section => {
+        writeExcelTableSection(sheet, section.title, section.columns, section.rows);
+      });
+
+      const filename = `${module}-custom-report-${Date.now()}.xlsx`;
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', `attachment; filename=${filename}`);
+      await workbook.xlsx.write(res);
+      res.end();
+    } else if (format === 'pdf') {
+      const filename = `${module}-custom-report-${Date.now()}.pdf`;
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename=${filename}`);
+
+      const doc = new PDFDocument({ margin: 40 });
+      doc.pipe(res);
+
+      doc.fontSize(18).text(`Báo cáo ${moduleLabel} - ${template}`);
+      doc.moveDown(0.5);
+      doc.fontSize(11).text(`Khoảng thời gian: ${formatRangeLabel(startDate, endDate)}`);
+      doc.text(`Thời gian xuất: ${formatDateTime(new Date())}`);
+      doc.moveDown();
+
+      const selectedColumns = columns.length > 0 ? columns : Object.keys(stats);
+      const summaryRows = buildSummaryRowsWithColumns(stats, selectedColumns);
+      if (summaryRows.length > 0) {
+        writePdfSummarySection(doc, 'Tổng quan', summaryRows);
+      }
+
+      const sections = buildArraySectionsWithColumns(stats, selectedColumns);
+      sections.forEach(section => {
+        writePdfTableSection(doc, section.title, section.columns, section.rows);
+      });
+
+      doc.end();
+    } else if (format === 'csv') {
+      // CSV export
+      const csvRows = [];
+      csvRows.push(['Báo cáo', moduleLabel]);
+      csvRows.push(['Khoảng thời gian', formatRangeLabel(startDate, endDate)]);
+      csvRows.push(['Thời gian xuất', formatDateTime(new Date())]);
+      csvRows.push([]);
+
+      const selectedColumns = columns.length > 0 ? columns : Object.keys(stats);
+      const summaryRows = buildSummaryRowsWithColumns(stats, selectedColumns);
+      summaryRows.forEach(([label, value]) => {
+        csvRows.push([label, value]);
+      });
+
+      const csvContent = csvRows.map(row => row.map(cell => `"${cell}"`).join(',')).join('\n');
+      const filename = `${module}-custom-report-${Date.now()}.csv`;
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', `attachment; filename=${filename}`);
+      res.send(csvContent);
+    } else {
+      return res.status(400).json({
+        success: false,
+        message: 'Định dạng không được hỗ trợ. Chọn excel, pdf hoặc csv.'
+      });
+    }
+  } catch (error) {
+    console.error('Export custom report error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Lỗi server khi xuất báo cáo tùy chỉnh.',
+      error: error.message
+    });
+  }
+};
+
+// Helper: Build summary rows với selected columns (override existing function)
+const buildSummaryRowsWithColumns = (stats, selectedColumns = null) => {
+  const rows = [];
+  const keys = selectedColumns || Object.keys(stats || {});
+  
+  keys.forEach((key) => {
+    const value = stats[key];
+    if (value == null) return;
+    if (Array.isArray(value)) return;
+    if (typeof value === 'object') return;
+    rows.push([humanizeKey(key), value]);
+  });
+  return rows;
+};
+
+// Helper: Build array sections với selected columns (override existing function)
+const buildArraySectionsWithColumns = (stats, selectedColumns = null) => {
+  const sections = [];
+  const keys = selectedColumns || Object.keys(stats || {});
+  
+  keys.forEach((key) => {
+    const value = stats[key];
+    if (!Array.isArray(value) || value.length === 0) return;
+    const columns = Array.from(new Set(value.flatMap((row) => Object.keys(row))));
+    sections.push({
+      title: humanizeKey(key),
+      columns,
+      rows: value
+    });
+  });
+  return sections;
+};
+
 module.exports = {
   getSystemOverview,
   getDashboardSummary,
   getModuleStats,
   getDistributionJourneyReport,
   getSuspiciousDrugsReport,
-  getQualityAssessmentReport
+  getQualityAssessmentReport,
+  exportReportExcel,
+  exportReportPdf,
+  getKPIs,
+  getKPITimeSeries,
+  getAlerts,
+  markAlertAsRead,
+  exportCustomReport
 };

@@ -3,7 +3,7 @@ const mongoose = require('mongoose');
 const supplyChainStepSchema = new mongoose.Schema({
   stepType: {
     type: String,
-    enum: ['production', 'distribution', 'hospital', 'patient'],
+    enum: ['production', 'distribution', 'dealer', 'pharmacy', 'hospital', 'patient'],
     required: true
   },
   
@@ -20,7 +20,7 @@ const supplyChainStepSchema = new mongoose.Schema({
   
   actorRole: {
     type: String,
-    enum: ['manufacturer', 'distributor', 'hospital', 'patient'],
+    enum: ['manufacturer', 'distributor', 'dealer', 'pharmacy', 'hospital', 'patient', 'admin'],
     required: true
   },
   
@@ -34,7 +34,10 @@ const supplyChainStepSchema = new mongoose.Schema({
       'stored',            // Lưu kho
       'dispensed',         // Cấp phát cho bệnh nhân
       'recalled',          // Thu hồi
-      'quality_check'      // Kiểm tra chất lượng
+      'quality_check',     // Kiểm tra chất lượng
+      'handover',          // Bàn giao giữa các vai trò
+      'reported',          // Báo cáo sự cố
+      'consumed'           // Bệnh nhân xác nhận đã dùng
     ]
   },
   
@@ -67,6 +70,16 @@ const supplyChainStepSchema = new mongoose.Schema({
     unit: String,
     expiryDate: Date,
     notes: String
+  },
+
+  handover: {
+    fromRole: String,
+    toRole: String,
+    token: String,
+    confirmedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    }
   },
   
   blockchain: {
@@ -109,6 +122,24 @@ const supplyChainSchema = new mongoose.Schema({
     blockchainId: String,
     verificationUrl: String
   },
+
+  actors: [{
+    actorId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    },
+    actorName: String,
+    role: {
+      type: String,
+      enum: ['manufacturer', 'distributor', 'dealer', 'pharmacy', 'hospital', 'patient', 'admin']
+    },
+    organization: String,
+    contact: {
+      phone: String,
+      email: String
+    },
+    permissions: [String]
+  }],
   
   status: {
     type: String,
@@ -206,6 +237,25 @@ const supplyChainSchema = new mongoose.Schema({
     ref: 'User',
     required: true
   },
+
+  handoverLogs: [{
+    fromRole: String,
+    toRole: String,
+    fromActor: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    },
+    toActor: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    },
+    token: String,
+    confirmedAt: Date,
+    createdAt: {
+      type: Date,
+      default: Date.now
+    }
+  }],
   
   createdAt: {
     type: Date,
@@ -222,6 +272,7 @@ const supplyChainSchema = new mongoose.Schema({
 supplyChainSchema.index({ drugId: 1, drugBatchNumber: 1 });
 supplyChainSchema.index({ 'steps.timestamp': -1 });
 supplyChainSchema.index({ 'currentLocation.actorId': 1 });
+supplyChainSchema.index({ 'currentLocation.actorRole': 1 });
 supplyChainSchema.index({ status: 1 });
 supplyChainSchema.index({ 'blockchain.blockchainId': 1 });
 

@@ -1,31 +1,31 @@
 {
-  "generatedAt": "2025-10-24T07:02:59.601Z",
+  "generatedAt": "2025-11-11T20:10:46.272Z",
   "title": "Báo cáo tổng hợp hệ thống quản lý chuỗi cung ứng thuốc",
   "summary": {
-    "totalSupplyChains": 2,
-    "totalDrugs": 7,
-    "totalUsers": 7,
-    "totalSteps": 6,
-    "totalQualityChecks": 4
+    "totalSupplyChains": 0,
+    "totalDrugs": 13,
+    "totalUsers": 12,
+    "totalSteps": 0,
+    "totalQualityChecks": 0
   },
   "statusDistribution": {
-    "active": 1,
+    "active": 0,
     "completed": 0,
-    "recalled": 1,
+    "recalled": 0,
     "expired": 0,
     "suspended": 0
   },
   "roleDistribution": {
     "manufacturers": 3,
-    "distributors": 1,
-    "hospitals": 1,
+    "distributors": 3,
+    "hospitals": 4,
     "patients": 1,
     "admins": 1
   },
   "drugFormDistribution": {
-    "cao khô": 3,
-    "cao đặc": 2,
-    "viên nén": 1,
+    "cao khô": 6,
+    "cao đặc": 4,
+    "viên nén": 2,
     "viên nang": 1,
     "siro": 0,
     "dung dịch tiêm": 0,
@@ -35,11 +35,11 @@
     "khác": 0
   },
   "qualitySummary": {
-    "totalChecks": 4,
-    "passedChecks": 3,
-    "failedChecks": 1,
+    "totalChecks": 0,
+    "passedChecks": 0,
+    "failedChecks": 0,
     "warningChecks": 0,
-    "successRate": 75
+    "successRate": 0
   },
   "blockchainSummary": {
     "totalOnBlockchain": 0,
@@ -50,10 +50,10 @@
     "averageBlockNumber": 0
   },
   "timeSeriesSummary": {
-    "totalDays": 1,
-    "totalMonths": 1,
-    "averageDailyCreated": 2,
-    "averageMonthlyCreated": 2
+    "totalDays": 0,
+    "totalMonths": 0,
+    "averageDailyCreated": null,
+    "averageMonthlyCreated": null
   },
   "recommendations": [
     "Tăng cường kiểm tra chất lượng tại các điểm quan trọng",
