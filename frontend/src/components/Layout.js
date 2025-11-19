@@ -24,7 +24,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
-const Layout = () => {
+const Layout = ({ children }) => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   
@@ -290,7 +290,7 @@ const Layout = () => {
         <main className="flex-1 relative overflow-y-auto focus:outline-none">
           <div className="py-6">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 md:px-8">
-              <Outlet />
+              {children || <Outlet />}
             </div>
           </div>
         </main>

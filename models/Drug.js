@@ -99,6 +99,7 @@ const drugSchema = new mongoose.Schema({
     blockchainId: {
       type: String,
       unique: true,
+      sparse: true,
       trim: true
     },
     transactionHash: {
@@ -162,7 +163,8 @@ const drugSchema = new mongoose.Schema({
     data: {
       type: String,
       required: false,
-      unique: true
+      unique: true,
+      sparse: true
     },
     imageUrl: {
       type: String

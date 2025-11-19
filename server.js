@@ -14,6 +14,7 @@ const getServerUrl = require('./utils/getServerUrl');
 
 // Import routes
 const authRoutes = require('./routes/auth');
+const profileRoutes = require('./routes/profileRoutes');
 const userRoutes = require('./routes/users');
 const settingsRoutes = require('./routes/settings');
 const blockchainRoutes = require('./routes/blockchain');
@@ -108,6 +109,7 @@ initializeBlockchain();
 
 // Routes
 app.use('/api/auth', authRoutes);
+app.use('/api/auth', profileRoutes); // Profile routes (overrides some auth routes)
 app.use('/api/users', userRoutes);
 app.use('/api/drugs', require('./routes/drugs'));
 app.use('/api/supply-chain', require('./routes/supplyChain'));

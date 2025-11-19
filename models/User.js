@@ -13,15 +13,15 @@ const USER_ROLES = {
 
 // Schema cho User
 const userSchema = new mongoose.Schema({
-  // Thông tin cơ bản
+  // Thông tin đăng nhập
   username: {
     type: String,
     required: function() {
-      // Username không bắt buộc nếu đăng nhập bằng Google (sẽ tự động tạo)
+      // Username không bắt buộc nếu đăng nhập bằng Google
       return !this.googleId;
     },
     unique: true,
-    sparse: true, // Cho phép null nhưng unique khi có giá trị
+    sparse: true,
     trim: true,
     minlength: [3, 'Tên đăng nhập phải có ít nhất 3 ký tự'],
     maxlength: [50, 'Tên đăng nhập không được quá 50 ký tự']
@@ -49,7 +49,7 @@ const userSchema = new mongoose.Schema({
   googleId: {
     type: String,
     unique: true,
-    sparse: true // Cho phép null nhưng unique khi có giá trị
+    sparse: true
   },
   
   authProvider: {
@@ -61,20 +61,21 @@ const userSchema = new mongoose.Schema({
   // Thông tin cá nhân
   fullName: {
     type: String,
-    required: function() {
-      // FullName không bắt buộc nếu đăng nhập bằng Google (sẽ lấy từ Google profile)
-      return !this.googleId;
-    },
+    required: [true, 'Vui lòng nhập họ tên'],
     trim: true,
     maxlength: [100, 'Họ tên không được quá 100 ký tự']
   },
   
-  avatar: {
+  phone: {
     type: String,
-    default: null
+    match: [/^[0-9]{10,11}$/, 'Số điện thoại không hợp lệ']
   },
-
-  // Tọa độ địa chỉ
+  
+  address: {
+    type: String,
+    trim: true
+  },
+  
   location: {
     type: {
       type: String,
@@ -91,20 +92,17 @@ const userSchema = new mongoose.Schema({
     }
   },
   
-  phone: {
+  avatar: {
     type: String,
-    required: function() {
-      // Phone không bắt buộc nếu đăng nhập bằng OAuth
-      return !this.googleId;
-    },
-    match: [/^[0-9]{10,11}$/, 'Số điện thoại không hợp lệ']
+    default: null
   },
   
-  address: {
-    street: { type: String, required: false },
-    ward: { type: String, required: false },
-    district: { type: String, required: false },
-    city: { type: String, required: false }
+  // Thông tin tổ chức
+  organizationInfo: {
+    name: { type: String, trim: true },
+    address: { type: String, trim: true },
+    phone: { type: String, trim: true },
+    email: { type: String, trim: true, lowercase: true }
   },
   
   // Phân quyền và vai trò
@@ -119,18 +117,16 @@ const userSchema = new mongoose.Schema({
   organizationId: {
     type: String,
     required: function() {
-      // Không bắt buộc nếu đăng nhập bằng OAuth (sẽ được set sau)
       if (this.googleId || this.authProvider === 'google') return false;
       return ['manufacturer', 'distributor', 'hospital'].includes(this.role);
     },
     unique: true,
-    sparse: true // Cho phép null nhưng unique khi có giá trị
+    sparse: true
   },
   
   patientId: {
     type: String,
     required: function() {
-      // Không bắt buộc nếu đăng nhập bằng OAuth (sẽ được set sau)
       if (this.googleId || this.authProvider === 'google') return false;
       return this.role === 'patient';
     },
@@ -149,7 +145,26 @@ const userSchema = new mongoose.Schema({
     default: false
   },
   
-  // Quản lý đăng nhập
+  mustChangePassword: {
+    type: Boolean,
+    default: function() {
+      return !this.googleId;
+    }
+  },
+  
+  lastLogin: {
+    type: Date
+  },
+  
+  // Cài đặt thông báo
+  notificationPreferences: {
+    emailEnabled: {
+      type: Boolean,
+      default: true
+    }
+  },
+  
+  // Quản lý đăng nhập (cho bảo mật)
   loginAttempts: {
     type: Number,
     default: 0
@@ -159,38 +174,7 @@ const userSchema = new mongoose.Schema({
     type: Date
   },
   
-  lastLogin: {
-    type: Date
-  },
-  
-  // Bắt buộc đổi mật khẩu lần đầu (không áp dụng cho OAuth)
-  mustChangePassword: {
-    type: Boolean,
-    default: function() {
-      // Không cần đổi mật khẩu nếu đăng nhập bằng Google
-      return !this.googleId;
-    }
-  },
-  
-  // Thông tin bổ sung theo vai trò
-  organizationInfo: {
-    name: String,
-    license: String,
-    type: String, // 'pharmaceutical_company', 'distribution_company', 'hospital'
-    description: String
-  },
-  
   // Metadata
-  createdAt: {
-    type: Date,
-    default: Date.now
-  },
-  
-  updatedAt: {
-    type: Date,
-    default: Date.now
-  },
-  
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
@@ -199,11 +183,6 @@ const userSchema = new mongoose.Schema({
   timestamps: true,
   toJSON: { virtuals: true },
   toObject: { virtuals: true }
-});
-
-// Virtual cho địa chỉ đầy đủ
-userSchema.virtual('fullAddress').get(function() {
-  return `${this.address.street}, ${this.address.ward}, ${this.address.district}, ${this.address.city}`;
 });
 
 // Virtual để kiểm tra tài khoản có bị khóa không
@@ -218,10 +197,11 @@ userSchema.index({ role: 1 });
 userSchema.index({ organizationId: 1 });
 userSchema.index({ patientId: 1 });
 userSchema.index({ googleId: 1 });
+userSchema.index({ 'location.coordinates': '2dsphere' }); // Index cho GeoJSON
 
 // Middleware trước khi save - mã hóa mật khẩu
 userSchema.pre('save', async function(next) {
-  // Chỉ mã hóa nếu mật khẩu được thay đổi và có password (không phải OAuth user)
+  // Chỉ mã hóa nếu mật khẩu được thay đổi và có password
   if (!this.isModified('password') || !this.password) return next();
   
   try {
@@ -232,12 +212,6 @@ userSchema.pre('save', async function(next) {
   } catch (error) {
     next(error);
   }
-});
-
-// Middleware trước khi save - cập nhật updatedAt
-userSchema.pre('save', function(next) {
-  this.updatedAt = Date.now();
-  next();
 });
 
 // Method để so sánh mật khẩu
@@ -344,14 +318,12 @@ userSchema.statics.createDefaultAccount = async function(role, identifier, passw
     password: password,
     fullName: `Default ${role}`,
     phone: '0123456789',
-    address: {
-      street: '123 Đường ABC',
-      ward: 'Phường 1',
-      district: 'Quận 1',
-      city: 'TP.HCM'
-    },
+    address: '123 Đường ABC, Phường 1, Quận 1, TP.HCM',
     role: role,
-    mustChangePassword: true
+    mustChangePassword: true,
+    notificationPreferences: {
+      emailEnabled: true
+    }
   };
   
   // Thêm thông tin cụ thể theo vai trò
@@ -360,24 +332,27 @@ userSchema.statics.createDefaultAccount = async function(role, identifier, passw
       defaultData.organizationId = `MFG_${identifier}`;
       defaultData.organizationInfo = {
         name: `Công ty Dược phẩm ${identifier}`,
-        license: `LIC_${identifier}`,
-        type: 'pharmaceutical_company'
+        address: '123 Đường ABC, Phường 1, Quận 1, TP.HCM',
+        phone: '0123456789',
+        email: `info@${identifier}.com`
       };
       break;
     case USER_ROLES.DISTRIBUTOR:
       defaultData.organizationId = `DIST_${identifier}`;
       defaultData.organizationInfo = {
         name: `Công ty Phân phối ${identifier}`,
-        license: `LIC_${identifier}`,
-        type: 'distribution_company'
+        address: '123 Đường ABC, Phường 1, Quận 1, TP.HCM',
+        phone: '0123456789',
+        email: `info@${identifier}.com`
       };
       break;
     case USER_ROLES.HOSPITAL:
       defaultData.organizationId = `HOSP_${identifier}`;
       defaultData.organizationInfo = {
         name: `Bệnh viện ${identifier}`,
-        license: `LIC_${identifier}`,
-        type: 'hospital'
+        address: '123 Đường ABC, Phường 1, Quận 1, TP.HCM',
+        phone: '0123456789',
+        email: `info@${identifier}.com`
       };
       break;
     case USER_ROLES.PATIENT:
