@@ -3,6 +3,7 @@ const DigitalSignature = require('../models/DigitalSignature');
 const Drug = require('../models/Drug');
 const SupplyChain = require('../models/SupplyChain');
 const mongoose = require('mongoose');
+const hsmService = require('../services/hsm/hsmService');
 
 /**
  * Ký số cho một đối tượng (drug, supplyChain, etc.)
@@ -139,7 +140,32 @@ exports.verifySignature = async (req, res) => {
         if (supplyChain) {
           documentData = supplyChain.toObject();
         }
+      } else if (signature.targetType === 'qualityTest') {
+        // qualityTest là subdocument trong Drug, cần tìm drug chứa qualityTest
+        // targetId có thể là ObjectId của qualityTest subdocument
+        try {
+          const drug = await Drug.findOne({ 'qualityTest._id': signature.targetId });
+          if (drug && drug.qualityTest) {
+            documentData = {
+              targetType: 'qualityTest',
+              drugId: drug.drugId,
+              drugName: drug.name,
+              batchNumber: drug.batchNumber,
+              qualityTest: drug.qualityTest
+            };
+          }
+        } catch (error) {
+          console.error('Error finding drug with qualityTest:', error);
+        }
       }
+    }
+    
+    // Nếu vẫn không có documentData, không thể verify
+    if (!documentData) {
+      return res.status(400).json({
+        success: false,
+        message: 'Không thể lấy dữ liệu để xác thực chữ ký. Đối tượng được ký có thể đã bị xóa hoặc không tồn tại.'
+      });
     }
     
     // Xác thực chữ ký
@@ -213,8 +239,14 @@ exports.getSignatures = async (req, res) => {
     }
     
     // Nếu không phải admin, chỉ hiển thị chữ ký của user đó
-    if (req.user.role !== 'admin' && !userId) {
-      query.signedBy = req.user._id || req.user.id;
+    // Chỉ áp dụng filter nếu có user và không phải admin
+    if (req.user && req.user.role !== 'admin' && !userId) {
+      const userObjectId = req.user._id || req.user.id;
+      if (userObjectId) {
+        query.signedBy = mongoose.Types.ObjectId.isValid(userObjectId) 
+          ? new mongoose.Types.ObjectId(userObjectId) 
+          : userObjectId;
+      }
     }
     
     const skip = (parseInt(page) - 1) * parseInt(limit);
@@ -228,12 +260,35 @@ exports.getSignatures = async (req, res) => {
     
     // Populate targetId dựa trên targetType
     for (let sig of signatures) {
-      if (sig.targetType === 'drug') {
-        await sig.populate({
-          path: 'targetId',
-          select: 'name drugId batchNumber',
-          model: 'Drug'
-        });
+      try {
+        if (sig.targetType === 'drug') {
+          await sig.populate({
+            path: 'targetId',
+            select: 'name drugId batchNumber manufacturerId',
+            model: 'Drug'
+          });
+        } else if (sig.targetType === 'supplyChain') {
+          await sig.populate({
+            path: 'targetId',
+            select: 'drugId currentLocation status',
+            model: 'SupplyChain'
+          });
+        } else if (sig.targetType === 'qualityTest') {
+          // qualityTest có thể là subdocument trong Drug, không cần populate
+          // Hoặc có thể là document riêng, cần kiểm tra model
+          const drug = await Drug.findOne({ 'qualityTest._id': sig.targetId });
+          if (drug && drug.qualityTest) {
+            sig.targetId = {
+              _id: sig.targetId,
+              testResult: drug.qualityTest.testResult,
+              testDate: drug.qualityTest.testDate,
+              testedBy: drug.qualityTest.testedBy
+            };
+          }
+        }
+      } catch (populateError) {
+        console.error(`Error populating targetId for signature ${sig._id}:`, populateError);
+        // Tiếp tục với các signature khác
       }
     }
     
@@ -247,7 +302,8 @@ exports.getSignatures = async (req, res) => {
         limit: parseInt(limit),
         total,
         pages: Math.ceil(total / parseInt(limit))
-      }
+      },
+      message: `Tìm thấy ${total} chữ ký số`
     });
   } catch (error) {
     console.error('Error getting signatures:', error);
@@ -364,7 +420,13 @@ exports.revokeSignature = async (req, res) => {
  */
 exports.getStats = async (req, res) => {
   try {
-    const userId = req.query.userId || (req.user.role === 'admin' ? null : (req.user._id || req.user.id));
+    // Xác định userId: nếu là admin và có query userId thì dùng, nếu không phải admin thì dùng user hiện tại
+    let userId = null;
+    if (req.query.userId && req.user && req.user.role === 'admin') {
+      userId = req.query.userId;
+    } else if (req.user && req.user.role !== 'admin') {
+      userId = req.user._id || req.user.id;
+    }
     
     const stats = await DigitalSignature.getStats(userId);
     
@@ -377,6 +439,63 @@ exports.getStats = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Lỗi khi lấy thống kê: ' + error.message
+    });
+  }
+};
+
+/**
+ * Lấy danh sách CA providers
+ */
+exports.getCaProviders = async (req, res) => {
+  try {
+    const providers = await digitalSignatureService.listCaProviders();
+    res.json({
+      success: true,
+      data: providers
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
+/**
+ * Thêm CA provider mới
+ */
+exports.createCaProvider = async (req, res) => {
+  try {
+    const provider = await digitalSignatureService.registerCaProvider({
+      ...req.body,
+      createdBy: req.user.id
+    });
+    res.status(201).json({
+      success: true,
+      data: provider
+    });
+  } catch (error) {
+    res.status(400).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
+/**
+ * Kiểm tra kết nối HSM
+ */
+exports.testHsmConnection = async (req, res) => {
+  try {
+    const result = await hsmService.testConnection(req.body.providerId);
+    res.json({
+      success: result.success,
+      data: result
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message
     });
   }
 };

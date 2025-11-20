@@ -4,9 +4,11 @@ const SupplyChain = require('../models/SupplyChain');
 const Task = require('../models/Task');
 const Notification = require('../models/Notification');
 const Review = require('../models/Review');
+const QRScanLog = require('../models/QRScanLog');
 const mongoose = require('mongoose');
 const ExcelJS = require('exceljs');
 const PDFDocument = require('pdfkit');
+const drugRiskService = require('../services/drugRiskService');
 
 const MODULE_LABELS = {
   drugs: 'Thuốc',
@@ -628,6 +630,53 @@ const getReviewStats = async (dateFilter) => {
   };
 };
 
+// QR scan stats
+const getQRScanStats = async (dateFilter) => {
+  const baseMatch = dateFilter.createdAt ? { createdAt: dateFilter.createdAt } : {};
+
+  const [
+    totalScans,
+    successfulScans,
+    failedScans,
+    scansByDay,
+    lastScans
+  ] = await Promise.all([
+    QRScanLog.countDocuments(baseMatch),
+    QRScanLog.countDocuments({ ...baseMatch, success: true }),
+    QRScanLog.countDocuments({ ...baseMatch, success: false }),
+    QRScanLog.aggregate([
+      { $match: baseMatch },
+      {
+        $group: {
+          _id: {
+            year: { $year: '$createdAt' },
+            month: { $month: '$createdAt' },
+            day: { $dayOfMonth: '$createdAt' }
+          },
+          total: { $sum: 1 },
+          success: {
+            $sum: { $cond: ['$success', 1, 0] }
+          }
+        }
+      },
+      { $sort: { '_id.year': 1, '_id.month': 1, '_id.day': 1 } },
+      { $limit: 30 }
+    ]),
+    QRScanLog.find(baseMatch)
+      .sort({ createdAt: -1 })
+      .limit(10)
+      .populate('drug', 'name drugId batchNumber')
+  ]);
+
+  return {
+    total: totalScans,
+    success: successfulScans,
+    failed: failedScans,
+    byDay: scansByDay,
+    recent: lastScans
+  };
+};
+
 const resolveModuleStats = async (module, dateFilter) => {
   switch (module) {
     case 'drugs':
@@ -682,7 +731,7 @@ const getDistributionJourneyReport = async (req, res) => {
   }
 };
 
-// @desc    Lấy báo cáo thuốc nghi vấn
+// @desc    Lấy báo cáo thuốc nghi vấn (rule cơ bản)
 // @route   GET /api/reports/suspicious-drugs
 // @access  Private
 const getSuspiciousDrugsReport = async (req, res) => {
@@ -706,6 +755,48 @@ const getSuspiciousDrugsReport = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Lỗi server khi lấy báo cáo thuốc nghi vấn.',
+      error: error.message
+    });
+  }
+};
+
+// @desc    Lấy danh sách lô thuốc rủi ro cao theo AI (Drug Verification AI)
+// @route   GET /api/reports/risky-drugs
+// @access  Private
+const getHighRiskDrugsReport = async (req, res) => {
+  try {
+    const { minScore = 60, maxItems = 20 } = req.query;
+    const threshold = parseInt(minScore, 10) || 60;
+    const limit = parseInt(maxItems, 10) || 20;
+
+    const allRisks = await drugRiskService.calculateRiskForAllDrugs();
+
+    const highRisk = allRisks
+      .filter(item => item.risk && item.risk.score >= threshold)
+      .sort((a, b) => b.risk.score - a.risk.score)
+      .slice(0, limit);
+
+    const summary = {
+      totalEvaluated: allRisks.length,
+      totalHighRisk: highRisk.length,
+      critical: highRisk.filter(d => d.risk.level === 'critical').length,
+      high: highRisk.filter(d => d.risk.level === 'high').length,
+      medium: highRisk.filter(d => d.risk.level === 'medium').length,
+      low: highRisk.filter(d => d.risk.level === 'low').length
+    };
+
+    res.status(200).json({
+      success: true,
+      data: {
+        summary,
+        items: highRisk
+      }
+    });
+  } catch (error) {
+    console.error('Error getting high risk drugs report:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Lỗi server khi lấy báo cáo thuốc rủi ro cao.',
       error: error.message
     });
   }
@@ -1214,23 +1305,6 @@ const buildSummaryRowsWithColumns = (stats, selectedColumns = null) => {
 };
 
 // Helper: Build array sections với selected columns (override existing function)
-const buildArraySectionsWithColumns = (stats, selectedColumns = null) => {
-  const sections = [];
-  const keys = selectedColumns || Object.keys(stats || {});
-  
-  keys.forEach((key) => {
-    const value = stats[key];
-    if (!Array.isArray(value) || value.length === 0) return;
-    const columns = Array.from(new Set(value.flatMap((row) => Object.keys(row))));
-    sections.push({
-      title: humanizeKey(key),
-      columns,
-      rows: value
-    });
-  });
-  return sections;
-};
-
 module.exports = {
   getSystemOverview,
   getDashboardSummary,
@@ -1244,5 +1318,6 @@ module.exports = {
   getKPITimeSeries,
   getAlerts,
   markAlertAsRead,
-  exportCustomReport
+  exportCustomReport,
+  getHighRiskDrugsReport
 };

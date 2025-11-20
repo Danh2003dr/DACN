@@ -92,17 +92,21 @@ class TrustScoreService {
     // 3. Tỷ lệ thuốc hợp lệ (0-50 điểm)
     const user = await User.findById(supplierId);
     let drugScore = 25; // Điểm mặc định
+    let validDrugRate = 0;
+    let totalDrugs = 0;
+    let validDrugs = 0;
+    let recalledDrugs = 0;
     
     if (user && user.role === 'manufacturer') {
-      const drugs = await Drug.find({ manufacturerId: user.organizationId });
-      const totalDrugs = drugs.length;
-      const validDrugs = drugs.filter(d => 
-        d.qualityTest && d.qualityTest.testResult === 'passed' &&
+      const drugs = await Drug.find({ manufacturerId: supplierId });
+      totalDrugs = drugs.length;
+      validDrugs = drugs.filter(d => 
+        d.qualityTest && d.qualityTest.testResult === 'đạt' &&
         !d.isRecalled &&
-        d.blockchainStatus === 'confirmed'
+        d.status === 'active'
       ).length;
-      const recalledDrugs = drugs.filter(d => d.isRecalled).length;
-      const validDrugRate = totalDrugs > 0 ? (validDrugs / totalDrugs) * 100 : 0;
+      recalledDrugs = drugs.filter(d => d.isRecalled).length;
+      validDrugRate = totalDrugs > 0 ? (validDrugs / totalDrugs) * 100 : 0;
       const recallPenalty = totalDrugs > 0 ? (recalledDrugs / totalDrugs) * 50 : 0;
       drugScore = (validDrugRate / 100) * 50 - recallPenalty;
       drugScore = Math.max(0, drugScore);
@@ -120,18 +124,10 @@ class TrustScoreService {
         totalTasks,
         completedTasks,
         onTimeTasks,
-        validDrugRate: user && user.role === 'manufacturer' ? Math.round(validDrugRate * 10) / 10 : 0,
-        totalDrugs: user && user.role === 'manufacturer' ? (await Drug.find({ manufacturerId: user.organizationId })).length : 0,
-        validDrugs: user && user.role === 'manufacturer' ? (await Drug.find({ 
-          manufacturerId: user.organizationId,
-          'qualityTest.testResult': 'passed',
-          isRecalled: false,
-          blockchainStatus: 'confirmed'
-        })).length : 0,
-        recalledDrugs: user && user.role === 'manufacturer' ? (await Drug.find({ 
-          manufacturerId: user.organizationId,
-          isRecalled: true
-        })).length : 0
+        validDrugRate: Math.round(validDrugRate * 10) / 10,
+        totalDrugs: totalDrugs,
+        validDrugs: validDrugs,
+        recalledDrugs: recalledDrugs
       }
     };
   }
@@ -154,7 +150,7 @@ class TrustScoreService {
       };
     }
     
-    const drugs = await Drug.find({ manufacturerId: user.organizationId });
+    const drugs = await Drug.find({ manufacturerId: supplierId });
     const qualityTests = drugs.filter(d => d.qualityTest).map(d => d.qualityTest);
     
     if (qualityTests.length === 0) {
@@ -169,8 +165,8 @@ class TrustScoreService {
       };
     }
     
-    const passedTests = qualityTests.filter(t => t.testResult === 'passed').length;
-    const failedTests = qualityTests.filter(t => t.testResult === 'failed').length;
+    const passedTests = qualityTests.filter(t => t.testResult === 'đạt').length;
+    const failedTests = qualityTests.filter(t => t.testResult === 'không đạt').length;
     const totalTests = qualityTests.length;
     const passRate = (passedTests / totalTests) * 100;
     
@@ -201,10 +197,13 @@ class TrustScoreService {
       }
     }
     
+    // Nếu không có đánh giá, set null thay vì 0 để tránh validation error
+    const finalAverageRating = averageQualityRating > 0 ? Math.round(averageQualityRating * 10) / 10 : null;
+    
     return {
       score: Math.round(score),
       stats: {
-        averageQualityRating: Math.round(averageQualityRating * 10) / 10,
+        averageQualityRating: finalAverageRating,
         passedQualityTests: passedTests,
         failedQualityTests: failedTests,
         totalQualityTests: totalTests

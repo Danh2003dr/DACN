@@ -25,7 +25,12 @@ const DigitalSignatures = () => {
   const [showSignModal, setShowSignModal] = useState(false);
   const [showVerifyModal, setShowVerifyModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
+  const [showRevokeModal, setShowRevokeModal] = useState(false);
   const [selectedSignature, setSelectedSignature] = useState(null);
+  const [revokeReason, setRevokeReason] = useState('');
+  const [verifying, setVerifying] = useState(false);
+  const [revoking, setRevoking] = useState(false);
+  const [signing, setSigning] = useState(false);
   const [stats, setStats] = useState({});
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
@@ -44,6 +49,11 @@ const DigitalSignatures = () => {
     }
   }, [user, page, filterStatus, filterTargetType, searchTerm]);
 
+  // Reset page về 1 khi filter thay đổi
+  useEffect(() => {
+    setPage(1);
+  }, [filterStatus, filterTargetType, searchTerm]);
+
   const loadSignatures = async () => {
     try {
       setLoading(true);
@@ -55,9 +65,14 @@ const DigitalSignatures = () => {
         ...(searchTerm && { search: searchTerm })
       };
       const response = await digitalSignatureAPI.getSignatures(params);
-      if (response.success) {
-        setSignatures(Array.isArray(response.data) ? response.data : []);
-        setTotalPages(response.pagination?.pages || 1);
+      // Kiểm tra response structure
+      if (response && response.success) {
+        // response.data có thể là array hoặc object với data property
+        const data = Array.isArray(response.data) 
+          ? response.data 
+          : (response.data?.data || response.data || []);
+        setSignatures(Array.isArray(data) ? data : []);
+        setTotalPages(response.pagination?.pages || response.data?.pagination?.pages || 1);
       } else {
         setSignatures([]);
         setTotalPages(1);
@@ -119,6 +134,7 @@ const DigitalSignatures = () => {
 
   const handleSign = async (data) => {
     try {
+      setSigning(true);
       const response = await digitalSignatureAPI.signDocument({
         targetType: data.targetType,
         targetId: data.targetId,
@@ -135,44 +151,67 @@ const DigitalSignatures = () => {
         reset();
         loadSignatures();
         loadStats();
+      } else {
+        toast.error(response.message || 'Không thể ký số');
       }
     } catch (error) {
       console.error('Error signing document:', error);
       toast.error(error.response?.data?.message || 'Không thể ký số');
+    } finally {
+      setSigning(false);
     }
   };
 
   const handleVerify = async (signatureId) => {
     try {
+      setVerifying(true);
       const response = await digitalSignatureAPI.verifySignature({
         signatureId
       });
 
-      if (response.success && response.data.valid) {
+      if (response.success && response.data?.valid) {
         toast.success('Chữ ký số hợp lệ!');
       } else {
-        toast.error(response.data?.message || 'Chữ ký số không hợp lệ');
+        toast.error(response.data?.message || response.message || 'Chữ ký số không hợp lệ');
       }
     } catch (error) {
       console.error('Error verifying signature:', error);
-      toast.error('Không thể xác thực chữ ký số');
+      toast.error(error.response?.data?.message || 'Không thể xác thực chữ ký số');
+    } finally {
+      setVerifying(false);
     }
   };
 
-  const handleRevoke = async (id) => {
-    const reason = prompt('Vui lòng nhập lý do thu hồi:');
-    if (!reason) return;
+  const handleRevoke = (id) => {
+    setSelectedSignature(signatures.find(sig => sig._id === id));
+    setRevokeReason('');
+    setShowRevokeModal(true);
+  };
+
+  const confirmRevoke = async () => {
+    if (!revokeReason.trim()) {
+      toast.error('Vui lòng nhập lý do thu hồi');
+      return;
+    }
+
+    if (!selectedSignature) return;
 
     try {
-      const response = await digitalSignatureAPI.revokeSignature(id, reason);
+      setRevoking(true);
+      const response = await digitalSignatureAPI.revokeSignature(selectedSignature._id, revokeReason);
       if (response.success) {
         toast.success('Thu hồi chữ ký số thành công');
+        setShowRevokeModal(false);
+        setRevokeReason('');
+        setSelectedSignature(null);
         loadSignatures();
         loadStats();
       }
     } catch (error) {
       console.error('Error revoking signature:', error);
-      toast.error('Không thể thu hồi chữ ký số');
+      toast.error(error.response?.data?.message || 'Không thể thu hồi chữ ký số');
+    } finally {
+      setRevoking(false);
     }
   };
 
@@ -203,6 +242,32 @@ const DigitalSignatures = () => {
       other: 'Khác'
     };
     return labels[type] || type;
+  };
+
+  // Helper function để lấy tên/ID của đối tượng được ký
+  const getTargetDisplayName = (signature) => {
+    if (!signature.targetId) return 'N/A';
+    
+    // Nếu targetId là string (ObjectId), trả về nó
+    if (typeof signature.targetId === 'string') {
+      return signature.targetId;
+    }
+    
+    // Nếu targetId là object (đã populate)
+    if (typeof signature.targetId === 'object') {
+      switch (signature.targetType) {
+        case 'drug':
+          return signature.targetId.name || signature.targetId.drugId || signature.targetId.batchNumber || signature.targetId._id || 'N/A';
+        case 'supplyChain':
+          return signature.targetId.drugId || signature.targetId._id || 'N/A';
+        case 'qualityTest':
+          return signature.targetId.testResult || signature.targetId._id || 'N/A';
+        default:
+          return signature.targetId._id || String(signature.targetId);
+      }
+    }
+    
+    return 'N/A';
   };
 
   return (
@@ -252,8 +317,11 @@ const DigitalSignatures = () => {
               />
             </div>
             <select
-              value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value)}
+              value={filterStatus || ''}
+              onChange={(e) => {
+                const newStatus = e.target.value;
+                setFilterStatus(newStatus === '' ? '' : newStatus);
+              }}
               className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
             >
               <option value="">Tất cả trạng thái</option>
@@ -263,8 +331,11 @@ const DigitalSignatures = () => {
               <option value="invalid">Không hợp lệ</option>
             </select>
             <select
-              value={filterTargetType}
-              onChange={(e) => setFilterTargetType(e.target.value)}
+              value={filterTargetType || ''}
+              onChange={(e) => {
+                const newType = e.target.value;
+                setFilterTargetType(newType === '' ? '' : newType);
+              }}
               className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
             >
               <option value="">Tất cả loại</option>
@@ -310,7 +381,7 @@ const DigitalSignatures = () => {
                   <tr key={sig._id} className="hover:bg-gray-50">
                     <td className="px-6 py-4">
                       <div className="text-sm font-medium text-gray-900">{getTargetTypeLabel(sig.targetType)}</div>
-                      <div className="text-xs text-gray-500">{sig.targetId}</div>
+                      <div className="text-xs text-gray-500">{getTargetDisplayName(sig)}</div>
                     </td>
                     <td className="px-6 py-4">
                       <div className="text-sm text-gray-900">{sig.signedByName}</div>
@@ -348,7 +419,8 @@ const DigitalSignatures = () => {
                         </button>
                         <button
                           onClick={() => handleVerify(sig._id)}
-                          className="text-green-600 hover:text-green-800"
+                          disabled={verifying}
+                          className="text-green-600 hover:text-green-800 disabled:opacity-50 disabled:cursor-not-allowed"
                           title="Xác thực"
                         >
                           <Shield className="w-5 h-5" />
@@ -470,9 +542,10 @@ const DigitalSignatures = () => {
               <div className="flex gap-4">
                 <button
                   type="submit"
-                  className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
+                  disabled={signing}
+                  className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Ký số
+                  {signing ? 'Đang ký số...' : 'Ký số'}
                 </button>
                 <button
                   type="button"
@@ -502,6 +575,10 @@ const DigitalSignatures = () => {
                 <div>
                   <label className="text-sm font-medium text-gray-600">Loại đối tượng</label>
                   <div className="text-gray-900">{getTargetTypeLabel(selectedSignature.targetType)}</div>
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-gray-600">Đối tượng được ký</label>
+                  <div className="text-gray-900">{getTargetDisplayName(selectedSignature)}</div>
                 </div>
                 <div>
                   <label className="text-sm font-medium text-gray-600">Người ký</label>
@@ -558,6 +635,71 @@ const DigitalSignatures = () => {
                   </div>
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Revoke Modal */}
+      {showRevokeModal && selectedSignature && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-bold text-red-600">Thu hồi chữ ký số</h2>
+              <button 
+                onClick={() => {
+                  setShowRevokeModal(false);
+                  setRevokeReason('');
+                  setSelectedSignature(null);
+                }}
+                disabled={revoking}
+                className="text-gray-500 hover:text-gray-700 disabled:opacity-50"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Đối tượng được ký
+                </label>
+                <div className="text-gray-900 bg-gray-50 p-2 rounded">
+                  {getTargetTypeLabel(selectedSignature.targetType)} - {getTargetDisplayName(selectedSignature)}
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Lý do thu hồi <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  value={revokeReason}
+                  onChange={(e) => setRevokeReason(e.target.value)}
+                  rows={4}
+                  disabled={revoking}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 disabled:opacity-50"
+                  placeholder="Nhập lý do thu hồi chữ ký số..."
+                />
+              </div>
+              <div className="flex gap-4">
+                <button
+                  onClick={confirmRevoke}
+                  disabled={revoking || !revokeReason.trim()}
+                  className="flex-1 bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {revoking ? 'Đang xử lý...' : 'Xác nhận thu hồi'}
+                </button>
+                <button
+                  onClick={() => {
+                    setShowRevokeModal(false);
+                    setRevokeReason('');
+                    setSelectedSignature(null);
+                  }}
+                  disabled={revoking}
+                  className="flex-1 bg-gray-200 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-300 disabled:opacity-50"
+                >
+                  Hủy
+                </button>
+              </div>
             </div>
           </div>
         </div>

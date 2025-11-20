@@ -364,19 +364,29 @@ const BlockchainDashboard = () => {
                         {drug.blockchainId ? drug.blockchainId.substring(0, 20) + '...' : 'N/A'}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                        <div className="flex space-x-2">
-                          <button
-                            onClick={() => verifyDrug(drug.drugId || drug.blockchainId)}
-                            className="text-blue-600 hover:text-blue-900 hover:underline"
-                          >
-                            Xác minh
-                          </button>
+                        <div className="flex flex-col space-y-1">
+                          <div className="flex space-x-2">
+                            <button
+                              onClick={() => verifyDrug(drug.drugId || drug.blockchainId)}
+                              className="text-blue-600 hover:text-blue-900 hover:underline"
+                            >
+                              Xác minh
+                            </button>
+                            {drug.blockchainId && (
+                              <button
+                                onClick={() => viewDetails(drug)}
+                                className="text-green-600 hover:text-green-900 hover:underline"
+                              >
+                                Chi tiết
+                              </button>
+                            )}
+                          </div>
                           {drug.blockchainId && (
                             <button
-                              onClick={() => viewDetails(drug)}
-                              className="text-green-600 hover:text-green-900 hover:underline"
+                              onClick={() => window.open(`/verify/${drug.blockchainId}`, '_blank')}
+                              className="text-xs text-indigo-600 hover:text-indigo-900 hover:underline text-left"
                             >
-                              Chi tiết
+                              Mở trang xác minh
                             </button>
                           )}
                         </div>

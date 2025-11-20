@@ -1,6 +1,10 @@
 const crypto = require('crypto');
 const DigitalSignature = require('../models/DigitalSignature');
 const User = require('../models/User');
+const hsmService = require('./hsm/hsmService');
+const caProvidersConfig = require('../config/caProviders');
+const signatureTemplateService = require('./signatureTemplateService');
+const caProviderService = require('./caProviderService');
 
 /**
  * Digital Signature Service
@@ -8,27 +12,9 @@ const User = require('../models/User');
  */
 class DigitalSignatureService {
   constructor() {
-    // Cấu hình CA (Certificate Authority) - mô phỏng
-    this.caConfig = {
-      vnca: {
-        name: 'CA Quốc gia Việt Nam',
-        url: 'https://ca.vnca.gov.vn',
-        algorithm: 'RSA-SHA256',
-        keySize: 2048
-      },
-      'viettel-ca': {
-        name: 'Viettel CA',
-        url: 'https://ca.viettel.vn',
-        algorithm: 'RSA-SHA256',
-        keySize: 2048
-      },
-      'fpt-ca': {
-        name: 'FPT CA',
-        url: 'https://ca.fpt.vn',
-        algorithm: 'RSA-SHA256',
-        keySize: 2048
-      }
-    };
+    // Cấu hình CA (Certificate Authority)
+    this.caConfig = { ...caProvidersConfig };
+    this.customCaLoaded = false;
     
     // Cấu hình TSA (Timestamp Authority)
     this.tsaConfig = {
@@ -36,6 +22,70 @@ class DigitalSignatureService {
       algorithm: 'SHA256',
       timeout: 10000
     };
+  }
+
+  async ensureCustomCaProvidersLoaded() {
+    if (this.customCaLoaded) return;
+    try {
+      const customProviders = await caProviderService.getActiveProviders();
+      customProviders.forEach((provider) => {
+        this.caConfig[provider.code] = {
+          id: provider.code,
+          name: provider.name,
+          url: provider.url,
+          algorithm: provider.algorithm || 'RSA-SHA256',
+          keySize: provider.keySize || 2048,
+          supportsHsm: provider.supportsHsm,
+          description: provider.description || provider.name,
+          metadata: provider.metadata || {}
+        };
+      });
+      this.customCaLoaded = true;
+    } catch (error) {
+      console.error('Error loading custom CA providers:', error);
+    }
+  }
+
+  async getCaProvider(providerId = 'vnca') {
+    await this.ensureCustomCaProvidersLoaded();
+    if (!providerId) return this.caConfig.vnca;
+    return this.caConfig[providerId] || this.caConfig.vnca;
+  }
+
+  async listCaProviders() {
+    await this.ensureCustomCaProvidersLoaded();
+    return Object.keys(this.caConfig).map((key) => ({
+      id: key,
+      ...this.caConfig[key]
+    }));
+  }
+
+  async registerCaProvider(providerData) {
+    const provider = await caProviderService.createProvider(providerData);
+    this.caConfig[provider.code] = {
+      id: provider.code,
+      name: provider.name,
+      url: provider.url,
+      algorithm: provider.algorithm || 'RSA-SHA256',
+      keySize: provider.keySize || 2048,
+      supportsHsm: provider.supportsHsm,
+      description: provider.description || provider.name,
+      metadata: provider.metadata || {}
+    };
+    return provider;
+  }
+
+  async signWithHsm(dataHash, options = {}) {
+    if (!hsmService.isEnabled()) {
+      return {
+        success: false,
+        usedHsm: false,
+        message: 'HSM chưa được bật'
+      };
+    }
+
+    const result = await hsmService.sign(dataHash, options);
+    return result;
   }
 
   /**
@@ -46,10 +96,7 @@ class DigitalSignatureService {
     return crypto.createHash('sha256').update(dataString, 'utf8').digest('hex');
   }
 
-  /**
-   * Tạo chữ ký số (mock implementation - trong thực tế cần tích hợp với HSM/Token)
-   */
-  async createSignature(dataHash, privateKey, certificateInfo) {
+  async createSignature(dataHash, privateKey, certificateInfo, options = {}) {
     try {
       // Trong thực tế, private key sẽ được lưu trong HSM hoặc USB Token
       // Ở đây mô phỏng bằng cách tạo signature từ hash
@@ -225,7 +272,7 @@ class DigitalSignatureService {
         throw new Error('Không tìm thấy người dùng');
       }
       
-      const ca = this.caConfig[caProvider] || this.caConfig.vnca;
+      const ca = await this.getCaProvider(caProvider);
       
       // Mock certificate info (trong thực tế lấy từ CA API)
       const certificateInfo = {
@@ -276,16 +323,71 @@ class DigitalSignatureService {
         throw new Error('Không tìm thấy người dùng');
       }
       
-      // Tạo hash cho dữ liệu
-      const dataHash = this.createDataHash(data);
+      const documentData = data;
       
+      // Template handling
+      let templateContext = null;
+      let payloadForHash = documentData;
+      if (options.templateId) {
+        templateContext = await signatureTemplateService.prepareTemplatePayload(
+          options.templateId,
+          {
+            documentData,
+            templateData: options.templateData
+          }
+        );
+        
+        payloadForHash = {
+          template: templateContext.payload,
+          data: documentData
+        };
+      }
+
       // Lấy thông tin chứng chỉ số
-      const caProvider = options.caProvider || 'vnca';
+      const caProvider = templateContext?.caProvider || options.caProvider || 'vnca';
       const certificateInfo = await this.getCertificateInfo(userId, caProvider);
       
       // Tạo chữ ký số
-      const privateKey = options.privateKey || 'mock'; // Trong thực tế lấy từ HSM/Token
-      const signature = await this.createSignature(dataHash, privateKey, certificateInfo);
+      const useHsm = options.useHsm !== undefined ? options.useHsm : hsmService.isEnabled();
+      const dataHash = this.createDataHash(payloadForHash);
+      let signatureResult = { success: false };
+      if (useHsm) {
+        signatureResult = await this.signWithHsm(
+          dataHash,
+          {
+            provider: options.hsmProvider,
+            keyId: options.hsmKeyId || certificateInfo.serialNumber,
+            metadata: {
+              targetType,
+              targetId,
+              userId
+            }
+          }
+        );
+      }
+      
+      
+      if (!signatureResult.success) {
+        const privateKey = options.privateKey || 'mock';
+        const fallbackSignature = await this.createSignature(
+          dataHash,
+          privateKey,
+          certificateInfo,
+          options
+        );
+        signatureResult = {
+          success: true,
+          signature: fallbackSignature,
+          usedHsm: false,
+          provider: signatureResult.provider || null,
+          algorithm: certificateInfo.algorithm,
+          metadata: {
+            method: privateKey === 'mock' ? 'mock' : 'local-private-key'
+          },
+          fallback: true,
+          error: signatureResult.error
+        };
+      }
       
       // Lấy timestamp từ TSA (nếu yêu cầu)
       let timestampData = null;
@@ -293,6 +395,11 @@ class DigitalSignatureService {
         timestampData = await this.getTimestampFromTSA(dataHash);
       }
       
+      const signatureMetadata = { ...(options.metadata || {}) };
+      if (templateContext) {
+        signatureMetadata.templateData = templateContext.payload;
+      }
+
       // Lưu chữ ký số vào database
       const digitalSignature = new DigitalSignature({
         targetType,
@@ -301,7 +408,7 @@ class DigitalSignatureService {
         signedByName: user.fullName,
         signedByRole: user.role,
         dataHash,
-        signature,
+        signature: signatureResult.signature,
         certificate: {
           serialNumber: certificateInfo.serialNumber,
           caProvider: caProvider,
@@ -317,6 +424,25 @@ class DigitalSignatureService {
           certificateStatus: 'valid',
           lastVerified: new Date()
         },
+        signingInfo: {
+          usedHsm: !!signatureResult.usedHsm,
+          method: signatureResult.usedHsm ? 'hsm' : (signatureResult.metadata?.method || 'local'),
+          provider: signatureResult.provider || null,
+          keyId: signatureResult.keyId || certificateInfo.serialNumber,
+          algorithm: signatureResult.algorithm || certificateInfo.algorithm,
+          metadata: signatureResult.metadata || {},
+          error: signatureResult.error || null,
+          fallback: !!signatureResult.fallback
+        },
+        template: templateContext
+          ? {
+              templateId: templateContext.templateId,
+              name: templateContext.name,
+              version: templateContext.version,
+              payload: templateContext.payload
+            }
+          : undefined,
+        batchId: options.batchId || null,
         timestamp: timestampData ? {
           timestampToken: timestampData.timestampToken,
           tsaUrl: timestampData.tsaUrl,
@@ -328,7 +454,7 @@ class DigitalSignatureService {
           timestampStatus: 'not_required'
         },
         purpose: options.purpose || 'Xác thực nguồn gốc và tính toàn vẹn dữ liệu',
-        metadata: options.metadata || {},
+        metadata: signatureMetadata,
         status: 'active'
       });
       
@@ -339,7 +465,8 @@ class DigitalSignatureService {
         digitalSignature,
         signatureId: digitalSignature._id,
         dataHash,
-        timestamped: !!timestampData
+        timestamped: !!timestampData,
+        signingInfo: digitalSignature.signingInfo
       };
     } catch (error) {
       console.error('Error signing document:', error);
@@ -393,7 +520,25 @@ class DigitalSignatureService {
       }
       
       // Tạo hash từ dữ liệu hiện tại
-      const currentDataHash = this.createDataHash(data);
+      // Nếu data là undefined hoặc null, không thể verify được
+      if (!data) {
+        return {
+          valid: false,
+          verified: false,
+          message: 'Không có dữ liệu để xác thực chữ ký. Vui lòng cung cấp dữ liệu gốc.',
+          signature: digitalSignature
+        };
+      }
+      
+      let payloadForHash = data;
+      if (digitalSignature.template && digitalSignature.template.payload) {
+        payloadForHash = {
+          template: digitalSignature.template.payload,
+          data
+        };
+      }
+
+      const currentDataHash = this.createDataHash(payloadForHash);
       
       // So sánh hash
       if (currentDataHash !== digitalSignature.dataHash) {

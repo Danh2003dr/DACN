@@ -3,6 +3,7 @@ const router = express.Router();
 const blockchainService = require('../services/blockchainService');
 const Drug = require('../models/Drug');
 const { authenticate } = require('../middleware/auth');
+const { cacheMiddleware } = require('../middleware/cache');
 
 // Khởi tạo blockchain service
 let blockchainInitialized = false;
@@ -14,7 +15,7 @@ const initBlockchain = async () => {
 };
 
 // Lấy thống kê blockchain
-router.get('/stats', authenticate, async (req, res) => {
+router.get('/stats', authenticate, cacheMiddleware(120), async (req, res) => {
   try {
     await initBlockchain();
     
@@ -69,7 +70,7 @@ router.get('/stats', authenticate, async (req, res) => {
 });
 
 // Lấy danh sách thuốc từ blockchain
-router.get('/drugs', authenticate, async (req, res) => {
+router.get('/drugs', authenticate, cacheMiddleware(180), async (req, res) => {
   try {
     await initBlockchain();
     
@@ -461,7 +462,7 @@ router.post('/drug/:drugId/recall', authenticate, async (req, res) => {
 });
 
 // Kiểm tra trạng thái kết nối blockchain
-router.get('/status', authenticate, async (req, res) => {
+router.get('/status', authenticate, cacheMiddleware(60), async (req, res) => {
   try {
     await initBlockchain();
     

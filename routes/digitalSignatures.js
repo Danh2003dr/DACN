@@ -1,7 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const digitalSignatureController = require('../controllers/digitalSignatureController');
+const signatureTemplateController = require('../controllers/signatureTemplateController');
+const signatureBatchController = require('../controllers/signatureBatchController');
 const { authenticate, authorize } = require('../middleware/auth');
+const { cacheMiddleware } = require('../middleware/cache');
 
 /**
  * @route   POST /api/digital-signatures/sign
@@ -16,6 +19,63 @@ router.post(
 );
 
 /**
+ * HSM test connection
+ */
+router.post(
+  '/hsm/test',
+  authenticate,
+  authorize(['admin']),
+  digitalSignatureController.testHsmConnection
+);
+
+/**
+ * CA Providers
+ */
+router.get('/ca/providers', authenticate, cacheMiddleware(600), digitalSignatureController.getCaProviders);
+router.post(
+  '/ca/providers',
+  authenticate,
+  authorize(['admin']),
+  digitalSignatureController.createCaProvider
+);
+
+/**
+ * Signature templates
+ */
+router.post(
+  '/templates',
+  authenticate,
+  authorize(['admin']),
+  signatureTemplateController.createTemplate
+);
+router.get('/templates', authenticate, cacheMiddleware(300), signatureTemplateController.getTemplates);
+router.get('/templates/:id', authenticate, cacheMiddleware(300), signatureTemplateController.getTemplateById);
+router.put(
+  '/templates/:id',
+  authenticate,
+  authorize(['admin']),
+  signatureTemplateController.updateTemplate
+);
+router.post(
+  '/templates/:id/status',
+  authenticate,
+  authorize(['admin']),
+  signatureTemplateController.changeTemplateStatus
+);
+
+/**
+ * Batch signing
+ */
+router.post(
+  '/batch',
+  authenticate,
+  authorize(['admin', 'manufacturer', 'distributor', 'hospital']),
+  signatureBatchController.createBatch
+);
+router.get('/batch', authenticate, cacheMiddleware(180), signatureBatchController.getBatches);
+router.get('/batch/:id', authenticate, cacheMiddleware(180), signatureBatchController.getBatchById);
+
+/**
  * @route   POST /api/digital-signatures/verify
  * @desc    Xác thực chữ ký số
  * @access  Public
@@ -27,14 +87,14 @@ router.post('/verify', digitalSignatureController.verifySignature);
  * @desc    Lấy danh sách chữ ký số
  * @access  Private
  */
-router.get('/', authenticate, digitalSignatureController.getSignatures);
+router.get('/', authenticate, cacheMiddleware(180), digitalSignatureController.getSignatures);
 
 /**
  * @route   GET /api/digital-signatures/stats
  * @desc    Thống kê chữ ký số
  * @access  Private
  */
-router.get('/stats', authenticate, digitalSignatureController.getStats);
+router.get('/stats', authenticate, cacheMiddleware(120), digitalSignatureController.getStats);
 
 /**
  * @route   GET /api/digital-signatures/target/:targetType/:targetId

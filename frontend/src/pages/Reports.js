@@ -20,7 +20,8 @@ import {
   Truck,
   BellRing,
   ClipboardCheck,
-  Clock
+  Clock,
+  QrCode
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { reportAPI } from '../utils/api';
@@ -35,6 +36,8 @@ const Reports = () => {
   const [selectedModule, setSelectedModule] = useState('drugs');
   const [kpiData, setKpiData] = useState(null);
   const [alerts, setAlerts] = useState(null);
+  const [riskyDrugs, setRiskyDrugs] = useState(null);
+  const [qrScanStats, setQrScanStats] = useState(null);
   const [dateRange, setDateRange] = useState({
     startDate: '',
     endDate: ''
@@ -126,6 +129,37 @@ const Reports = () => {
     }
   };
 
+  // Load QR scan statistics
+  const loadQRScanStats = async () => {
+    try {
+      const response = await reportAPI.getQRScanStats();
+      if (response.success) {
+        setQrScanStats(response.data);
+      } else {
+        setQrScanStats(null);
+      }
+    } catch (error) {
+      console.error('Error loading QR scan stats:', error);
+      setQrScanStats(null);
+    }
+  };
+
+  // Load high-risk drugs (AI-based)
+  const loadRiskyDrugs = async () => {
+    try {
+      const response = await reportAPI.getRiskyDrugsReport({ minScore: 60, maxItems: 10 });
+      if (response.success) {
+        setRiskyDrugs(response.data);
+      } else {
+        console.error('Error loading risky drugs:', response.message);
+        setRiskyDrugs(null);
+      }
+    } catch (error) {
+      console.error('Error loading risky drugs:', error);
+      setRiskyDrugs(null);
+    }
+  };
+
   useEffect(() => {
     if (hasRole('admin') && activeTab === 'overview') {
       loadOverviewData();
@@ -135,8 +169,14 @@ const Reports = () => {
       loadKPIData();
     } else if (activeTab === 'alerts') {
       loadAlerts();
-      // Auto-refresh alerts every 30 seconds
-      const interval = setInterval(loadAlerts, 30000);
+      loadRiskyDrugs();
+      loadQRScanStats();
+      // Auto-refresh alerts & risk list mỗi 30 giây
+      const interval = setInterval(() => {
+        loadAlerts();
+        loadRiskyDrugs();
+        loadQRScanStats();
+      }, 30000);
       return () => clearInterval(interval);
     }
   }, [activeTab, selectedModule, dateRange]);
@@ -187,11 +227,19 @@ const Reports = () => {
     }
   };
 
+  const getMaxCount = (items) => {
+    if (!items || items.length === 0) return 0;
+    return items.reduce((max, item) => Math.max(max, item.count || 0), 0);
+  };
+
   // Overview Tab
   const renderOverviewTab = () => {
-    if (!overviewData) return <div>Đang tải...</div>;
+    if (!overviewData) return <div className="p-6 text-center text-gray-500">Đang tải dữ liệu tổng quan...</div>;
 
     const { overview, charts } = overviewData;
+
+    const maxUsersByRole = getMaxCount(charts.usersByRole);
+    const maxTasksByStatus = getMaxCount(charts.tasksByStatus);
 
     return (
       <div className="space-y-6">
@@ -242,34 +290,66 @@ const Reports = () => {
           </div>
         </div>
 
-        {/* Charts */}
+        {/* Charts (Bar visualizations) */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Users by Role */}
           <div className="bg-white rounded-lg shadow p-6">
             <h3 className="text-lg font-semibold mb-4">Phân bố người dùng theo vai trò</h3>
-            <div className="space-y-3">
-              {charts.usersByRole?.map((item, index) => (
-                <div key={index} className="flex justify-between items-center">
-                  <span className="text-sm font-medium capitalize">{item._id}</span>
-                  <span className="text-sm text-gray-600">{item.count}</span>
-                </div>
-              ))}
-            </div>
+            {(!charts.usersByRole || charts.usersByRole.length === 0) ? (
+              <p className="text-sm text-gray-500">Chưa có dữ liệu người dùng theo vai trò.</p>
+            ) : (
+              <div className="space-y-3">
+                {charts.usersByRole.map((item, index) => {
+                  const value = item.count || 0;
+                  const percent = maxUsersByRole > 0 ? (value / maxUsersByRole) * 100 : 0;
+                  return (
+                    <div key={index}>
+                      <div className="flex justify-between items-center text-xs mb-1">
+                        <span className="font-medium capitalize text-gray-700">{item._id}</span>
+                        <span className="text-gray-500">{formatNumber(value)}</span>
+                      </div>
+                      <div className="h-2 rounded-full bg-gray-100 overflow-hidden">
+                        <div
+                          className="h-2 rounded-full bg-blue-500 transition-all"
+                          style={{ width: `${percent}%` }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           {/* Tasks by Status */}
           <div className="bg-white rounded-lg shadow p-6">
             <h3 className="text-lg font-semibold mb-4">Nhiệm vụ theo trạng thái</h3>
-            <div className="space-y-3">
-              {charts.tasksByStatus?.map((item, index) => (
-                <div key={index} className="flex justify-between items-center">
-                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(item._id)}`}>
-                    {item._id}
-                  </span>
-                  <span className="text-sm text-gray-600">{item.count}</span>
-                </div>
-              ))}
-            </div>
+            {(!charts.tasksByStatus || charts.tasksByStatus.length === 0) ? (
+              <p className="text-sm text-gray-500">Chưa có dữ liệu nhiệm vụ.</p>
+            ) : (
+              <div className="space-y-3">
+                {charts.tasksByStatus.map((item, index) => {
+                  const value = item.count || 0;
+                  const percent = maxTasksByStatus > 0 ? (value / maxTasksByStatus) * 100 : 0;
+                  return (
+                    <div key={index}>
+                      <div className="flex justify-between items-center text-xs mb-1">
+                        <span className={`px-2 py-0.5 rounded-full font-medium ${getStatusColor(item._id)}`}>
+                          {item._id || 'khác'}
+                        </span>
+                        <span className="text-gray-500">{formatNumber(value)}</span>
+                      </div>
+                      <div className="h-2 rounded-full bg-gray-100 overflow-hidden">
+                        <div
+                          className="h-2 rounded-full bg-emerald-500 transition-all"
+                          style={{ width: `${percent}%` }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
 
@@ -759,6 +839,165 @@ const Reports = () => {
                   </div>
                 );
               })
+            )}
+          </div>
+        </div>
+
+        {/* High Risk Drugs (AI-based) */}
+        <div className="bg-white rounded-lg shadow">
+          <div className="p-4 border-b flex items-center justify-between">
+            <div>
+              <h3 className="text-lg font-semibold flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5 text-red-600" />
+                Top lô thuốc rủi ro cao (AI)
+              </h3>
+              <p className="text-sm text-gray-500">
+                Dựa trên Drug Verification AI (trạng thái lô, kiểm định, trust score nhà cung ứng, đánh giá).
+              </p>
+            </div>
+            {riskyDrugs?.summary && (
+              <div className="text-xs text-gray-500 text-right space-y-1">
+                <div>Tổng đánh giá: {formatNumber(riskyDrugs.summary.totalEvaluated || 0)} lô</div>
+                <div>
+                  Nguy cơ cao trở lên:{' '}
+                  <span className="font-semibold text-red-600">
+                    {formatNumber(riskyDrugs.summary.totalHighRisk || 0)}
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+          <div className="divide-y">
+            {!riskyDrugs?.items || riskyDrugs.items.length === 0 ? (
+              <div className="p-6 text-center text-gray-500">
+                Hiện tại không có lô thuốc nào vượt ngưỡng rủi ro cao.
+              </div>
+            ) : (
+              riskyDrugs.items.map((item) => (
+                <div key={item._id} className="p-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                  <div>
+                    <p className="font-semibold text-gray-900">{item.name}</p>
+                    <p className="text-sm text-gray-600">
+                      Mã lô: <span className="font-mono">{item.drugId}</span> · Số lô SX:{' '}
+                      <span className="font-mono">{item.batchNumber}</span>
+                    </p>
+                    <p className="mt-1 text-xs text-gray-500">
+                      Trạng thái: {item.isRecalled ? 'Đã thu hồi' : item.isExpired ? 'Hết hạn' : item.status}
+                    </p>
+                    {item.risk?.factors && item.risk.factors.length > 0 && (
+                      <p className="mt-1 text-xs text-gray-500">
+                        Yếu tố chính: {item.risk.factors[0].description}
+                        {item.risk.factors.length > 1 && ` (+${item.risk.factors.length - 1} yếu tố khác)`}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex flex-col items-start md:items-end gap-1">
+                    <span
+                      className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                        item.risk?.level === 'critical'
+                          ? 'bg-red-100 text-red-800'
+                          : item.risk?.level === 'high'
+                            ? 'bg-orange-100 text-orange-800'
+                            : item.risk?.level === 'medium'
+                              ? 'bg-yellow-100 text-yellow-800'
+                              : 'bg-green-100 text-green-800'
+                      }`}
+                    >
+                      Nguy cơ: {item.risk?.level || 'N/A'} ({Math.round(item.risk?.score || 0)}%)
+                    </span>
+                    <button
+                      onClick={() => window.open(`/verify/${item.drugId}`, '_blank')}
+                      className="mt-1 inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800"
+                    >
+                      <Eye className="h-3 w-3" />
+                      Xem chi tiết
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        {/* QR Scan Stats */}
+        <div className="bg-white rounded-lg shadow">
+          <div className="p-4 border-b flex items-center justify-between">
+            <div>
+              <h3 className="text-lg font-semibold flex items-center gap-2">
+                <QrCode className="h-5 w-5 text-gray-700" />
+                Thống kê quét QR
+              </h3>
+              <p className="text-sm text-gray-500">
+                Tổng quan số lần quét, tỉ lệ thành công và các lần quét gần đây.
+              </p>
+            </div>
+          </div>
+          <div className="p-4 space-y-4">
+            {qrScanStats ? (
+              <>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="bg-gray-50 rounded-lg p-4">
+                    <p className="text-xs font-medium text-gray-500 uppercase">Tổng lượt quét</p>
+                    <p className="mt-1 text-2xl font-bold text-gray-900">
+                      {formatNumber(qrScanStats.total || 0)}
+                    </p>
+                  </div>
+                  <div className="bg-green-50 rounded-lg p-4">
+                    <p className="text-xs font-medium text-green-600 uppercase">Thành công</p>
+                    <p className="mt-1 text-2xl font-bold text-green-800">
+                      {formatNumber(qrScanStats.success || 0)}
+                    </p>
+                  </div>
+                  <div className="bg-red-50 rounded-lg p-4">
+                    <p className="text-xs font-medium text-red-600 uppercase">Thất bại</p>
+                    <p className="mt-1 text-2xl font-bold text-red-800">
+                      {formatNumber(qrScanStats.failed || 0)}
+                    </p>
+                  </div>
+                </div>
+
+                {qrScanStats.recent && qrScanStats.recent.length > 0 && (
+                  <div>
+                    <p className="text-sm font-semibold text-gray-800 mb-2">Lần quét gần đây</p>
+                    <div className="space-y-2">
+                      {qrScanStats.recent.map((scan) => (
+                        <div
+                          key={scan._id}
+                          className="flex items-center justify-between rounded-md border border-gray-100 px-3 py-2 bg-gray-50"
+                        >
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={`inline-flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold ${
+                                scan.success ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                              }`}
+                            >
+                              {scan.success ? 'OK' : 'X'}
+                            </span>
+                            <div>
+                              <p className="text-sm text-gray-900">
+                                {scan.drug?.name || 'Không xác định'}
+                              </p>
+                              <p className="text-xs text-gray-500">
+                                {scan.drug?.batchNumber && (
+                                  <>Mã lô: <span className="font-mono">{scan.drug.batchNumber}</span> · </>
+                                )}
+                                {new Date(scan.createdAt).toLocaleString('vi-VN')}
+                              </p>
+                            </div>
+                          </div>
+                          {!scan.success && scan.errorMessage && (
+                            <p className="ml-4 max-w-xs text-xs text-red-600 truncate">
+                              {scan.errorMessage}
+                            </p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
+            ) : (
+              <p className="text-sm text-gray-500">Chưa có dữ liệu lịch sử quét QR.</p>
             )}
           </div>
         </div>

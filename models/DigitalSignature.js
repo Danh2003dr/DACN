@@ -156,6 +156,53 @@ const digitalSignatureSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.Mixed,
     default: {}
   },
+
+  // Thông tin phương thức ký (HSM/Local)
+  signingInfo: {
+    usedHsm: {
+      type: Boolean,
+      default: false
+    },
+    method: {
+      type: String,
+      enum: ['hsm', 'local', 'mock', 'other'],
+      default: 'mock'
+    },
+    provider: {
+      id: String,
+      name: String,
+      type: String,
+      description: String
+    },
+    keyId: String,
+    algorithm: String,
+    metadata: {
+      type: mongoose.Schema.Types.Mixed,
+      default: {}
+    },
+    error: String,
+    fallback: {
+      type: Boolean,
+      default: false
+    }
+  },
+
+  // Thông tin template sử dụng khi ký
+  template: {
+    templateId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'SignatureTemplate'
+    },
+    name: String,
+    version: String,
+    payload: mongoose.Schema.Types.Mixed
+  },
+
+  // Batch reference
+  batchId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'SignatureBatch'
+  },
   
   // Trạng thái chữ ký
   status: {
@@ -200,6 +247,9 @@ digitalSignatureSchema.index({ signedBy: 1, createdAt: -1 });
 digitalSignatureSchema.index({ status: 1, createdAt: -1 });
 digitalSignatureSchema.index({ 'certificate.serialNumber': 1 });
 digitalSignatureSchema.index({ 'timestamp.timestampStatus': 1 });
+digitalSignatureSchema.index({ batchId: 1 });
+digitalSignatureSchema.index({ 'template.templateId': 1 });
+digitalSignatureSchema.index({ 'signingInfo.method': 1 });
 
 // Virtual: Kiểm tra chữ ký còn hiệu lực không
 digitalSignatureSchema.virtual('isValid').get(function() {
@@ -267,33 +317,53 @@ digitalSignatureSchema.statics.findByUser = function(userId, options = {}) {
 
 // Static method: Thống kê chữ ký
 digitalSignatureSchema.statics.getStats = async function(userId = null) {
-  const match = userId ? { signedBy: userId } : {};
-  
-  const stats = await this.aggregate([
-    { $match: match },
-    {
-      $group: {
-        _id: '$status',
-        count: { $sum: 1 }
+  try {
+    // Chuyển đổi userId thành ObjectId nếu cần
+    let match = {};
+    if (userId) {
+      const mongoose = require('mongoose');
+      if (mongoose.Types.ObjectId.isValid(userId)) {
+        match = { signedBy: new mongoose.Types.ObjectId(userId) };
+      } else {
+        match = { signedBy: userId };
       }
     }
-  ]);
-  
-  const total = await this.countDocuments(match);
-  const valid = await this.countDocuments({ ...match, status: 'active' });
-  const expired = await this.countDocuments({ ...match, status: 'expired' });
-  const revoked = await this.countDocuments({ ...match, status: 'revoked' });
-  
-  return {
-    total,
-    active: valid,
-    expired,
-    revoked,
-    byStatus: stats.reduce((acc, item) => {
-      acc[item._id] = item.count;
-      return acc;
-    }, {})
-  };
+    
+    const stats = await this.aggregate([
+      { $match: match },
+      {
+        $group: {
+          _id: '$status',
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+    
+    const total = await this.countDocuments(match);
+    const valid = await this.countDocuments({ ...match, status: 'active' });
+    const expired = await this.countDocuments({ ...match, status: 'expired' });
+    const revoked = await this.countDocuments({ ...match, status: 'revoked' });
+    
+    return {
+      total,
+      active: valid,
+      expired,
+      revoked,
+      byStatus: stats.reduce((acc, item) => {
+        acc[item._id] = item.count;
+        return acc;
+      }, {})
+    };
+  } catch (error) {
+    console.error('Error in getStats:', error);
+    return {
+      total: 0,
+      active: 0,
+      expired: 0,
+      revoked: 0,
+      byStatus: {}
+    };
+  }
 };
 
 const DigitalSignature = mongoose.model('DigitalSignature', digitalSignatureSchema);

@@ -26,7 +26,8 @@ const {
 const {
   authenticate,
   authorize,
-  requirePasswordChange
+  requirePasswordChange,
+  rateLimit
 } = require('../middleware/auth');
 const upload = require('../middleware/upload');
 
@@ -40,10 +41,13 @@ const {
   updateProfileSchema
 } = require('../utils/validation');
 
+// Rate limiter cho login để chống brute-force
+const loginRateLimiter = rateLimit(5 * 60 * 1000, 10); // 10 requests / 5 phút / IP
+
 // @route   POST /api/auth/login
 // @desc    Đăng nhập người dùng
 // @access  Public
-router.post('/login', validate(loginSchema), login);
+router.post('/login', loginRateLimiter, validate(loginSchema), login);
 
 // @route   POST /api/auth/register
 // @desc    Đăng ký tài khoản mới (chỉ Admin)

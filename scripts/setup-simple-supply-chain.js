@@ -217,13 +217,7 @@ const createSamplePatient = async () => {
           city: 'Hà Nội'
         },
         role: 'patient',
-        organizationId: 'PATIENT_001',
-        organizationInfo: {
-          name: 'Bệnh nhân cá nhân',
-          license: null,
-          type: 'patient',
-          description: 'Bệnh nhân sử dụng thuốc'
-        },
+        patientId: 'PAT_001',
         mustChangePassword: true
       });
 

@@ -1,6 +1,77 @@
 const { Web3 } = require('web3');
 const DrugTraceability = require('../build/contracts/DrugTraceability.json');
 const crypto = require('crypto');
+const cacheService = require('../utils/cache');
+
+// Network configurations
+const NETWORKS = {
+  development: {
+    name: 'Development',
+    rpcUrl: 'http://127.0.0.1:7545',
+    chainId: '*',
+    isLayer2: false
+  },
+  sepolia: {
+    name: 'Sepolia Testnet',
+    rpcUrl: `https://sepolia.infura.io/v3/${process.env.INFURA_PROJECT_ID || ''}`,
+    chainId: 11155111,
+    isLayer2: false
+  },
+  mainnet: {
+    name: 'Ethereum Mainnet',
+    rpcUrl: `https://mainnet.infura.io/v3/${process.env.INFURA_PROJECT_ID || ''}`,
+    chainId: 1,
+    isLayer2: false
+  },
+  bsc_testnet: {
+    name: 'BSC Testnet',
+    rpcUrl: 'https://data-seed-prebsc-1-s1.binance.org:8545',
+    chainId: 97,
+    isLayer2: false
+  },
+  bsc_mainnet: {
+    name: 'BSC Mainnet',
+    rpcUrl: 'https://bsc-dataseed1.binance.org',
+    chainId: 56,
+    isLayer2: false
+  },
+  polygon_mumbai: {
+    name: 'Polygon Mumbai',
+    rpcUrl: 'https://rpc-mumbai.maticvigil.com',
+    chainId: 80001,
+    isLayer2: false
+  },
+  polygon_mainnet: {
+    name: 'Polygon Mainnet',
+    rpcUrl: 'https://polygon-rpc.com',
+    chainId: 137,
+    isLayer2: false
+  },
+  arbitrum_sepolia: {
+    name: 'Arbitrum Sepolia',
+    rpcUrl: 'https://sepolia-rollup.arbitrum.io/rpc',
+    chainId: 421614,
+    isLayer2: true
+  },
+  arbitrum_one: {
+    name: 'Arbitrum One',
+    rpcUrl: 'https://arb1.arbitrum.io/rpc',
+    chainId: 42161,
+    isLayer2: true
+  },
+  optimism_sepolia: {
+    name: 'Optimism Sepolia',
+    rpcUrl: 'https://sepolia.optimism.io',
+    chainId: 11155420,
+    isLayer2: true
+  },
+  optimism_mainnet: {
+    name: 'Optimism Mainnet',
+    rpcUrl: 'https://mainnet.optimism.io',
+    chainId: 10,
+    isLayer2: true
+  }
+};
 
 class BlockchainService {
   constructor() {
@@ -8,36 +79,68 @@ class BlockchainService {
     this.contract = null;
     this.account = null;
     this.isInitialized = false;
+    this.currentNetwork = null;
+    this.contractAddresses = {}; // Lưu contract addresses cho từng network
   }
 
-  // Khởi tạo kết nối blockchain
-  async initialize() {
+  // Lấy network configuration
+  getNetworkConfig(networkName) {
+    const network = NETWORKS[networkName || process.env.BLOCKCHAIN_NETWORK || 'development'];
+    if (!network) {
+      throw new Error(`Network ${networkName} không được hỗ trợ`);
+    }
+    return network;
+  }
+
+  // Khởi tạo kết nối blockchain với multi-chain support
+  async initialize(networkName = null) {
     try {
-      // Kết nối đến Ganache local network
-      this.web3 = new Web3('http://127.0.0.1:7545');
+      const network = this.getNetworkConfig(networkName);
+      this.currentNetwork = networkName || process.env.BLOCKCHAIN_NETWORK || 'development';
+      
+      // Kết nối đến network
+      this.web3 = new Web3(network.rpcUrl);
       
       // Kiểm tra kết nối
-      const isConnected = await this.web3.eth.isSyncing();
-      console.log('Blockchain connection status:', isConnected);
+      try {
+        const isSyncing = await this.web3.eth.isSyncing();
+        const blockNumber = await this.web3.eth.getBlockNumber();
+        console.log(`Blockchain connection status: ${network.name}`);
+        console.log(`Current block: ${blockNumber}`);
+      } catch (e) {
+        console.log('Could not check sync status, continuing...');
+      }
 
-      // Lấy accounts
-      const accounts = await this.web3.eth.getAccounts();
-      if (accounts.length === 0) {
-        throw new Error('Không tìm thấy account nào trong blockchain network');
+      // Lấy account từ private key hoặc mnemonic
+      if (process.env.PRIVATE_KEY && process.env.PRIVATE_KEY !== 'mock_private_key') {
+        const account = this.web3.eth.accounts.privateKeyToAccount('0x' + process.env.PRIVATE_KEY);
+        this.web3.eth.accounts.wallet.add(account);
+        this.account = account.address;
+      } else {
+        // Thử lấy từ accounts
+        const accounts = await this.web3.eth.getAccounts();
+        if (accounts.length > 0) {
+          this.account = accounts[0];
+        } else {
+          throw new Error('Không tìm thấy account nào trong blockchain network');
+        }
       }
       
-      this.account = accounts[0];
       console.log('Using account:', this.account);
 
-      // Khởi tạo contract instance với địa chỉ thực tế
-      const contractAddress = process.env.CONTRACT_ADDRESS || '0x4139d1bfab01d5ab57b7dc9b5025e716e7af030c';
+      // Lấy contract address cho network hiện tại
+      const contractAddress = this.getContractAddress(this.currentNetwork);
+      
+      if (!contractAddress) {
+        throw new Error(`Contract address chưa được cấu hình cho network ${this.currentNetwork}`);
+      }
       
       this.contract = new this.web3.eth.Contract(
         DrugTraceability.abi,
         contractAddress
       );
       
-      console.log('Contract initialized at address:', contractAddress);
+      console.log(`Contract initialized at address: ${contractAddress} on ${network.name}`);
 
       this.isInitialized = true;
       console.log('Blockchain service initialized successfully');
@@ -52,10 +155,106 @@ class BlockchainService {
       this.contract = null;
       this.account = '0xMockAccount123456789';
       this.isInitialized = true;
+      this.currentNetwork = 'mock';
       
       console.log('Blockchain service initialized in mock mode');
       return true;
     }
+  }
+
+  // Lấy contract address cho network
+  getContractAddress(networkName) {
+    // Ưu tiên từ environment variable với prefix network
+    const envKey = `CONTRACT_ADDRESS_${networkName?.toUpperCase()}`;
+    if (process.env[envKey]) {
+      return process.env[envKey];
+    }
+    
+    // Fallback về CONTRACT_ADDRESS chung
+    if (process.env.CONTRACT_ADDRESS && process.env.CONTRACT_ADDRESS !== '0x...') {
+      return process.env.CONTRACT_ADDRESS;
+    }
+    
+    // Development default
+    if (networkName === 'development') {
+      return '0x4139d1bfab01d5ab57b7dc9b5025e716e7af030c';
+    }
+    
+    return null;
+  }
+
+  // Chuyển đổi network
+  async switchNetwork(networkName) {
+    try {
+      await this.initialize(networkName);
+      return {
+        success: true,
+        network: this.currentNetwork,
+        message: `Đã chuyển sang network ${networkName}`
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  }
+
+  // Ước tính gas động
+  async estimateGas(method, params = [], options = {}) {
+    try {
+      if (!this.contract || !this.account) {
+        return options.defaultGas || 500000;
+      }
+
+      const gasEstimate = await this.contract.methods[method](...params).estimateGas({
+        from: this.account
+      });
+
+      // Thêm buffer 20% để đảm bảo transaction không fail
+      const gasWithBuffer = Math.floor(gasEstimate * 1.2);
+      
+      // Giới hạn tối đa
+      const maxGas = options.maxGas || 5000000;
+      return Math.min(gasWithBuffer, maxGas);
+    } catch (error) {
+      console.warn(`Gas estimation failed for ${method}, using default:`, error.message);
+      return options.defaultGas || 500000;
+    }
+  }
+
+  // Lấy gas price động
+  async getGasPrice() {
+    try {
+      if (!this.web3) {
+        return '20000000000'; // 20 gwei default
+      }
+
+      const gasPrice = await this.web3.eth.getGasPrice();
+      
+      // Đối với Layer 2, gas price thường thấp hơn
+      const network = this.getNetworkConfig(this.currentNetwork);
+      if (network.isLayer2) {
+        // Layer 2 có gas price thấp hơn nhiều
+        return gasPrice;
+      }
+      
+      return gasPrice;
+    } catch (error) {
+      console.warn('Could not get gas price, using default');
+      return '20000000000'; // 20 gwei
+    }
+  }
+
+  // Helper function để translate status từ contract (English) sang Vietnamese
+  translateStatus(status) {
+    const statusMap = {
+      'Valid': 'Hợp lệ',
+      'Recalled': 'Đã thu hồi',
+      'Expired': 'Đã hết hạn',
+      'Not Found': 'Không tồn tại'
+    };
+    return statusMap[status] || status;
   }
 
   // Tạo hash cho dữ liệu lô thuốc
@@ -114,6 +313,22 @@ class BlockchainService {
       
       // Gọi smart contract thực tế
       if (this.contract) {
+        // Ước tính gas động
+        const estimatedGas = await this.estimateGas('createDrugBatch', [
+          drugData.drugId,
+          drugData.name,
+          drugData.activeIngredient,
+          drugData.manufacturerId,
+          drugData.batchNumber,
+          Math.floor(new Date(drugData.productionDate).getTime() / 1000),
+          Math.floor(new Date(drugData.expiryDate).getTime() / 1000),
+          drugData.qualityTest?.result || 'PASSED',
+          drugData.qrCode?.data || blockchainId
+        ], { defaultGas: 500000, maxGas: 2000000 });
+
+        // Lấy gas price động
+        const gasPrice = await this.getGasPrice();
+
         const result = await this.contract.methods.createDrugBatch(
           drugData.drugId,
           drugData.name,
@@ -126,7 +341,8 @@ class BlockchainService {
           drugData.qrCode?.data || blockchainId
         ).send({
           from: this.account,
-          gas: 500000
+          gas: estimatedGas,
+          gasPrice: gasPrice
         });
         
         return {
@@ -170,6 +386,15 @@ class BlockchainService {
       }
 
       if (this.contract && process.env.CONTRACT_ADDRESS !== '0x...') {
+        const estimatedGas = await this.estimateGas('updateDrugBatch', [
+          drugId,
+          updateData.name,
+          updateData.activeIngredient,
+          updateData.qualityTest?.result || 'PASSED'
+        ], { defaultGas: 300000, maxGas: 1000000 });
+        
+        const gasPrice = await this.getGasPrice();
+
         const result = await this.contract.methods.updateDrugBatch(
           drugId,
           updateData.name,
@@ -177,7 +402,8 @@ class BlockchainService {
           updateData.qualityTest?.result || 'PASSED'
         ).send({
           from: this.account,
-          gas: 300000
+          gas: estimatedGas,
+          gasPrice: gasPrice
         });
         
         return {
@@ -214,12 +440,20 @@ class BlockchainService {
       }
 
       if (this.contract && process.env.CONTRACT_ADDRESS !== '0x...') {
+        const estimatedGas = await this.estimateGas('recallDrugBatch', [
+          drugId,
+          reason
+        ], { defaultGas: 200000, maxGas: 500000 });
+        
+        const gasPrice = await this.getGasPrice();
+
         const result = await this.contract.methods.recallDrugBatch(
           drugId,
           reason
         ).send({
           from: this.account,
-          gas: 200000
+          gas: estimatedGas,
+          gasPrice: gasPrice
         });
         
         return {
@@ -256,6 +490,16 @@ class BlockchainService {
       }
 
       if (this.contract && process.env.CONTRACT_ADDRESS !== '0x...') {
+        const estimatedGas = await this.estimateGas('recordDistribution', [
+          drugId,
+          toAddress,
+          location,
+          status,
+          notes
+        ], { defaultGas: 300000, maxGas: 1000000 });
+        
+        const gasPrice = await this.getGasPrice();
+
         const result = await this.contract.methods.recordDistribution(
           drugId,
           toAddress,
@@ -264,7 +508,8 @@ class BlockchainService {
           notes
         ).send({
           from: this.account,
-          gas: 300000
+          gas: estimatedGas,
+          gasPrice: gasPrice
         });
         
         return {
@@ -293,19 +538,36 @@ class BlockchainService {
     }
   }
 
-  // Lấy thông tin từ blockchain
-  async getDrugBatchFromBlockchain(drugId) {
+  // Lấy thông tin từ blockchain (với cache)
+  async getDrugBatchFromBlockchain(drugId, useCache = true) {
     try {
       if (!this.isInitialized) {
         throw new Error('Blockchain service chưa được khởi tạo');
       }
 
+      // Kiểm tra cache trước
+      if (useCache && cacheService.isEnabled) {
+        const cacheKey = `blockchain:drug:${drugId}`;
+        const cached = await cacheService.get(cacheKey);
+        if (cached) {
+          return { ...cached, fromCache: true };
+        }
+      }
+
       if (this.contract && process.env.CONTRACT_ADDRESS !== '0x...') {
         const result = await this.contract.methods.getDrugBatch(drugId).call();
-        return {
+        const response = {
           success: true,
           data: result
         };
+
+        // Cache kết quả (TTL 5 phút)
+        if (useCache && cacheService.isEnabled) {
+          const cacheKey = `blockchain:drug:${drugId}`;
+          await cacheService.set(cacheKey, response, 300);
+        }
+
+        return response;
       } else {
         // Mock implementation
         return {
@@ -342,29 +604,73 @@ class BlockchainService {
     return this.account;
   }
 
-  // Xác minh lô thuốc
-  async verifyDrugBatch(drugId) {
+  // Lấy thông tin network hiện tại
+  getCurrentNetwork() {
+    return {
+      name: this.currentNetwork,
+      config: this.getNetworkConfig(this.currentNetwork),
+      isLayer2: this.getNetworkConfig(this.currentNetwork)?.isLayer2 || false
+    };
+  }
+
+  // Lấy danh sách networks được hỗ trợ
+  getSupportedNetworks() {
+    return Object.keys(NETWORKS).map(key => ({
+      key,
+      ...NETWORKS[key]
+    }));
+  }
+
+  // Xác minh lô thuốc (lazy verification - chỉ verify khi cần)
+  async verifyDrugBatch(drugId, forceVerify = false) {
     try {
       if (!this.isInitialized) {
         throw new Error('Blockchain service chưa được khởi tạo');
       }
 
+      // Kiểm tra cache trước (nếu không force verify)
+      if (!forceVerify && cacheService.isEnabled) {
+        const cacheKey = `blockchain:verify:${drugId}`;
+        const cached = await cacheService.get(cacheKey);
+        if (cached) {
+          return { ...cached, fromCache: true };
+        }
+      }
+
       if (this.contract) {
         const result = await this.contract.methods.verifyDrugBatch(drugId).call();
         
-        // Ghi nhận việc xác minh
-        await this.contract.methods.recordVerification(drugId, result[0]).send({
-          from: this.account,
-          gas: 100000
-        });
+        // Chỉ ghi nhận verification nếu forceVerify = true (tránh tốn gas không cần thiết)
+        if (forceVerify) {
+          const estimatedGas = await this.estimateGas('recordVerification', [
+            drugId,
+            result[0]
+          ], { defaultGas: 100000, maxGas: 300000 });
+          
+          const gasPrice = await this.getGasPrice();
+          
+          await this.contract.methods.recordVerification(drugId, result[0]).send({
+            from: this.account,
+            gas: estimatedGas,
+            gasPrice: gasPrice
+          });
+        }
         
-        return {
+        const response = {
           success: true,
           isValid: result[0],
           isExpired: result[1],
           isRecalled: result[2],
-          status: result[3]
+          status: this.translateStatus(result[3])
         };
+
+        // Cache kết quả (TTL 10 phút)
+        if (cacheService.isEnabled) {
+          const cacheKey = `blockchain:verify:${drugId}`;
+          await cacheService.set(cacheKey, response, 600);
+        }
+
+        return response;
       } else {
         // Mock implementation
         return {
@@ -372,7 +678,7 @@ class BlockchainService {
           isValid: true,
           isExpired: false,
           isRecalled: false,
-          status: 'Hợp lệ',
+          status: this.translateStatus('Valid'),
           mock: true
         };
       }
@@ -385,16 +691,105 @@ class BlockchainService {
     }
   }
 
-  // Lấy thống kê contract
-  async getContractStats() {
+  // Batch verification - verify nhiều drugs cùng lúc
+  async verifyDrugBatchBatch(drugIds) {
     try {
       if (!this.isInitialized) {
         throw new Error('Blockchain service chưa được khởi tạo');
       }
 
+      if (!Array.isArray(drugIds) || drugIds.length === 0) {
+        return { success: false, error: 'Danh sách drugIds không hợp lệ' };
+      }
+
+      const results = [];
+      const uncachedIds = [];
+
+      // Kiểm tra cache cho từng drug
+      if (cacheService.isEnabled) {
+        for (const drugId of drugIds) {
+          const cacheKey = `blockchain:verify:${drugId}`;
+          const cached = await cacheService.get(cacheKey);
+          if (cached) {
+            results.push({ drugId, ...cached, fromCache: true });
+          } else {
+            uncachedIds.push(drugId);
+          }
+        }
+      } else {
+        uncachedIds.push(...drugIds);
+      }
+
+      // Verify các drugs chưa có trong cache
+      if (uncachedIds.length > 0 && this.contract) {
+        // Batch call để giảm số lần gọi contract
+        const verifyPromises = uncachedIds.map(drugId => 
+          this.contract.methods.verifyDrugBatch(drugId).call()
+            .then(result => ({
+              drugId,
+              success: true,
+              isValid: result[0],
+              isExpired: result[1],
+              isRecalled: result[2],
+              status: this.translateStatus(result[3])
+            }))
+            .catch(error => ({
+              drugId,
+              success: false,
+              error: error.message
+            }))
+        );
+
+        const verifyResults = await Promise.all(verifyPromises);
+        
+        // Cache các kết quả
+        if (cacheService.isEnabled) {
+          for (const result of verifyResults) {
+            if (result.success) {
+              const cacheKey = `blockchain:verify:${result.drugId}`;
+              await cacheService.set(cacheKey, result, 600);
+            }
+          }
+        }
+
+        results.push(...verifyResults);
+      }
+
+      return {
+        success: true,
+        results,
+        total: drugIds.length,
+        cached: results.filter(r => r.fromCache).length,
+        verified: results.filter(r => r.success && !r.fromCache).length
+      };
+    } catch (error) {
+      console.error('Batch verification error:', error);
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  }
+
+  // Lấy thống kê contract (với cache)
+  async getContractStats(useCache = true) {
+    try {
+      if (!this.isInitialized) {
+        throw new Error('Blockchain service chưa được khởi tạo');
+      }
+
+      // Kiểm tra cache
+      if (useCache && cacheService.isEnabled) {
+        const cacheKey = 'blockchain:stats';
+        const cached = await cacheService.get(cacheKey);
+        if (cached) {
+          return { ...cached, fromCache: true };
+        }
+      }
+
       if (this.contract) {
         const result = await this.contract.methods.getContractStats().call();
-        return {
+        const response = {
           success: true,
           stats: {
             totalBatches: parseInt(result[0]),
@@ -403,6 +798,14 @@ class BlockchainService {
             expiredBatches: parseInt(result[3])
           }
         };
+
+        // Cache kết quả (TTL 2 phút)
+        if (useCache && cacheService.isEnabled) {
+          const cacheKey = 'blockchain:stats';
+          await cacheService.set(cacheKey, response, 120);
+        }
+
+        return response;
       } else {
         // Mock implementation
         return {

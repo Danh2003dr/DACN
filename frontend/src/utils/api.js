@@ -58,42 +58,55 @@ api.interceptors.response.use(
     
     if (response) {
       const { status, data } = response;
-      
+      const message = data?.message;
+      const code = data?.code;
+      const details = data?.details || data?.errors;
+
       switch (status) {
         case 401:
           // Token hết hạn hoặc không hợp lệ
           localStorage.removeItem('token');
           localStorage.removeItem('user');
           window.location.href = '/login';
-          toast.error('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
+          toast.error(message || 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
           break;
-          
+
         case 403:
-          toast.error('Bạn không có quyền truy cập tài nguyên này.');
+          toast.error(message || 'Bạn không có quyền truy cập tài nguyên này.');
           break;
-          
+
         case 404:
-          toast.error(data.message || 'Không tìm thấy dữ liệu.');
+          toast.error(message || 'Không tìm thấy dữ liệu.');
           break;
-          
+
+        case 400:
         case 422:
-          // Validation errors
-          if (data.errors && Array.isArray(data.errors)) {
-            data.errors.forEach(err => toast.error(err));
+          // Validation / bad request errors
+          if (Array.isArray(details)) {
+            details.forEach(errMsg => toast.error(errMsg));
           } else {
-            toast.error(data.message || 'Dữ liệu không hợp lệ.');
+            toast.error(message || 'Dữ liệu không hợp lệ.');
           }
           break;
-          
+
         case 500:
-          toast.error('Lỗi server. Vui lòng thử lại sau.');
+        case 502:
+        case 503:
+        case 504:
+          // Lỗi hệ thống / network phía server
+          toast.error(message || 'Hệ thống đang bận hoặc gặp sự cố. Vui lòng thử lại sau.');
           break;
-          
+
         default:
-          toast.error(data.message || 'Có lỗi xảy ra. Vui lòng thử lại.');
+          // Một số lỗi đặc thù (dựa trên code) có thể xử lý riêng nếu cần
+          if (code === 'BLOCKCHAIN_ERROR' || code === 'HSM_ERROR' || code === 'CACHE_ERROR') {
+            toast.error(message || 'Dịch vụ nền tảng đang gặp sự cố. Hệ thống sẽ tự động chuyển sang chế độ an toàn.');
+          } else {
+            toast.error(message || 'Có lỗi xảy ra. Vui lòng thử lại.');
+          }
       }
     } else {
-      toast.error('Không thể kết nối đến server. Vui lòng kiểm tra kết nối mạng.');
+      toast.error('Không thể kết nối đến server. Vui lòng kiểm tra kết nối mạng hoặc thử lại sau.');
     }
     
     return Promise.reject(error);
@@ -512,7 +525,10 @@ export const digitalSignatureAPI = {
   verifySignature: (data) => api.post('/digital-signatures/verify', data),
   
   // Lấy danh sách chữ ký số
-  getSignatures: (params) => api.get('/digital-signatures', { params }),
+  getSignatures: async (params) => {
+    const response = await api.get('/digital-signatures', { params });
+    return response.data;
+  },
   
   // Lấy chi tiết chữ ký số
   getSignatureById: (id) => api.get(`/digital-signatures/${id}`),
@@ -526,7 +542,10 @@ export const digitalSignatureAPI = {
     api.post(`/digital-signatures/${id}/revoke`, { reason }),
   
   // Thống kê chữ ký số
-  getStats: (params) => api.get('/digital-signatures/stats', { params })
+  getStats: async (params) => {
+    const response = await api.get('/digital-signatures/stats', { params });
+    return response.data;
+  }
 };
 
 export const reviewAPI = {
@@ -638,6 +657,18 @@ export const reportAPI = {
   // Get quality assessment report
   getQualityAssessmentReport: async (params = {}) => {
     const response = await api.get('/reports/quality-assessment', { params });
+    return response.data;
+  },
+
+  // QR scan stats & high risk drugs
+  getQRScanStats: async (params = {}) => {
+    const response = await api.get('/reports/module/qr-scans', { params });
+    return response.data;
+  },
+
+  // Get high risk drugs (AI-based)
+  getRiskyDrugsReport: async (params = {}) => {
+    const response = await api.get('/reports/risky-drugs', { params });
     return response.data;
   },
 

@@ -1,11 +1,13 @@
 const Drug = require('../models/Drug');
 const User = require('../models/User');
 const SupplyChain = require('../models/SupplyChain');
+const QRScanLog = require('../models/QRScanLog');
 const QRCode = require('qrcode');
 const path = require('path');
 const fs = require('fs');
 const blockchainService = require('../services/blockchainService');
 const getServerUrl = require('../utils/getServerUrl');
+const drugRiskService = require('../services/drugRiskService');
 
 // @desc    Tạo lô thuốc mới
 // @route   POST /api/drugs
@@ -396,6 +398,29 @@ const updateDistributionStatus = async (req, res) => {
   }
 };
 
+// Helper: ghi log quét QR
+const logQRScan = async ({ qrData, drug, user, success, alertType, errorMessage }) => {
+  try {
+    const rawData = typeof qrData === 'string' ? qrData : JSON.stringify(qrData);
+    await QRScanLog.create({
+      rawData,
+      drug: drug?._id || null,
+      drugId: drug?.drugId || null,
+      batchNumber: drug?.batchNumber || null,
+      blockchainId: drug?.blockchain?.blockchainId || null,
+      user: user?._id || null,
+      success: !!success,
+      alertType: alertType || null,
+      errorMessage: errorMessage || null,
+      ipAddress: user?.ip || null,
+      userAgent: user?.userAgent || null
+    });
+  } catch (logError) {
+    // Không làm fail request chính nếu log lỗi
+    console.error('QRScanLog error:', logError.message);
+  }
+};
+
 // @desc    Quét QR code để tra cứu
 // @route   POST /api/drugs/scan-qr
 // @access  Private
@@ -404,6 +429,13 @@ const scanQRCode = async (req, res) => {
     const { qrData } = req.body;
 
     if (!qrData) {
+      await logQRScan({
+        qrData: '',
+        drug: null,
+        user: req.user,
+        success: false,
+        errorMessage: 'Thiếu dữ liệu QR code'
+      });
       return res.status(400).json({
         success: false,
         message: 'Vui lòng cung cấp dữ liệu QR code.'
@@ -417,6 +449,13 @@ const scanQRCode = async (req, res) => {
       drug = await Drug.findByQRCode(qrData);
     } catch (findError) {
       if (findError.message && findError.message.startsWith('QR code không hợp lệ')) {
+        await logQRScan({
+          qrData,
+          drug: null,
+          user: req.user,
+          success: false,
+          errorMessage: findError.message
+        });
         return res.status(400).json({
           success: false,
           message: findError.message
@@ -426,6 +465,13 @@ const scanQRCode = async (req, res) => {
     }
 
     if (!drug) {
+      await logQRScan({
+        qrData,
+        drug: null,
+        user: req.user,
+        success: false,
+        errorMessage: 'Không tìm thấy thông tin thuốc. Có thể đây là thuốc giả hoặc không có trong hệ thống.'
+      });
       return res.status(404).json({
         success: false,
         message: 'Không tìm thấy thông tin thuốc. Có thể đây là thuốc giả hoặc không có trong hệ thống.'
@@ -445,8 +491,18 @@ const scanQRCode = async (req, res) => {
       // Không throw error, chỉ log - vẫn trả về dữ liệu thuốc
     }
 
+    // Tính điểm rủi ro AI cho lô thuốc
+    const risk = await drugRiskService.calculateDrugRisk(drug);
+
     // Kiểm tra thuốc có bị thu hồi không
     if (drug.isRecalled) {
+      await logQRScan({
+        qrData,
+        drug,
+        user: req.user,
+        success: true,
+        alertType: 'recalled'
+      });
       return res.status(400).json({
         success: false,
         message: 'CẢNH BÁO: Lô thuốc này đã bị thu hồi!',
@@ -456,13 +512,21 @@ const scanQRCode = async (req, res) => {
           recallReason: drug.recallReason,
           recallDate: drug.recallDate,
           blockchain: blockchainData,
-          blockchainInfo: drug.blockchain
+          blockchainInfo: drug.blockchain,
+          risk
         }
       });
     }
 
     // Kiểm tra thuốc có hết hạn không
     if (drug.isExpired) {
+      await logQRScan({
+        qrData,
+        drug,
+        user: req.user,
+        success: true,
+        alertType: 'expired'
+      });
       return res.status(400).json({
         success: false,
         message: 'CẢNH BÁO: Thuốc đã hết hạn sử dụng!',
@@ -472,13 +536,21 @@ const scanQRCode = async (req, res) => {
           expiryDate: drug.expiryDate,
           daysExpired: Math.abs(drug.daysUntilExpiry),
           blockchain: blockchainData,
-          blockchainInfo: drug.blockchain
+          blockchainInfo: drug.blockchain,
+          risk
         }
       });
     }
 
     // Kiểm tra thuốc gần hết hạn
     if (drug.isNearExpiry) {
+      await logQRScan({
+        qrData,
+        drug,
+        user: req.user,
+        success: true,
+        alertType: 'near_expiry'
+      });
       return res.status(200).json({
         success: true,
         message: 'Thuốc hợp lệ nhưng gần hết hạn.',
@@ -486,10 +558,18 @@ const scanQRCode = async (req, res) => {
         data: { 
           drug,
           blockchain: blockchainData,
-          blockchainInfo: drug.blockchain
+          blockchainInfo: drug.blockchain,
+          risk
         }
       });
     }
+
+    await logQRScan({
+      qrData,
+      drug,
+      user: req.user,
+      success: true
+    });
 
     res.status(200).json({
       success: true,
@@ -497,11 +577,19 @@ const scanQRCode = async (req, res) => {
       data: { 
         drug,
         blockchain: blockchainData,
-        blockchainInfo: drug.blockchain
+        blockchainInfo: drug.blockchain,
+        risk
       }
     });
 
   } catch (error) {
+    await logQRScan({
+      qrData: req.body?.qrData || '',
+      drug: null,
+      user: req.user,
+      success: false,
+      errorMessage: error.message
+    });
     res.status(500).json({
       success: false,
       message: 'Lỗi server khi quét QR code.',
@@ -814,6 +902,9 @@ const verifyQRCode = async (req, res) => {
       // Không throw error, chỉ log
     }
 
+    // Tính điểm rủi ro AI cho lô thuốc
+    const risk = await drugRiskService.calculateDrugRisk(drug);
+
     res.json({
       success: true,
       message: 'Thông tin lô thuốc hợp lệ.',
@@ -824,7 +915,8 @@ const verifyQRCode = async (req, res) => {
           isValid: true,
           verifiedAt: new Date(),
           blockchainStatus: drug.blockchain?.blockchainStatus || 'unknown'
-        }
+        },
+        risk
       }
     });
 

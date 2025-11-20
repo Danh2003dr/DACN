@@ -27,6 +27,7 @@ const QRScanner = () => {
   const [drugInfo, setDrugInfo] = useState(null);
   const [blockchainData, setBlockchainData] = useState(null);
   const [blockchainInfo, setBlockchainInfo] = useState(null);
+  const [riskInfo, setRiskInfo] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [showScanner, setShowScanner] = useState(false);
@@ -202,6 +203,7 @@ const QRScanner = () => {
       setAlertModal(null);
       setBlockchainData(null);
       setBlockchainInfo(null);
+      setRiskInfo(null);
       
       // Kiểm tra nếu là URL (có thể là verification URL)
       if (typeof qrData === 'string') {
@@ -234,6 +236,7 @@ const QRScanner = () => {
         setDrugInfo(drugData);
         setBlockchainData(data.blockchain || null);
         setBlockchainInfo(data.blockchainInfo || drugData.blockchain || null);
+        setRiskInfo(data.risk || null);
         
         // Kiểm tra warning (thuốc gần hết hạn)
         if (response.warning) {
@@ -266,6 +269,7 @@ const QRScanner = () => {
         setDrugInfo(drugData);
         setBlockchainData(data.blockchain || null);
         setBlockchainInfo(data.blockchainInfo || drugData.blockchain || null);
+        setRiskInfo(data.risk || null);
         setAlertModal({
           type: errorResponse.alertType,
           data: data,
@@ -354,6 +358,26 @@ const QRScanner = () => {
       case 'active': return 'Hoạt động';
       case 'recalled': return 'Đã thu hồi';
       case 'expired': return 'Hết hạn';
+      default: return 'Không xác định';
+    }
+  };
+
+  const getRiskColor = (level) => {
+    switch (level) {
+      case 'critical': return 'bg-red-100 text-red-800';
+      case 'high': return 'bg-orange-100 text-orange-800';
+      case 'medium': return 'bg-yellow-100 text-yellow-800';
+      case 'low': return 'bg-green-100 text-green-800';
+      default: return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  const getRiskLabel = (level) => {
+    switch (level) {
+      case 'critical': return 'Rất cao';
+      case 'high': return 'Cao';
+      case 'medium': return 'Trung bình';
+      case 'low': return 'Thấp';
       default: return 'Không xác định';
     }
   };
@@ -554,9 +578,16 @@ const QRScanner = () => {
           <div className="p-6">
             <div className="flex items-center justify-between mb-6">
               <h3 className="text-xl font-semibold">Thông tin thuốc</h3>
-              <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(drugInfo.status)}`}>
-                {getStatusText(drugInfo.status)}
-              </span>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(drugInfo.status)}`}>
+                  {getStatusText(drugInfo.status)}
+                </span>
+                {riskInfo && (
+                  <span className={`px-3 py-1 rounded-full text-xs font-semibold ${getRiskColor(riskInfo.level)}`}>
+                    Rủi ro nghi vấn: {getRiskLabel(riskInfo.level)} ({Math.round(riskInfo.score)}%)
+                  </span>
+                )}
+              </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -711,17 +742,31 @@ const QRScanner = () => {
             )}
 
             {/* Actions */}
-            <div className="mt-6 flex space-x-3">
+            <div className="mt-6 flex flex-wrap gap-3">
               {(blockchainInfo?.blockchainId || drugInfo.blockchain?.blockchainId) && (
-                <button
-                  onClick={() => window.open(`/verify/${blockchainInfo?.blockchainId || drugInfo.blockchain?.blockchainId}`, '_blank')}
-                  className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-2"
-                >
-                  <ExternalLink className="h-4 w-4" />
-                  <span>Xem trên blockchain</span>
-                </button>
+                <>
+                  <button
+                    onClick={() =>
+                      window.open(
+                        `/verify/${blockchainInfo?.blockchainId || drugInfo.blockchain?.blockchainId}`,
+                        '_blank'
+                      )
+                    }
+                    className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-2"
+                  >
+                    <ExternalLink className="h-4 w-4" />
+                    <span>Trang xác minh</span>
+                  </button>
+                  <button
+                    onClick={() => window.open('/blockchain', '_blank')}
+                    className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 flex items-center space-x-2"
+                  >
+                    <ExternalLink className="h-4 w-4" />
+                    <span>Blockchain Dashboard</span>
+                  </button>
+                </>
               )}
-              
+
               <button
                 onClick={resetScanner}
                 className="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 flex items-center space-x-2"

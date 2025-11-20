@@ -12,6 +12,9 @@ require('./config/passport');
 // Import getServerUrl để hiển thị network URL
 const getServerUrl = require('./utils/getServerUrl');
 
+// Import cache service
+const cacheService = require('./utils/cache');
+
 // Import routes
 const authRoutes = require('./routes/auth');
 const profileRoutes = require('./routes/profileRoutes');
@@ -88,6 +91,18 @@ const connectDB = async () => {
 
 // Connect to database
 connectDB();
+
+// Initialize cache service
+const initializeCache = async () => {
+  try {
+    await cacheService.initialize();
+  } catch (error) {
+    console.warn('Cache service initialization failed, continuing without cache');
+  }
+};
+
+// Initialize cache service
+initializeCache();
 
 // Initialize blockchain service
 const initializeBlockchain = async () => {
@@ -166,77 +181,125 @@ app.get('/api', (req, res) => {
 app.use('*', (req, res) => {
   res.status(404).json({
     success: false,
-    message: 'Endpoint không tồn tại'
+    message: 'Endpoint không tồn tại',
+    code: 'NOT_FOUND',
+    path: req.originalUrl,
+    timestamp: new Date().toISOString()
   });
+});
+
+// Helper chuẩn hóa cấu trúc lỗi
+const buildErrorResponse = (req, {
+  statusCode,
+  code,
+  message,
+  details
+}) => ({
+  success: false,
+  message: message || 'Đã xảy ra lỗi',
+  code: code || 'INTERNAL_SERVER_ERROR',
+  details: details || undefined,
+  path: req.originalUrl,
+  timestamp: new Date().toISOString()
 });
 
 // Global error handler
 app.use((err, req, res, next) => {
   console.error('Error:', err);
-  
+
+  const isDevelopment = process.env.NODE_ENV === 'development';
+
   // Mongoose validation error
   if (err.name === 'ValidationError') {
     const messages = Object.values(err.errors).map(error => error.message);
-    return res.status(400).json({
-      success: false,
-      message: 'Dữ liệu không hợp lệ',
-      errors: messages
-    });
+    return res.status(400).json(
+      buildErrorResponse(req, {
+        statusCode: 400,
+        code: 'VALIDATION_ERROR',
+        message: 'Dữ liệu không hợp lệ',
+        details: messages
+      })
+    );
   }
-  
+
   // Mongoose duplicate key error
   if (err.code === 11000) {
     const field = Object.keys(err.keyValue)[0];
-    return res.status(400).json({
-      success: false,
-      message: `${field} đã tồn tại`
-    });
+    return res.status(400).json(
+      buildErrorResponse(req, {
+        statusCode: 400,
+        code: 'DUPLICATE_KEY',
+        message: `${field} đã tồn tại`,
+        details: {
+          field,
+          value: err.keyValue[field]
+        }
+      })
+    );
   }
-  
+
   // JWT errors
   if (err.name === 'JsonWebTokenError') {
-    return res.status(401).json({
-      success: false,
-      message: 'Token không hợp lệ'
-    });
+    return res.status(401).json(
+      buildErrorResponse(req, {
+        statusCode: 401,
+        code: 'AUTH_INVALID_TOKEN',
+        message: 'Token không hợp lệ'
+      })
+    );
   }
-  
+
   if (err.name === 'TokenExpiredError') {
-    return res.status(401).json({
-      success: false,
-      message: 'Token đã hết hạn'
-    });
+    return res.status(401).json(
+      buildErrorResponse(req, {
+        statusCode: 401,
+        code: 'AUTH_TOKEN_EXPIRED',
+        message: 'Token đã hết hạn'
+      })
+    );
   }
-  
+
   // Default error
-  res.status(err.statusCode || 500).json({
-    success: false,
+  const statusCode = err.statusCode || 500;
+  const response = buildErrorResponse(req, {
+    statusCode,
+    code: err.code || (statusCode >= 500 ? 'INTERNAL_SERVER_ERROR' : 'BAD_REQUEST'),
     message: err.message || 'Lỗi server nội bộ',
-    ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
+    details: isDevelopment ? { stack: err.stack } : undefined
   });
+
+  res.status(statusCode).json(response);
 });
 
 // Graceful shutdown
-process.on('SIGTERM', () => {
-  console.log('SIGTERM received. Shutting down gracefully...');
+const gracefulShutdown = async () => {
+  console.log('Shutting down gracefully...');
+  try {
+    await cacheService.close();
+    console.log('Cache connection closed.');
+  } catch (error) {
+    console.error('Error closing cache:', error);
+  }
   mongoose.connection.close(() => {
     console.log('MongoDB connection closed.');
     process.exit(0);
   });
+};
+
+process.on('SIGTERM', () => {
+  console.log('SIGTERM received.');
+  gracefulShutdown();
 });
 
 process.on('SIGINT', () => {
-  console.log('SIGINT received. Shutting down gracefully...');
-  mongoose.connection.close(() => {
-    console.log('MongoDB connection closed.');
-    process.exit(0);
-  });
+  console.log('SIGINT received.');
+  gracefulShutdown();
 });
 
 const PORT = process.env.PORT || 5000;
 const HOST = process.env.HOST || '0.0.0.0'; // Bind to all interfaces để accessible từ network
 
-app.listen(PORT, HOST, () => {
+const server = app.listen(PORT, HOST, () => {
   console.log(`Server is running on ${HOST}:${PORT}`);
   console.log(`Environment: ${process.env.NODE_ENV}`);
   console.log(`Local: http://localhost:${PORT}`);
@@ -270,6 +333,23 @@ app.listen(PORT, HOST, () => {
   
   console.log(`Health check: http://localhost:${PORT}/api/health`);
   console.log(`API docs: http://localhost:${PORT}/api`);
+});
+
+// Xử lý lỗi khi port đã được sử dụng
+server.on('error', (error) => {
+  if (error.code === 'EADDRINUSE') {
+    console.error(`\n❌ Lỗi: Port ${PORT} đã được sử dụng!`);
+    console.error(`\nĐể giải quyết, bạn có thể:`);
+    console.error(`1. Tìm và dừng process đang sử dụng port ${PORT}:`);
+    console.error(`   netstat -ano | findstr :${PORT}`);
+    console.error(`   taskkill /PID <PID> /F`);
+    console.error(`2. Hoặc thay đổi PORT trong file .env`);
+    console.error(`3. Hoặc đợi vài giây để port được giải phóng\n`);
+    process.exit(1);
+  } else {
+    console.error('Lỗi khi khởi động server:', error);
+    process.exit(1);
+  }
 });
 
 module.exports = app;

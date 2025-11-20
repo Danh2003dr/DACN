@@ -3,13 +3,29 @@
 ## Tổng quan
 Hệ thống được phát triển để giải quyết vấn đề nghiêm trọng về thuốc giả và thuốc kém chất lượng tại Việt Nam thông qua công nghệ blockchain.
 
+## Tài liệu dành cho người dùng cuối
+
+- 📘 **Hướng dẫn sử dụng chi tiết giao diện hệ thống**: xem file `HUONG_DAN_SU_DUNG.md`
+- ⚙️ **Hướng dẫn nhanh triển khai & deploy smart contract**: xem file `QUICK_START_BLOCKCHAIN.md`
+- 🧠 **Mô tả kiến trúc & nghiệp vụ hệ thống**: xem file `MO_TA_HE_THONG.md`
+
 ## Tính năng chính
-- ✅ **Quản lý tài khoản người dùng** với phân quyền rõ ràng
+
+### Core Features
+- ✅ **Quản lý tài khoản người dùng** với phân quyền rõ ràng (Admin, Manufacturer, Distributor, Hospital, Patient)
 - ✅ **Xác thực và bảo mật** với JWT và bcrypt
-- ✅ **API RESTful** đầy đủ cho quản lý users
-- 🔄 **Smart Contract** (đang phát triển)
-- 🔄 **Frontend React** (đang phát triển)
-- 🔄 **Quét mã QR** (đang phát triển)
+- ✅ **API RESTful** đầy đủ cho tất cả modules
+- ✅ **Quản lý lô thuốc** với blockchain integration
+- ✅ **Theo dõi chuỗi cung ứng** real-time
+- ✅ **Chữ ký số** theo chuẩn Việt Nam (VNCA) với Timestamp Authority
+- ✅ **Hệ thống điểm tín nhiệm** (Trust Score) cho nhà cung ứng
+- ✅ **Đánh giá và xếp hạng** (Reviews & Ratings)
+- ✅ **Quản lý nhiệm vụ** (Tasks Management)
+- ✅ **Thông báo** (Notifications)
+- ✅ **Báo cáo và phân tích** (Reports & Analytics)
+- ✅ **Quét mã QR** để tra cứu nguồn gốc thuốc
+- ✅ **Frontend React** với UI/UX hiện đại, responsive
+- ✅ **Blockchain Integration** với Smart Contracts
 
 ## Cấu trúc dự án
 ```
@@ -65,6 +81,25 @@ npm start
 
 Server sẽ chạy tại: `http://localhost:5000`
 
+### 5. Hướng dẫn deploy nhanh Dev/Prod
+
+- **Môi trường Development (demo, localhost)**  
+  - Backend: chạy bằng `npm run dev` (hoặc `npm start`), MongoDB local, blockchain có thể ở **mock mode** nếu chưa cấu hình Infura/private key.  
+  - Frontend: vào thư mục `frontend` và chạy `npm start`, cấu hình `REACT_APP_API_URL` nếu cần truy cập backend từ máy khác trong LAN.
+
+- **Môi trường Production đơn giản (1 server)**  
+  1. Cài Node.js (>=16), MongoDB trên server.  
+  2. Copy mã nguồn, chạy `npm install` ở thư mục gốc và `npm install` trong `frontend`.  
+  3. Cấu hình file `.env` với các biến:
+     - Thông tin MongoDB, JWT, PORT, `NODE_ENV=production`
+     - Thông tin blockchain: `BLOCKCHAIN_NETWORK`, `INFURA_PROJECT_ID`, `PRIVATE_KEY` (hoặc `MNEMONIC`)
+     - Cấu hình HSM (nếu dùng) trong `config/hsmConfig.js`
+  4. Build frontend: `cd frontend && npm run build`, sau đó cấu hình web server (Nginx/Apache) trỏ vào thư mục `frontend/build`.  
+  5. Chạy backend bằng process manager (PM2, systemd…) với lệnh `node server.js`.  
+  6. Kiểm tra:
+     - `http://<server>:5000/api/health` trả về `success: true`
+     - Giao diện React truy cập được backend qua `REACT_APP_API_URL`.
+
 ## API Endpoints
 
 ### Authentication
@@ -88,6 +123,11 @@ Server sẽ chạy tại: `http://localhost:5000`
 ### Utility
 - `GET /api/health` - Health check
 - `GET /api` - API documentation
+
+### API Documentation mở rộng
+- Backend cung cấp endpoint tài liệu API tổng quan tại: `GET /api` (liệt kê các nhóm endpoint chính).  
+- Có thể import tập request từ Postman/REST Client dựa trên các endpoint liệt kê ở mục này.  
+- Khi triển khai production, khuyến nghị bổ sung file Postman Collection hoặc tài liệu OpenAPI cho từng môi trường.
 
 ## Vai trò người dùng
 
@@ -154,6 +194,14 @@ Tài khoản mặc định:
 - Sử dụng Joi để validate input
 - Sanitize dữ liệu trước khi lưu
 
+### 6. Báo cáo Security Audit
+
+- Xem file `SECURITY_AUDIT.md` để biết chi tiết:
+  - Kết quả rà soát phân quyền backend/frontend.
+  - Đánh giá các lỗ hổng phổ biến (Injection, XSS, CSRF, IDOR, misconfiguration).
+  - Chiến lược quản lý secrets (.env, HSM, private key blockchain).
+  - Kết quả `npm run audit` và kế hoạch nâng cấp dependencies trong giai đoạn triển khai thực tế.
+
 ## Testing
 
 ### 1. Health Check
@@ -177,6 +225,17 @@ curl -X GET http://localhost:5000/api/auth/me \
   -H "Authorization: Bearer <your_token>"
 ```
 
+## Checklist trước khi release
+
+Trước mỗi lần release phiên bản mới, nên kiểm tra nhanh:
+
+- [ ] Backend chạy ổn định, `GET /api/health` trả về `success: true`
+- [ ] Frontend build thành công, các trang chính (Dashboard, Drugs, Supply Chain, QR Scanner, Settings) không lỗi JavaScript
+- [ ] Đã cấu hình đúng `.env` cho môi trường deploy (MongoDB, JWT, Blockchain, HSM, CORS, ALLOWED_ORIGINS)
+- [ ] Đã chạy `npm run audit` và ghi nhận kết quả (không còn lỗ hổng nghiêm trọng trong dependencies chính của backend/frontend)
+- [ ] Smart contract đã deploy đúng network, `CONTRACT_ADDRESS_*` được cập nhật
+- [ ] Tối thiểu 1–2 luồng nghiệp vụ chính đã test lại: đăng nhập, tạo lô thuốc, ghi lên blockchain, quét QR/verify
+
 ## Công nghệ sử dụng
 
 ### Backend
@@ -194,23 +253,31 @@ curl -X GET http://localhost:5000/api/auth/me \
 - **Morgan** - HTTP logging
 - **Compression** - Response compression
 
-## Phát triển tiếp theo
+## 📊 Trạng thái dự án
 
-### 1. Smart Contract
-- [ ] Viết smart contract bằng Solidity
-- [ ] Deploy lên Ethereum testnet
-- [ ] Tích hợp Web3.js
+### ✅ Đã hoàn thành
+- [x] Authentication & Authorization với JWT
+- [x] User Management với phân quyền
+- [x] Drug Management (Quản lý lô thuốc)
+- [x] Supply Chain Tracking (Theo dõi chuỗi cung ứng)
+- [x] Digital Signatures (Chữ ký số theo chuẩn VNCA)
+- [x] Trust Score System (Hệ thống điểm tín nhiệm)
+- [x] Reviews & Ratings (Đánh giá và xếp hạng)
+- [x] Tasks Management (Quản lý nhiệm vụ)
+- [x] Notifications (Thông báo)
+- [x] Reports & Analytics (Báo cáo và phân tích)
+- [x] QR Code Scanner (Quét mã QR)
+- [x] Blockchain Integration cơ bản
+- [x] Frontend React với UI/UX hiện đại
 
-### 2. Frontend
-- [ ] React.js application
-- [ ] Giao diện quét mã QR
-- [ ] Dashboard quản lý
+### 🔄 Đang phát triển
+- [ ] Performance Optimization
+- [ ] Comprehensive Testing
+- [ ] Security Audit
+- [ ] Documentation hoàn chỉnh
 
-### 3. Tính năng bổ sung
-- [ ] Quản lý lô thuốc
-- [ ] Theo dõi chuỗi cung ứng
-- [ ] Báo cáo và thống kê
-- [ ] Thông báo real-time
+### 📝 Xem chi tiết
+Xem **[ROADMAP.md](./ROADMAP.md)** để biết chi tiết về hướng phát triển và kế hoạch dài hạn của dự án.
 
 ## Đóng góp
 

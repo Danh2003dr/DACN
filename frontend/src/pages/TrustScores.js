@@ -119,13 +119,19 @@ const TrustScores = () => {
   // View supplier detail
   const viewSupplierDetail = async (supplierId) => {
     try {
-      const response = await trustScoreAPI.getTrustScore(supplierId);
+      // Chuyển đổi supplierId thành string nếu là object
+      const id = typeof supplierId === 'object' && supplierId?._id 
+        ? supplierId._id.toString() 
+        : supplierId?.toString() || supplierId;
+      
+      const response = await trustScoreAPI.getTrustScore(id);
       if (response.success) {
         setSelectedSupplier(response.data.trustScore);
         setShowDetailModal(true);
       }
     } catch (error) {
-      toast.error('Lỗi khi tải thông tin nhà cung ứng');
+      console.error('View supplier detail error:', error);
+      toast.error(error.response?.data?.message || 'Lỗi khi tải thông tin nhà cung ứng');
     }
   };
 
@@ -392,14 +398,38 @@ const SupplierDetailModal = ({ supplier, onClose, hasRole }) => {
   }, [supplier]);
 
   const loadHistory = async () => {
+    if (!supplier) return;
+    
     try {
       setLoading(true);
-      const response = await trustScoreAPI.getScoreHistory(supplier.supplier);
+      // supplier là trustScore object, có field supplier là ObjectId hoặc populated object
+      // Cần lấy supplier._id (ObjectId của User) để gọi API history
+      let supplierId;
+      
+      if (supplier.supplier) {
+        // supplier.supplier có thể là ObjectId hoặc populated object
+        if (typeof supplier.supplier === 'object') {
+          supplierId = supplier.supplier._id 
+            ? supplier.supplier._id.toString() 
+            : supplier.supplier.toString();
+        } else {
+          supplierId = supplier.supplier.toString();
+        }
+      } else {
+        console.error('Cannot determine supplier ID from trustScore');
+        return;
+      }
+      
+      const response = await trustScoreAPI.getScoreHistory(supplierId);
       if (response.success) {
-        setHistory(response.data.history);
+        setHistory(response.data.history || []);
       }
     } catch (error) {
       console.error('Load history error:', error);
+      // Chỉ hiển thị toast nếu có lỗi thực sự (không phải 404)
+      if (error.response?.status !== 404) {
+        toast.error('Lỗi khi tải lịch sử điểm');
+      }
     } finally {
       setLoading(false);
     }
@@ -432,13 +462,13 @@ const SupplierDetailModal = ({ supplier, onClose, hasRole }) => {
         <div className="grid grid-cols-2 gap-4 mb-6">
           <div className="bg-gray-50 rounded-lg p-4">
             <div className="text-sm text-gray-600 mb-1">Điểm tổng thể</div>
-            <div className="text-3xl font-bold text-gray-900">{supplier.trustScore}</div>
+            <div className="text-3xl font-bold text-gray-900">{supplier.trustScore || 0}</div>
             <div className="text-sm text-gray-500">/ 1000</div>
           </div>
           <div className="bg-gray-50 rounded-lg p-4">
             <div className="text-sm text-gray-600 mb-1">Cấp độ</div>
-            <div className={`text-2xl font-bold px-3 py-2 rounded-full inline-block ${getTrustLevelColor(supplier.trustLevel)}`}>
-              {supplier.trustLevel}
+            <div className={`text-2xl font-bold px-3 py-2 rounded-full inline-block ${getTrustLevelColor(supplier.trustLevel || 'C')}`}>
+              {supplier.trustLevel || 'C'}
             </div>
           </div>
         </div>
@@ -447,11 +477,11 @@ const SupplierDetailModal = ({ supplier, onClose, hasRole }) => {
         <div className="mb-6">
           <h4 className="text-md font-semibold mb-3">Điểm chi tiết</h4>
           <div className="space-y-2">
-            <ScoreBar label="Đánh giá" score={supplier.scoreBreakdown.reviewScore} max={300} />
-            <ScoreBar label="Tuân thủ" score={supplier.scoreBreakdown.complianceScore} max={250} />
-            <ScoreBar label="Chất lượng" score={supplier.scoreBreakdown.qualityScore} max={200} />
-            <ScoreBar label="Hiệu quả" score={supplier.scoreBreakdown.efficiencyScore} max={150} />
-            <ScoreBar label="Thời gian" score={supplier.scoreBreakdown.timelinessScore} max={100} />
+            <ScoreBar label="Đánh giá" score={supplier.scoreBreakdown?.reviewScore || 0} max={300} />
+            <ScoreBar label="Tuân thủ" score={supplier.scoreBreakdown?.complianceScore || 0} max={250} />
+            <ScoreBar label="Chất lượng" score={supplier.scoreBreakdown?.qualityScore || 0} max={200} />
+            <ScoreBar label="Hiệu quả" score={supplier.scoreBreakdown?.efficiencyScore || 0} max={150} />
+            <ScoreBar label="Thời gian" score={supplier.scoreBreakdown?.timelinessScore || 0} max={100} />
           </div>
         </div>
 
@@ -460,17 +490,17 @@ const SupplierDetailModal = ({ supplier, onClose, hasRole }) => {
           <div>
             <h4 className="text-md font-semibold mb-2">Thống kê đánh giá</h4>
             <div className="text-sm space-y-1">
-              <div>Tổng đánh giá: {supplier.reviewStats.totalReviews}</div>
-              <div>Điểm trung bình: {supplier.reviewStats.averageRating.toFixed(1)}/5</div>
-              <div>Đánh giá tích cực: {supplier.reviewStats.positiveReviews}</div>
+              <div>Tổng đánh giá: {supplier.reviewStats?.totalReviews || 0}</div>
+              <div>Điểm trung bình: {(supplier.reviewStats?.averageRating || 0).toFixed(1)}/5</div>
+              <div>Đánh giá tích cực: {supplier.reviewStats?.positiveReviews || 0}</div>
             </div>
           </div>
           <div>
             <h4 className="text-md font-semibold mb-2">Thống kê tuân thủ</h4>
             <div className="text-sm space-y-1">
-              <div>Chữ ký hợp lệ: {supplier.complianceStats.validSignatureRate.toFixed(1)}%</div>
-              <div>Nhiệm vụ đúng hạn: {supplier.complianceStats.onTimeTaskRate.toFixed(1)}%</div>
-              <div>Thuốc hợp lệ: {supplier.complianceStats.validDrugRate.toFixed(1)}%</div>
+              <div>Chữ ký hợp lệ: {(supplier.complianceStats?.validSignatureRate || 0).toFixed(1)}%</div>
+              <div>Nhiệm vụ đúng hạn: {(supplier.complianceStats?.onTimeTaskRate || 0).toFixed(1)}%</div>
+              <div>Thuốc hợp lệ: {(supplier.complianceStats?.validDrugRate || 0).toFixed(1)}%</div>
             </div>
           </div>
         </div>

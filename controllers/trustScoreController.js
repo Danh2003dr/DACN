@@ -9,14 +9,38 @@ const getTrustScore = async (req, res) => {
   try {
     const { supplierId } = req.params;
     
+    // Kiểm tra supplier có tồn tại không
+    const supplier = await User.findById(supplierId);
+    if (!supplier) {
+      return res.status(404).json({
+        success: false,
+        message: 'Không tìm thấy nhà cung ứng'
+      });
+    }
+    
     let trustScore = await SupplierTrustScore.findBySupplier(supplierId)
-      .populate('supplier', 'fullName email organizationInfo role');
+      .populate('supplier', 'fullName email organizationInfo role organizationId');
     
     if (!trustScore) {
       // Tạo điểm tín nhiệm mới nếu chưa có
-      await TrustScoreService.calculateAndUpdateTrustScore(supplierId);
-      trustScore = await SupplierTrustScore.findBySupplier(supplierId)
-        .populate('supplier', 'fullName email organizationInfo role');
+      try {
+        await TrustScoreService.calculateAndUpdateTrustScore(supplierId);
+        trustScore = await SupplierTrustScore.findBySupplier(supplierId)
+          .populate('supplier', 'fullName email organizationInfo role organizationId');
+      } catch (calcError) {
+        console.error('Error calculating trust score:', calcError);
+        return res.status(500).json({
+          success: false,
+          message: 'Lỗi khi tính toán điểm tín nhiệm: ' + calcError.message
+        });
+      }
+    }
+    
+    if (!trustScore) {
+      return res.status(404).json({
+        success: false,
+        message: 'Không tìm thấy điểm tín nhiệm'
+      });
     }
     
     res.status(200).json({
@@ -29,7 +53,8 @@ const getTrustScore = async (req, res) => {
     console.error('Get trust score error:', error);
     res.status(500).json({
       success: false,
-      message: 'Lỗi server khi lấy điểm tín nhiệm'
+      message: 'Lỗi server khi lấy điểm tín nhiệm',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };
@@ -306,14 +331,19 @@ const recalculateAllTrustScores = async (req, res) => {
       }
     }
     
+    const message = errors.length > 0 
+      ? `Đã tính toán lại điểm cho ${results.length} nhà cung ứng. ${errors.length} nhà cung ứng gặp lỗi.`
+      : `Đã tính toán lại điểm cho ${results.length} nhà cung ứng`;
+
     res.status(200).json({
       success: true,
-      message: `Đã tính toán lại điểm cho ${results.length} nhà cung ứng`,
+      message: message,
       data: {
         success: results.length,
         failed: errors.length,
+        total: suppliers.length,
         results,
-        errors
+        errors: errors.length > 0 ? errors : undefined
       }
     });
   } catch (error) {

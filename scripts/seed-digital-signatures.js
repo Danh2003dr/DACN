@@ -1,3 +1,27 @@
+/**
+ * Script seed dữ liệu chữ ký số
+ * 
+ * Cách sử dụng:
+ * 
+ * Bash/Linux/Mac:
+ *   node scripts/seed-digital-signatures.js
+ *   DELETE_OLD_SIGNATURES=false node scripts/seed-digital-signatures.js
+ * 
+ * PowerShell (Windows):
+ *   node scripts/seed-digital-signatures.js
+ *   $env:DELETE_OLD_SIGNATURES="false"; node scripts/seed-digital-signatures.js
+ * 
+ * Hoặc sử dụng npm script:
+ *   npm run seed:signatures          # Xóa dữ liệu cũ trước khi seed
+ * 
+ * Biến môi trường:
+ *   DELETE_OLD_SIGNATURES: Mặc định 'true' (xóa dữ liệu cũ). Set 'false' để giữ dữ liệu cũ
+ *   
+ * Ví dụ PowerShell (giữ dữ liệu cũ):
+ *   $env:DELETE_OLD_SIGNATURES="false"
+ *   node scripts/seed-digital-signatures.js
+ */
+
 const mongoose = require('mongoose');
 require('dotenv').config();
 const crypto = require('crypto');
@@ -336,6 +360,17 @@ const createRevokedSignature = async (drug, user, adminUser) => {
 const seedDigitalSignatures = async () => {
   try {
     console.log('🌱 Bắt đầu seed dữ liệu chữ ký số...\n');
+
+    // Xóa dữ liệu chữ ký số cũ (tùy chọn - comment lại nếu muốn giữ dữ liệu cũ)
+    const deleteOld = process.env.DELETE_OLD_SIGNATURES !== 'false';
+    if (deleteOld) {
+      const oldCount = await DigitalSignature.countDocuments();
+      if (oldCount > 0) {
+        console.log(`🗑️  Xóa ${oldCount} chữ ký số cũ...`);
+        await DigitalSignature.deleteMany({});
+        console.log('✅ Đã xóa dữ liệu cũ\n');
+      }
+    }
 
     // Lấy các user phù hợp
     const manufacturers = await User.find({ role: 'manufacturer' }).limit(5);

@@ -9,7 +9,8 @@ const {
   getSuspiciousDrugsReport,
   getQualityAssessmentReport,
   exportReportExcel,
-  exportReportPdf
+  exportReportPdf,
+  getHighRiskDrugsReport
 } = require('../controllers/reportController');
 
 // @route   GET /api/reports/overview
@@ -51,6 +52,14 @@ router.get('/distribution-journey',
 router.get('/suspicious-drugs',
   authenticate,
   getSuspiciousDrugsReport
+);
+
+// @route   GET /api/reports/risky-drugs
+// @desc    Lấy danh sách thuốc rủi ro cao theo AI (Drug Verification AI)
+// @access  Private
+router.get('/risky-drugs',
+  authenticate,
+  getHighRiskDrugsReport
 );
 
 // @route   GET /api/reports/quality-assessment

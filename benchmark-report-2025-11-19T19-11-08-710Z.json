@@ -1,0 +1,102 @@
+{
+  "timestamp": "2025-11-19T19:11:08.711Z",
+  "baseUrl": "http://localhost:5000",
+  "results": [
+    {
+      "name": "GET /api/health",
+      "url": "http://localhost:5000/api/health",
+      "iterations": 100,
+      "success": 100,
+      "errors": 0,
+      "latency": {
+        "min": 0.58,
+        "max": 20.43,
+        "avg": 1.03,
+        "median": 0.76,
+        "p95": 1.64,
+        "p99": 20.43
+      },
+      "throughput": 971.37
+    },
+    {
+      "name": "GET /api/blockchain/stats",
+      "url": "http://localhost:5000/api/blockchain/stats",
+      "iterations": 50,
+      "success": 0,
+      "errors": 50,
+      "latency": {
+        "min": 0.62,
+        "max": 1.42,
+        "avg": 0.83,
+        "median": 0.8,
+        "p95": 1.14,
+        "p99": 1.42
+      },
+      "throughput": 0
+    },
+    {
+      "name": "GET /api/digital-signatures/stats",
+      "url": "http://localhost:5000/api/digital-signatures/stats",
+      "iterations": 50,
+      "success": 0,
+      "errors": 50,
+      "latency": {
+        "min": 0.62,
+        "max": 1.53,
+        "avg": 0.77,
+        "median": 0.73,
+        "p95": 0.97,
+        "p99": 1.53
+      },
+      "throughput": 0
+    },
+    {
+      "name": "GET /api/digital-signatures/templates",
+      "url": "http://localhost:5000/api/digital-signatures/templates",
+      "iterations": 50,
+      "success": 0,
+      "errors": 50,
+      "latency": {
+        "min": 0.65,
+        "max": 1.49,
+        "avg": 0.81,
+        "median": 0.75,
+        "p95": 1.17,
+        "p99": 1.49
+      },
+      "throughput": 0
+    },
+    {
+      "name": "GET /api/digital-signatures/ca/providers",
+      "url": "http://localhost:5000/api/digital-signatures/ca/providers",
+      "iterations": 50,
+      "success": 0,
+      "errors": 50,
+      "latency": {
+        "min": 0.62,
+        "max": 2.28,
+        "avg": 0.82,
+        "median": 0.73,
+        "p95": 1.19,
+        "p99": 2.28
+      },
+      "throughput": 0
+    },
+    {
+      "name": "GET /api/blockchain/drugs",
+      "url": "http://localhost:5000/api/blockchain/drugs",
+      "iterations": 30,
+      "success": 0,
+      "errors": 30,
+      "latency": {
+        "min": 0.62,
+        "max": 0.88,
+        "avg": 0.7,
+        "median": 0.67,
+        "p95": 0.87,
+        "p99": 0.88
+      },
+      "throughput": 0
+    }
+  ]
+}

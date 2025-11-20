@@ -152,7 +152,7 @@ const Verify = () => {
     }
   }, [blockchainId]);
 
-  const { drug = {}, verification } = verificationData || {};
+  const { drug = {}, verification, risk } = verificationData || {};
   const manufacturer = useMemo(() => drug.manufacturer || {}, [drug.manufacturer]);
   const organizationInfo = manufacturer?.organizationInfo || {};
   const storage = drug.storage || {};
@@ -243,10 +243,34 @@ const Verify = () => {
                 <p className="text-gray-600">Thông tin được xác minh từ blockchain</p>
               </div>
             </div>
-            <div className="text-left md:text-right">
-              <div className="flex items-center text-green-600 md:justify-end">
-                <CheckCircle className="w-5 h-5 mr-2" />
-                <span className="font-medium">Đã xác minh</span>
+            <div className="text-left md:text-right space-y-1">
+              <div className="flex flex-wrap items-center gap-2 md:justify-end">
+                <div className="flex items-center text-green-600">
+                  <CheckCircle className="w-5 h-5 mr-1" />
+                  <span className="font-medium">Đã xác minh</span>
+                </div>
+                {risk && (
+                  <span
+                    className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold ${
+                      risk.level === 'critical'
+                        ? 'bg-red-100 text-red-800'
+                        : risk.level === 'high'
+                          ? 'bg-orange-100 text-orange-800'
+                          : risk.level === 'medium'
+                            ? 'bg-yellow-100 text-yellow-800'
+                            : 'bg-green-100 text-green-800'
+                    }`}
+                  >
+                    Nguy cơ nghi vấn: {risk.level === 'critical'
+                      ? 'Rất cao'
+                      : risk.level === 'high'
+                        ? 'Cao'
+                        : risk.level === 'medium'
+                          ? 'Trung bình'
+                          : 'Thấp'}{' '}
+                    ({Math.round(risk.score)}%)
+                  </span>
+                )}
               </div>
               <p className="text-sm text-gray-500">
                 {verification?.verifiedAt ? formatDate(verification.verifiedAt, true) : '—'}
