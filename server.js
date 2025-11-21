@@ -21,6 +21,7 @@ const profileRoutes = require('./routes/profileRoutes');
 const userRoutes = require('./routes/users');
 const settingsRoutes = require('./routes/settings');
 const blockchainRoutes = require('./routes/blockchain');
+const trustScoreRoutes = require('./routes/trustScores');
 
 // Import blockchain service
 const blockchainService = require('./services/blockchainService');
@@ -131,9 +132,11 @@ app.use('/api/supply-chain', require('./routes/supplyChain'));
 app.use('/api/tasks', require('./routes/tasks'));
 app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api/reviews', require('./routes/reviews'));
+app.use('/api/digital-signatures', require('./routes/digitalSignatures'));
 app.use('/api/reports', require('./routes/reports'));
 app.use('/api/settings', settingsRoutes);
 app.use('/api/blockchain', blockchainRoutes);
+app.use('/api/trust-scores', trustScoreRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {

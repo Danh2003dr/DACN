@@ -662,13 +662,19 @@ export const reportAPI = {
 
   // QR scan stats & high risk drugs
   getQRScanStats: async (params = {}) => {
-    const response = await api.get('/reports/module/qr-scans', { params });
+    const response = await api.get('/reports/module/qr-scans', { 
+      params,
+      skipErrorHandler: true // Không hiển thị toast tự động, để component tự xử lý
+    });
     return response.data;
   },
 
   // Get high risk drugs (AI-based)
   getRiskyDrugsReport: async (params = {}) => {
-    const response = await api.get('/reports/risky-drugs', { params });
+    const response = await api.get('/reports/risky-drugs', { 
+      params,
+      skipErrorHandler: true // Không hiển thị toast tự động, để component tự xử lý
+    });
     return response.data;
   },
 
@@ -735,7 +741,9 @@ export const trustScoreAPI = {
 
   // Get stats
   getStats: async () => {
-    const response = await api.get('/trust-scores/stats');
+    const response = await api.get('/trust-scores/stats', {
+      skipErrorHandler: true // Không hiển thị toast tự động, để component tự xử lý
+    });
     return response.data;
   },
 

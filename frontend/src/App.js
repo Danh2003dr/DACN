@@ -22,6 +22,8 @@ import Reports from './pages/Reports';
 import MapDemo from './pages/MapDemo';
 import BlockchainVerify from './pages/BlockchainVerify';
 import BlockchainDashboard from './pages/BlockchainDashboard';
+import DigitalSignatures from './pages/DigitalSignatures';
+import TrustScores from './pages/TrustScores';
 
 // Create a client
 const queryClient = new QueryClient({
@@ -247,6 +249,28 @@ const AppRoutes = () => {
           <ProtectedRoute requiredRoles={['admin', 'manufacturer', 'distributor', 'hospital']}>
             <Layout>
               <BlockchainVerify />
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/digital-signatures"
+        element={
+          <ProtectedRoute requiredRoles={['admin', 'manufacturer', 'distributor', 'hospital']}>
+            <Layout>
+              <DigitalSignatures />
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/trust-scores"
+        element={
+          <ProtectedRoute requiredRoles={['admin', 'manufacturer', 'distributor', 'hospital']}>
+            <Layout>
+              <TrustScores />
             </Layout>
           </ProtectedRoute>
         }

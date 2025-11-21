@@ -21,10 +21,12 @@ import {
   BellRing,
   ClipboardCheck,
   Clock,
-  QrCode
+  QrCode,
+  Shield,
+  Award
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { reportAPI } from '../utils/api';
+import { reportAPI, trustScoreAPI } from '../utils/api';
 import toast from 'react-hot-toast';
 
 const Reports = () => {
@@ -38,6 +40,7 @@ const Reports = () => {
   const [alerts, setAlerts] = useState(null);
   const [riskyDrugs, setRiskyDrugs] = useState(null);
   const [qrScanStats, setQrScanStats] = useState(null);
+  const [trustScoreStats, setTrustScoreStats] = useState(null);
   const [dateRange, setDateRange] = useState({
     startDate: '',
     endDate: ''
@@ -160,13 +163,60 @@ const Reports = () => {
     }
   };
 
+  // Load trust score statistics
+  const loadTrustScoreStats = async () => {
+    try {
+      const response = await trustScoreAPI.getStats();
+      if (response.success && response.data) {
+        // Map dữ liệu từ API response
+        const overall = response.data.overall || {};
+        const byRole = response.data.byRole || [];
+        
+        // Lấy top suppliers từ ranking
+        let topSuppliers = [];
+        try {
+          const rankingResponse = await trustScoreAPI.getRanking({ limit: 5 });
+          if (rankingResponse.success && rankingResponse.data) {
+            topSuppliers = rankingResponse.data.suppliers || rankingResponse.data.suppliers || [];
+          }
+        } catch (err) {
+          console.error('Error loading top suppliers:', err);
+        }
+        
+        const stats = {
+          totalSuppliers: overall.totalSuppliers || 0,
+          averageScore: overall.averageScore || 0,
+          byLevel: {
+            excellent: overall.levelA || 0,
+            good: overall.levelB || 0,
+            average: overall.levelC || 0,
+            poor: overall.levelD || 0
+          },
+          byRole: byRole,
+          topSuppliers: topSuppliers
+        };
+        
+        console.log('Trust Score Stats loaded:', stats); // Debug log
+        setTrustScoreStats(stats);
+      } else {
+        console.log('No trust score stats data:', response); // Debug log
+        setTrustScoreStats(null);
+      }
+    } catch (error) {
+      console.error('Error loading trust score stats:', error);
+      setTrustScoreStats(null);
+    }
+  };
+
   useEffect(() => {
     if (hasRole('admin') && activeTab === 'overview') {
       loadOverviewData();
     } else if (activeTab === 'modules') {
       loadModuleData(selectedModule);
     } else if (activeTab === 'kpi') {
+      console.log('Loading KPI data and trust score stats...');
       loadKPIData();
+      loadTrustScoreStats();
     } else if (activeTab === 'alerts') {
       loadAlerts();
       loadRiskyDrugs();
@@ -620,7 +670,38 @@ const Reports = () => {
 
   // Render KPI Tab
   const renderKPITab = () => {
-    if (!kpiData) return <div className="p-8 text-center text-gray-500">Đang tải KPI...</div>;
+    console.log('renderKPITab called, kpiData:', kpiData, 'trustScoreStats:', trustScoreStats);
+    
+    if (!kpiData) {
+      // Vẫn hiển thị phần compliance và trust score ngay cả khi đang load
+      return (
+        <div className="space-y-6">
+          <div className="p-8 text-center text-gray-500">Đang tải KPI...</div>
+          {/* Hiển thị phần chữ ký số và điểm tính nhiệm ngay cả khi đang load */}
+          <div className="bg-white rounded-lg shadow p-6">
+            <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+              <Shield className="h-5 w-5 text-blue-600" />
+              KPI Tuân thủ & Chữ ký số
+            </h3>
+            <div className="text-center py-8 text-gray-500">Đang tải dữ liệu...</div>
+          </div>
+          <div className="bg-white rounded-lg shadow p-6">
+            <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+              <Award className="h-5 w-5 text-purple-600" />
+              Điểm Tính Nhiệm Nhà Cung Ứng
+            </h3>
+            {trustScoreStats ? (
+              <div className="text-center py-8 text-gray-500">Đang tải dữ liệu...</div>
+            ) : (
+              <div className="text-center py-8">
+                <Award className="h-12 w-12 text-gray-300 mx-auto mb-2" />
+                <p className="text-sm text-gray-500">Chưa có dữ liệu điểm tính nhiệm.</p>
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
 
     const getGradeColor = (grade) => {
       switch (grade) {
@@ -739,6 +820,167 @@ const Reports = () => {
                   <span className="font-semibold text-red-600">{kpiData.supplyChain.issueRate?.toFixed(2)}%</span>
                 </div>
               </div>
+            </div>
+          )}
+        </div>
+
+        {/* Additional KPI Cards */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* KPI Tuân thủ & Chữ ký số - Luôn hiển thị */}
+          <div className="bg-white rounded-lg shadow p-6">
+            <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+              <Shield className="h-5 w-5 text-blue-600" />
+              KPI Tuân thủ & Chữ ký số
+            </h3>
+            {kpiData.compliance ? (
+              <div className="space-y-3">
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Tỷ lệ chữ ký số hợp lệ</span>
+                  <span className="font-semibold">{kpiData.compliance.signatureValidityRate?.toFixed(2)}%</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Tổng số chữ ký số</span>
+                  <span className="font-semibold">{formatNumber(kpiData.compliance.totalSignatures || 0)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Chữ ký số hợp lệ</span>
+                  <span className="font-semibold text-green-600">{formatNumber(kpiData.compliance.validSignatures || 0)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Tỷ lệ timestamp</span>
+                  <span className="font-semibold">{kpiData.compliance.timestampRate?.toFixed(2)}%</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Chứng chỉ hết hạn</span>
+                  <span className="font-semibold text-red-600">{formatNumber(kpiData.compliance.expiredCertificates || 0)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Tỷ lệ đọc thông báo</span>
+                  <span className="font-semibold">{kpiData.compliance.notificationReadRate?.toFixed(2)}%</span>
+                </div>
+              </div>
+            ) : (
+              <div className="text-center py-8">
+                <Shield className="h-12 w-12 text-gray-300 mx-auto mb-2" />
+                <p className="text-sm text-gray-500">Chưa có dữ liệu chữ ký số.</p>
+                <p className="text-xs text-gray-400 mt-1">
+                  Dữ liệu sẽ được hiển thị sau khi có chữ ký số trong hệ thống.
+                </p>
+              </div>
+            )}
+          </div>
+          {kpiData.quality && (
+            <div className="bg-white rounded-lg shadow p-6">
+              <h3 className="text-lg font-semibold mb-4">KPI Chất lượng</h3>
+              <div className="space-y-3">
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Điểm đánh giá trung bình</span>
+                  <span className="font-semibold">{kpiData.quality.avgRating?.toFixed(2)}/5</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Tỷ lệ xác minh</span>
+                  <span className="font-semibold">{kpiData.quality.verificationRate?.toFixed(2)}%</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Tỷ lệ đạt kiểm định</span>
+                  <span className="font-semibold">{kpiData.quality.qualityTestPassRate?.toFixed(2)}%</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Tỷ lệ khiếu nại</span>
+                  <span className="font-semibold text-red-600">{kpiData.quality.complaintRate?.toFixed(2)}%</span>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Trust Score Statistics */}
+        <div className="bg-white rounded-lg shadow p-6">
+          <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+            <Award className="h-5 w-5 text-purple-600" />
+            Điểm Tính Nhiệm Nhà Cung Ứng
+          </h3>
+          {trustScoreStats ? (
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                <div className="bg-purple-50 rounded-lg p-4">
+                  <p className="text-xs font-medium text-purple-600 uppercase mb-1">Tổng nhà cung ứng</p>
+                  <p className="text-2xl font-bold text-purple-900">
+                    {formatNumber(trustScoreStats.totalSuppliers || 0)}
+                  </p>
+                </div>
+                <div className="bg-green-50 rounded-lg p-4">
+                  <p className="text-xs font-medium text-green-600 uppercase mb-1">Điểm TB</p>
+                  <p className="text-2xl font-bold text-green-900">
+                    {trustScoreStats.averageScore ? trustScoreStats.averageScore.toFixed(1) : '0'}
+                  </p>
+                </div>
+                <div className="bg-blue-50 rounded-lg p-4">
+                  <p className="text-xs font-medium text-blue-600 uppercase mb-1">Xuất sắc (A)</p>
+                  <p className="text-2xl font-bold text-blue-900">
+                    {formatNumber(trustScoreStats.byLevel?.excellent || 0)}
+                  </p>
+                </div>
+                <div className="bg-orange-50 rounded-lg p-4">
+                  <p className="text-xs font-medium text-orange-600 uppercase mb-1">Cần cải thiện</p>
+                  <p className="text-2xl font-bold text-orange-900">
+                    {formatNumber(trustScoreStats.byLevel?.poor || 0)}
+                  </p>
+                </div>
+              </div>
+              {trustScoreStats.topSuppliers && trustScoreStats.topSuppliers.length > 0 && (
+                <div>
+                  <h4 className="text-sm font-semibold text-gray-800 mb-3">Top nhà cung ứng</h4>
+                  <div className="space-y-2">
+                    {trustScoreStats.topSuppliers.slice(0, 5).map((supplier, index) => {
+                      const supplierName = supplier.supplierName || 
+                                          supplier.supplier?.fullName || 
+                                          supplier.name || 
+                                          'Không xác định';
+                      const supplierRole = supplier.supplierRole || 
+                                         supplier.supplier?.role || 
+                                         supplier.role || '';
+                      const trustScore = supplier.trustScore || 0;
+                      const trustLevel = supplier.trustLevel || 'N/A';
+                      
+                      return (
+                        <div
+                          key={supplier._id || supplier.supplier?._id || index}
+                          className="flex items-center justify-between rounded-md border border-gray-100 px-3 py-2 bg-gray-50"
+                        >
+                          <div className="flex items-center gap-3">
+                            <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-purple-100 text-purple-700 text-xs font-bold">
+                              {index + 1}
+                            </span>
+                            <div>
+                              <p className="text-sm font-medium text-gray-900">
+                                {supplierName}
+                              </p>
+                              <p className="text-xs text-gray-500">
+                                {supplierRole && `${supplierRole} · `}
+                                Cấp {trustLevel}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-sm font-bold text-purple-600">
+                              {trustScore.toFixed(0)} điểm
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="text-center py-8">
+              <Award className="h-12 w-12 text-gray-300 mx-auto mb-2" />
+              <p className="text-sm text-gray-500">Chưa có dữ liệu điểm tính nhiệm.</p>
+              <p className="text-xs text-gray-400 mt-1">
+                Dữ liệu sẽ được hiển thị sau khi có nhà cung ứng được đánh giá.
+              </p>
             </div>
           )}
         </div>
@@ -935,7 +1177,7 @@ const Reports = () => {
           <div className="p-4 space-y-4">
             {qrScanStats ? (
               <>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                   <div className="bg-gray-50 rounded-lg p-4">
                     <p className="text-xs font-medium text-gray-500 uppercase">Tổng lượt quét</p>
                     <p className="mt-1 text-2xl font-bold text-gray-900">
@@ -947,46 +1189,118 @@ const Reports = () => {
                     <p className="mt-1 text-2xl font-bold text-green-800">
                       {formatNumber(qrScanStats.success || 0)}
                     </p>
+                    {qrScanStats.total > 0 && (
+                      <p className="mt-1 text-xs text-green-600">
+                        {((qrScanStats.success / qrScanStats.total) * 100).toFixed(1)}%
+                      </p>
+                    )}
                   </div>
                   <div className="bg-red-50 rounded-lg p-4">
                     <p className="text-xs font-medium text-red-600 uppercase">Thất bại</p>
                     <p className="mt-1 text-2xl font-bold text-red-800">
                       {formatNumber(qrScanStats.failed || 0)}
                     </p>
+                    {qrScanStats.total > 0 && (
+                      <p className="mt-1 text-xs text-red-600">
+                        {((qrScanStats.failed / qrScanStats.total) * 100).toFixed(1)}%
+                      </p>
+                    )}
+                  </div>
+                  <div className="bg-blue-50 rounded-lg p-4">
+                    <p className="text-xs font-medium text-blue-600 uppercase">Tỷ lệ thành công</p>
+                    <p className="mt-1 text-2xl font-bold text-blue-800">
+                      {qrScanStats.total > 0
+                        ? `${((qrScanStats.success / qrScanStats.total) * 100).toFixed(1)}%`
+                        : '0%'}
+                    </p>
+                    {qrScanStats.total > 0 && (
+                      <div className="mt-2 h-2 bg-blue-100 rounded-full overflow-hidden">
+                        <div
+                          className="h-2 bg-blue-600 rounded-full transition-all"
+                          style={{
+                            width: `${(qrScanStats.success / qrScanStats.total) * 100}%`
+                          }}
+                        />
+                      </div>
+                    )}
                   </div>
                 </div>
 
+                {/* Biểu đồ theo ngày */}
+                {qrScanStats.byDay && qrScanStats.byDay.length > 0 && (
+                  <div className="bg-gray-50 rounded-lg p-4">
+                    <p className="text-sm font-semibold text-gray-800 mb-3">
+                      Thống kê quét theo ngày (30 ngày gần nhất)
+                    </p>
+                    <div className="space-y-2">
+                      {qrScanStats.byDay.slice(-7).map((day, index) => {
+                        const dateStr = `${day._id.day.toString().padStart(2, '0')}/${day._id.month.toString().padStart(2, '0')}/${day._id.year}`;
+                        const maxTotal = Math.max(...qrScanStats.byDay.map(d => d.total || 0), 1);
+                        const successPercent = day.total > 0 ? (day.success / day.total) * 100 : 0;
+                        return (
+                          <div key={index} className="space-y-1">
+                            <div className="flex justify-between items-center text-xs">
+                              <span className="font-medium text-gray-700">{dateStr}</span>
+                              <span className="text-gray-500">
+                                {formatNumber(day.total)} lần ({formatNumber(day.success)} thành công)
+                              </span>
+                            </div>
+                            <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+                              <div
+                                className="h-2 bg-blue-500 rounded-full transition-all"
+                                style={{ width: `${(day.total / maxTotal) * 100}%` }}
+                                title={`${day.total} lần quét, ${successPercent.toFixed(1)}% thành công`}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Lần quét gần đây */}
                 {qrScanStats.recent && qrScanStats.recent.length > 0 && (
                   <div>
                     <p className="text-sm font-semibold text-gray-800 mb-2">Lần quét gần đây</p>
-                    <div className="space-y-2">
+                    <div className="space-y-2 max-h-64 overflow-y-auto">
                       {qrScanStats.recent.map((scan) => (
                         <div
                           key={scan._id}
-                          className="flex items-center justify-between rounded-md border border-gray-100 px-3 py-2 bg-gray-50"
+                          className="flex items-center justify-between rounded-md border border-gray-100 px-3 py-2 bg-gray-50 hover:bg-gray-100 transition-colors"
                         >
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-3 flex-1">
                             <span
-                              className={`inline-flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold ${
+                              className={`inline-flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold flex-shrink-0 ${
                                 scan.success ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
                               }`}
                             >
-                              {scan.success ? 'OK' : 'X'}
+                              {scan.success ? '✓' : '✗'}
                             </span>
-                            <div>
-                              <p className="text-sm text-gray-900">
-                                {scan.drug?.name || 'Không xác định'}
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-gray-900 truncate">
+                                {scan.drug?.name || scan.drugId || 'Không xác định'}
                               </p>
                               <p className="text-xs text-gray-500">
                                 {scan.drug?.batchNumber && (
-                                  <>Mã lô: <span className="font-mono">{scan.drug.batchNumber}</span> · </>
+                                  <>Số lô: <span className="font-mono">{scan.drug.batchNumber}</span> · </>
+                                )}
+                                {scan.drugId && (
+                                  <>Mã: <span className="font-mono">{scan.drugId}</span> · </>
                                 )}
                                 {new Date(scan.createdAt).toLocaleString('vi-VN')}
                               </p>
+                              {scan.alertType && (
+                                <p className="text-xs text-orange-600 mt-0.5">
+                                  ⚠️ Cảnh báo: {scan.alertType === 'recalled' ? 'Đã thu hồi' : 
+                                                scan.alertType === 'expired' ? 'Hết hạn' : 
+                                                scan.alertType === 'near_expiry' ? 'Sắp hết hạn' : scan.alertType}
+                                </p>
+                              )}
                             </div>
                           </div>
                           {!scan.success && scan.errorMessage && (
-                            <p className="ml-4 max-w-xs text-xs text-red-600 truncate">
+                            <p className="ml-4 max-w-xs text-xs text-red-600 truncate" title={scan.errorMessage}>
                               {scan.errorMessage}
                             </p>
                           )}
@@ -997,7 +1311,13 @@ const Reports = () => {
                 )}
               </>
             ) : (
-              <p className="text-sm text-gray-500">Chưa có dữ liệu lịch sử quét QR.</p>
+              <div className="text-center py-8">
+                <QrCode className="h-12 w-12 text-gray-300 mx-auto mb-2" />
+                <p className="text-sm text-gray-500">Chưa có dữ liệu lịch sử quét QR.</p>
+                <p className="text-xs text-gray-400 mt-1">
+                  Dữ liệu sẽ được hiển thị sau khi có người dùng quét mã QR.
+                </p>
+              </div>
             )}
           </div>
         </div>

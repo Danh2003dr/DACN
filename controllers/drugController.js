@@ -491,8 +491,15 @@ const scanQRCode = async (req, res) => {
       // Không throw error, chỉ log - vẫn trả về dữ liệu thuốc
     }
 
-    // Tính điểm rủi ro AI cho lô thuốc
-    const risk = await drugRiskService.calculateDrugRisk(drug);
+    // Tính điểm rủi ro AI cho lô thuốc (bao lỗi để không làm fail verify)
+    let risk = null;
+    try {
+      risk = await drugRiskService.calculateDrugRisk(drug);
+    } catch (riskError) {
+      console.error('Error calculating drug risk:', riskError);
+      // Không throw, chỉ log để vẫn trả về kết quả verify
+      risk = null;
+    }
 
     // Kiểm tra thuốc có bị thu hồi không
     if (drug.isRecalled) {
@@ -902,8 +909,15 @@ const verifyQRCode = async (req, res) => {
       // Không throw error, chỉ log
     }
 
-    // Tính điểm rủi ro AI cho lô thuốc
-    const risk = await drugRiskService.calculateDrugRisk(drug);
+    // Tính điểm rủi ro AI cho lô thuốc (bao lỗi để không làm fail verify)
+    let risk = null;
+    try {
+      risk = await drugRiskService.calculateDrugRisk(drug);
+    } catch (riskError) {
+      console.error('Error calculating drug risk:', riskError);
+      // Không throw, để vẫn trả về dữ liệu xác minh
+      risk = null;
+    }
 
     res.json({
       success: true,

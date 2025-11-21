@@ -689,6 +689,8 @@ const resolveModuleStats = async (module, dateFilter) => {
       return getNotificationStats(dateFilter);
     case 'reviews':
       return getReviewStats(dateFilter);
+    case 'qr-scans':
+      return getQRScanStats(dateFilter);
     default: {
       const err = new Error('MODULE_INVALID');
       throw err;
