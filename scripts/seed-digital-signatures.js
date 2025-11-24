@@ -72,12 +72,15 @@ const generateCertificateSerial = () => {
 
 // Tạo chữ ký số cho drug
 const createDrugSignature = async (drug, user) => {
+  // Sử dụng đúng format như trong controller để đảm bảo hash khớp khi verify
   const dataToSign = {
-    drugId: drug._id,
-    batchNumber: drug.batchNumber,
+    drugId: drug.drugId,  // Sử dụng drugId (string) thay vì _id (ObjectId)
     name: drug.name,
+    batchNumber: drug.batchNumber,
     productionDate: drug.productionDate,
-    expiryDate: drug.expiryDate
+    expiryDate: drug.expiryDate,
+    manufacturerId: drug.manufacturerId,
+    qualityTest: drug.qualityTest
   };
 
   const dataHash = generateHash(dataToSign);
