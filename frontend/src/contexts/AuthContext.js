@@ -125,6 +125,42 @@ export const AuthProvider = ({ children }) => {
     };
 
     initializeAuth();
+
+    // Lắng nghe sự kiện storage để đồng bộ giữa các tab
+    const handleStorageChange = (e) => {
+      if (e.key === 'token' || e.key === 'user') {
+        if (e.newValue) {
+          // Tab khác đã đăng nhập hoặc cập nhật thông tin
+          const newToken = localStorage.getItem('token');
+          const newUser = localStorage.getItem('user');
+          
+          if (newToken && newUser) {
+            try {
+              setAuthToken(newToken);
+              dispatch({
+                type: AUTH_ACTIONS.LOGIN_SUCCESS,
+                payload: {
+                  user: JSON.parse(newUser),
+                  token: newToken,
+                },
+              });
+            } catch (error) {
+              console.error('Error syncing auth from storage:', error);
+            }
+          }
+        } else {
+          // Tab khác đã đăng xuất
+          clearAuth();
+          dispatch({ type: AUTH_ACTIONS.LOGOUT });
+        }
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+    };
   }, []);
 
   // Login function
@@ -173,6 +209,12 @@ export const AuthProvider = ({ children }) => {
       // Clear auth regardless of API call success
       clearAuth();
       dispatch({ type: AUTH_ACTIONS.LOGOUT });
+      
+      // Trigger storage event để đồng bộ với các tab khác
+      window.localStorage.removeItem('token');
+      window.localStorage.removeItem('user');
+      window.dispatchEvent(new Event('storage'));
+      
       toast.success('Đăng xuất thành công!');
     }
   };

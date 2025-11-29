@@ -1058,4 +1058,180 @@ blockchainService.getSupplyChainHistory = async function(drugBatchNumber) {
   }
 };
 
+// Lấy danh sách transactions gần nhất từ database
+blockchainService.getRecentTransactions = async function({ page = 1, limit = 20, drugId = null, network = null, status = null }) {
+    try {
+      const BlockchainTransaction = require('../models/BlockchainTransaction');
+      
+      const result = await BlockchainTransaction.getRecentTransactions({
+        page: parseInt(page),
+        limit: parseInt(limit),
+        drugId: drugId || null,
+        network: network || this.currentNetwork || null,
+        status: status || null
+      });
+
+      return {
+        success: true,
+        transactions: result.transactions,
+        pagination: result.pagination
+      };
+    } catch (error) {
+      console.error('Get recent transactions error:', error);
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  }
+
+// Verify transaction on blockchain (real-time check)
+blockchainService.verifyTransactionOnChain = async function(txHash) {
+    try {
+      if (!this.isInitialized) {
+        throw new Error('Blockchain service chưa được khởi tạo');
+      }
+
+      if (!this.web3) {
+        // Mock implementation if web3 is not available
+        return {
+          success: true,
+          transactionHash: txHash,
+          isValid: true,
+          status: 'success',
+          mock: true,
+          message: 'Mock verification (web3 not available)'
+        };
+      }
+
+      // Get transaction receipt from blockchain
+      let receipt;
+      try {
+        receipt = await this.web3.eth.getTransactionReceipt(txHash);
+      } catch (error) {
+        console.error('Error getting transaction receipt:', error);
+        return {
+          success: false,
+          transactionHash: txHash,
+          error: 'Transaction not found on blockchain',
+          status: 'not_found'
+        };
+      }
+
+      if (!receipt) {
+        return {
+          success: false,
+          transactionHash: txHash,
+          error: 'Transaction receipt not found',
+          status: 'pending'
+        };
+      }
+
+      // Get transaction details
+      let transaction;
+      try {
+        transaction = await this.web3.eth.getTransaction(txHash);
+      } catch (error) {
+        console.error('Error getting transaction:', error);
+        transaction = null;
+      }
+
+      // Get current block number for confirmations
+      let currentBlockNumber;
+      try {
+        currentBlockNumber = await this.web3.eth.getBlockNumber();
+      } catch (error) {
+        console.error('Error getting current block number:', error);
+        currentBlockNumber = receipt.blockNumber;
+      }
+
+      const confirmations = Math.max(0, currentBlockNumber - receipt.blockNumber);
+
+      // Check transaction status
+      const status = receipt.status ? 'success' : 'failed';
+
+      // Update or create transaction record in database
+      const BlockchainTransaction = require('../models/BlockchainTransaction');
+      const existingTx = await BlockchainTransaction.findOne({ transactionHash: txHash });
+
+      const txData = {
+        transactionHash: txHash,
+        blockNumber: receipt.blockNumber,
+        from: transaction?.from || receipt.from || '0x0',
+        to: transaction?.to || receipt.to || '0x0',
+        gasUsed: receipt.gasUsed ? parseInt(receipt.gasUsed.toString()) : 0,
+        gasPrice: transaction?.gasPrice ? transaction.gasPrice.toString() : '0',
+        timestamp: new Date(),
+        status: status,
+        network: this.currentNetwork || 'development',
+        contractAddress: receipt.to || null,
+        confirmations: confirmations,
+        value: transaction?.value ? transaction.value.toString() : '0'
+      };
+
+      if (existingTx) {
+        // Update existing transaction
+        Object.assign(existingTx, txData);
+        await existingTx.save();
+      } else {
+        // Create new transaction record
+        // Try to find related drug by checking if transaction is to our contract
+        let drugId = null;
+        if (receipt.to && this.contract) {
+          const contractAddress = this.getContractAddress(this.currentNetwork);
+          if (receipt.to.toLowerCase() === contractAddress?.toLowerCase()) {
+            // This is a contract transaction, try to extract drugId from logs or events
+            // For now, we'll leave it null and let the frontend/backend link it
+          }
+        }
+
+        await BlockchainTransaction.create({
+          ...txData,
+          drugId: drugId
+        });
+      }
+
+      return {
+        success: true,
+        transactionHash: txHash,
+        blockNumber: receipt.blockNumber,
+        confirmations: confirmations,
+        gasUsed: txData.gasUsed,
+        status: status,
+        isValid: status === 'success',
+        from: txData.from,
+        to: txData.to,
+        network: this.currentNetwork,
+        contractAddress: txData.contractAddress,
+        timestamp: txData.timestamp,
+        explorerUrl: this.getExplorerUrl(txHash)
+      };
+    } catch (error) {
+      console.error('Verify transaction on chain error:', error);
+      return {
+        success: false,
+        transactionHash: txHash,
+        error: error.message
+      };
+    }
+  }
+
+// Get explorer URL for a transaction
+blockchainService.getExplorerUrl = function(txHash) {
+    const network = this.currentNetwork || 'development';
+    const explorers = {
+      'sepolia': `https://sepolia.etherscan.io/tx/${txHash}`,
+      'mainnet': `https://etherscan.io/tx/${txHash}`,
+      'polygon_mumbai': `https://mumbai.polygonscan.com/tx/${txHash}`,
+      'polygon_mainnet': `https://polygonscan.com/tx/${txHash}`,
+      'bsc_testnet': `https://testnet.bscscan.com/tx/${txHash}`,
+      'bsc_mainnet': `https://bscscan.com/tx/${txHash}`,
+      'arbitrum_sepolia': `https://sepolia.arbiscan.io/tx/${txHash}`,
+      'arbitrum_one': `https://arbiscan.io/tx/${txHash}`,
+      'optimism_sepolia': `https://sepolia-optimism.etherscan.io/tx/${txHash}`,
+      'optimism_mainnet': `https://optimistic.etherscan.io/tx/${txHash}`
+    };
+    return explorers[network] || `#`;
+};
+
 module.exports = blockchainService;

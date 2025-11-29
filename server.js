@@ -6,14 +6,21 @@ const morgan = require('morgan');
 const compression = require('compression');
 require('dotenv').config();
 
+// Import logging and monitoring
+const logger = require('./utils/logger');
+const correlationIdMiddleware = require('./middleware/correlationId');
+const requestLogger = require('./middleware/requestLogger');
+const metricsMiddleware = require('./middleware/metricsMiddleware');
+
 // Initialize Passport (chỉ cần require, không cần sử dụng session nếu dùng JWT)
 require('./config/passport');
 
 // Import getServerUrl để hiển thị network URL
 const getServerUrl = require('./utils/getServerUrl');
 
-// Import cache service
-const cacheService = require('./utils/cache');
+// Import cache service (tạm tắt Redis trong môi trường dev nếu không có Redis)
+// Để bật lại, bỏ comment dòng dưới và đảm bảo Redis đang chạy
+// const cacheService = require('./utils/cache');
 
 // Import routes
 const authRoutes = require('./routes/auth');
@@ -25,6 +32,9 @@ const trustScoreRoutes = require('./routes/trustScores');
 
 // Import blockchain service
 const blockchainService = require('./services/blockchainService');
+
+// Import metrics routes
+const metricsRoutes = require('./routes/metrics');
 
 const app = express();
 
@@ -52,11 +62,14 @@ const corsOptions = {
     }
 
     // Development: cho phép mọi origin trong mạng nội bộ
+    // Cho phép chạy nhiều tab/port cùng lúc
     return callback(null, true);
   },
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  exposedHeaders: ['Authorization'],
+  maxAge: 86400 // 24 hours
 };
 
 app.use(cors(corsOptions));
@@ -68,8 +81,13 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 // Serve static files
 app.use('/uploads', express.static('uploads'));
 
-// Logging middleware
-if (process.env.NODE_ENV === 'development') {
+// Logging and monitoring middleware (phải đặt trước routes)
+app.use(correlationIdMiddleware); // Tạo correlation ID
+app.use(requestLogger); // Log HTTP requests với correlation ID
+app.use(metricsMiddleware); // Thu thập metrics
+
+// Legacy morgan logging (chỉ dùng trong development nếu cần)
+if (process.env.NODE_ENV === 'development' && process.env.USE_MORGAN === 'true') {
   app.use(morgan('dev'));
 }
 
@@ -83,8 +101,16 @@ const connectDB = async () => {
       useUnifiedTopology: true,
     });
 
+    logger.info('MongoDB Connected', {
+      host: conn.connection.host,
+      database: conn.connection.name
+    });
     console.log(`MongoDB Connected: ${conn.connection.host}`);
   } catch (error) {
+    logger.error('Database connection error', {
+      error: error.message,
+      stack: error.stack
+    });
     console.error('Database connection error:', error);
     process.exit(1);
   }
@@ -93,30 +119,34 @@ const connectDB = async () => {
 // Connect to database
 connectDB();
 
-// Initialize cache service
-const initializeCache = async () => {
-  try {
-    await cacheService.initialize();
-  } catch (error) {
-    console.warn('Cache service initialization failed, continuing without cache');
-  }
-};
-
-// Initialize cache service
-initializeCache();
+// Tạm thời không khởi tạo Redis cache nếu không có Redis
+// const initializeCache = async () => {
+//   try {
+//     await cacheService.initialize();
+//   } catch (error) {
+//     logger.warn('Cache service initialization failed, continuing without cache', {
+//       error: error.message
+//     });
+//   }
+// };
+//
+// initializeCache();
 
 // Initialize blockchain service
 const initializeBlockchain = async () => {
   try {
     const blockchainInitialized = await blockchainService.initialize();
     if (blockchainInitialized) {
-      console.log('Blockchain service initialized successfully');
+      logger.info('Blockchain service initialized successfully');
     } else {
-      console.log('Blockchain service initialized in mock mode');
+      logger.info('Blockchain service initialized in mock mode');
     }
   } catch (error) {
-    console.error('Blockchain initialization error:', error);
-    console.log('Continuing with mock blockchain mode');
+    logger.error('Blockchain initialization error', {
+      error: error.message,
+      stack: error.stack
+    });
+    logger.info('Continuing with mock blockchain mode');
   }
 };
 
@@ -137,6 +167,46 @@ app.use('/api/reports', require('./routes/reports'));
 app.use('/api/settings', settingsRoutes);
 app.use('/api/blockchain', blockchainRoutes);
 app.use('/api/trust-scores', trustScoreRoutes);
+app.use('/api/metrics', metricsRoutes);
+app.use('/api/audit-logs', require('./routes/auditLogs'));
+app.use('/api/inventory', require('./routes/inventory'));
+app.use('/api/orders', require('./routes/orders'));
+app.use('/api/backups', require('./routes/backups'));
+app.use('/api/invoices', require('./routes/invoices'));
+app.use('/api/payments', require('./routes/payments'));
+app.use('/api/suppliers', require('./routes/suppliers'));
+app.use('/api/import-export', require('./routes/importExport'));
+
+// Metrics endpoints (trước health check)
+app.get('/api/metrics', (req, res) => {
+  const metricsCollector = require('./utils/metrics');
+  const summary = metricsCollector.getSummary();
+  
+  res.json({
+    success: true,
+    data: summary,
+    timestamp: new Date()
+  });
+});
+
+app.get('/api/alerts', (req, res) => {
+  const alertingSystem = require('./utils/alerting');
+  const limit = parseInt(req.query.limit) || 10;
+  const level = req.query.level;
+  
+  let alerts = alertingSystem.getRecentAlerts(limit);
+  if (level) {
+    alerts = alertingSystem.getAlertsByLevel(level);
+  }
+  
+  res.json({
+    success: true,
+    data: {
+      alerts,
+      total: alerts.length
+    }
+  });
+});
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
@@ -208,6 +278,14 @@ const buildErrorResponse = (req, {
 
 // Global error handler
 app.use((err, req, res, next) => {
+  const logger = require('./utils/logger');
+  logger.error('Unhandled error', {
+    error: err.message,
+    stack: err.stack,
+    path: req.path,
+    method: req.method,
+    correlationId: req.correlationId
+  });
   console.error('Error:', err);
 
   const isDevelopment = process.env.NODE_ENV === 'development';
@@ -276,25 +354,25 @@ app.use((err, req, res, next) => {
 
 // Graceful shutdown
 const gracefulShutdown = async () => {
+  logger.info('Shutting down gracefully...');
   console.log('Shutting down gracefully...');
-  try {
-    await cacheService.close();
-    console.log('Cache connection closed.');
-  } catch (error) {
-    console.error('Error closing cache:', error);
-  }
+
+  // Đóng MongoDB, không cần đóng Redis khi Redis bị tắt
   mongoose.connection.close(() => {
+    logger.info('MongoDB connection closed');
     console.log('MongoDB connection closed.');
     process.exit(0);
   });
 };
 
 process.on('SIGTERM', () => {
+  logger.info('SIGTERM received');
   console.log('SIGTERM received.');
   gracefulShutdown();
 });
 
 process.on('SIGINT', () => {
+  logger.info('SIGINT received');
   console.log('SIGINT received.');
   gracefulShutdown();
 });
@@ -302,8 +380,16 @@ process.on('SIGINT', () => {
 const PORT = process.env.PORT || 5000;
 const HOST = process.env.HOST || '0.0.0.0'; // Bind to all interfaces để accessible từ network
 
+// Debug log để chắc chắn đoạn listen này được chạy
+console.log('Starting Express server...');
+console.log('Configured HOST:', HOST);
+console.log('Configured PORT:', PORT);
+
 const server = app.listen(PORT, HOST, () => {
-  console.log(`Server is running on ${HOST}:${PORT}`);
+  console.log('===========================================');
+  console.log('🚀 Express server started');
+  console.log(`Host: ${HOST}`);
+  console.log(`Port: ${PORT}`);
   console.log(`Environment: ${process.env.NODE_ENV}`);
   console.log(`Local: http://localhost:${PORT}`);
   
@@ -336,11 +422,17 @@ const server = app.listen(PORT, HOST, () => {
   
   console.log(`Health check: http://localhost:${PORT}/api/health`);
   console.log(`API docs: http://localhost:${PORT}/api`);
+  console.log('===========================================');
 });
 
 // Xử lý lỗi khi port đã được sử dụng
 server.on('error', (error) => {
   if (error.code === 'EADDRINUSE') {
+    logger.error(`Port ${PORT} đã được sử dụng`, {
+      port: PORT,
+      error: 'EADDRINUSE'
+    });
+    
     console.error(`\n❌ Lỗi: Port ${PORT} đã được sử dụng!`);
     console.error(`\nĐể giải quyết, bạn có thể:`);
     console.error(`1. Tìm và dừng process đang sử dụng port ${PORT}:`);
@@ -350,6 +442,14 @@ server.on('error', (error) => {
     console.error(`3. Hoặc đợi vài giây để port được giải phóng\n`);
     process.exit(1);
   } else {
+    logger.error('Lỗi khi khởi động server', {
+      error: error.message,
+      stack: error.stack
+    });
+    logger.error('Lỗi khi khởi động server', {
+      error: error.message,
+      stack: error.stack
+    });
     console.error('Lỗi khi khởi động server:', error);
     process.exit(1);
   }

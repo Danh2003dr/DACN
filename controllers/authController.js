@@ -1,5 +1,6 @@
 const User = require('../models/User');
 const { USER_ROLES } = require('../models/User');
+const auditService = require('../services/auditService');
 
 // @desc    Đăng nhập người dùng
 // @route   POST /api/auth/login
@@ -21,6 +22,9 @@ const login = async (req, res) => {
     
     // Tạo JWT token
     const token = user.generateAuthToken();
+    
+    // Ghi audit log
+    await auditService.logAuth.login(user, req, 'success');
     
     // Thông tin user để trả về (không bao gồm password)
     const userInfo = {
@@ -46,6 +50,22 @@ const login = async (req, res) => {
     });
     
   } catch (error) {
+    // Log lỗi chi tiết để debug
+    console.error('Login error:', error);
+
+    // Ghi audit log cho login failed (không làm fail request nếu log lỗi)
+    try {
+      await auditService.logAuth.login(
+        { username: req.body.identifier || 'unknown' },
+        req,
+        'failure',
+        error.message
+      );
+    } catch (logError) {
+      // Bỏ qua lỗi khi ghi audit log
+      console.error('Audit log (login failed) error:', logError);
+    }
+    
     res.status(400).json({
       success: false,
       message: error.message
@@ -72,13 +92,21 @@ const register = async (req, res) => {
     } = req.body;
     
     // Kiểm tra user đã tồn tại chưa
+    const orConditions = [
+      { username: username },
+      { email: email }
+    ];
+    
+    // Chỉ thêm organizationId và patientId vào điều kiện nếu có giá trị
+    if (organizationId) {
+      orConditions.push({ organizationId: organizationId });
+    }
+    if (patientId) {
+      orConditions.push({ patientId: patientId });
+    }
+    
     const existingUser = await User.findOne({
-      $or: [
-        { username: username },
-        { email: email },
-        { organizationId: organizationId },
-        { patientId: patientId }
-      ]
+      $or: orConditions
     });
     
     if (existingUser) {
@@ -88,6 +116,18 @@ const register = async (req, res) => {
       });
     }
     
+    // Xử lý address: nếu là object thì convert thành string
+    let addressString = address;
+    if (typeof address === 'object' && address !== null) {
+      // Convert address object thành string format
+      const parts = [];
+      if (address.street) parts.push(address.street);
+      if (address.ward) parts.push(address.ward);
+      if (address.district) parts.push(address.district);
+      if (address.city) parts.push(address.city);
+      addressString = parts.join(', ');
+    }
+    
     // Tạo user mới
     const userData = {
       username,
@@ -95,7 +135,7 @@ const register = async (req, res) => {
       password,
       fullName,
       phone,
-      address,
+      address: addressString,
       role,
       organizationId,
       patientId,
@@ -105,6 +145,17 @@ const register = async (req, res) => {
     };
     
     const user = await User.create(userData);
+    
+    // Ghi audit log
+    await auditService.logCRUD.create(
+      req.user,
+      'User',
+      user._id,
+      { username: user.username, email: user.email, role: user.role },
+      'user',
+      req,
+      `Admin ${req.user.username} tạo tài khoản mới: ${user.username} (${user.role})`
+    );
     
     // Tạo token cho user mới
     const token = user.generateAuthToken();
@@ -189,6 +240,9 @@ const changePassword = async (req, res) => {
     user.password = newPassword;
     user.mustChangePassword = false; // Không cần đổi mật khẩu nữa
     await user.save();
+    
+    // Ghi audit log
+    await auditService.logAuth.passwordChange(user, req);
     
     res.status(200).json({
       success: true,

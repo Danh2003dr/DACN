@@ -1,6 +1,125 @@
-# USE CASE CHI TIẾT - HỆ THỐNG QUẢN LÝ CHUỖI CUNG ỨNG DƯỢC PHẨM
+# USE CASE - HỆ THỐNG QUẢN LÝ CHUỖI CUNG ỨNG DƯỢC PHẨM
 
-## DANH SÁCH USE CASE
+## 1. USE CASE DIAGRAM
+
+```mermaid
+graph TB
+    %% Actors
+    Admin[👤 Admin]
+    Manufacturer[🏭 Nhà Sản Xuất]
+    Distributor[🚚 Nhà Phân Phối]
+    Hospital[🏥 Bệnh Viện]
+    Patient[👨‍⚕️ Bệnh Nhân]
+    System[⚙️ Hệ Thống]
+
+    %% Use Cases - Quản lý User
+    UC1[UC1: Đăng ký tài khoản]
+    UC2[UC2: Đăng nhập]
+    UC3[UC3: Đăng xuất]
+    UC4[UC4: Quản lý thông tin cá nhân]
+    UC5[UC5: Quản lý người dùng]
+
+    %% Use Cases - Quản lý Thuốc
+    UC6[UC6: Tạo lô thuốc]
+    UC7[UC7: Cập nhật lô thuốc]
+    UC8[UC8: Xem danh sách lô thuốc]
+    UC9[UC9: Xem chi tiết lô thuốc]
+    UC10[UC10: Xóa lô thuốc]
+    UC11[UC11: Quét QR code]
+    UC12[UC12: Xác minh thuốc trên blockchain]
+
+    %% Use Cases - Chuỗi cung ứng
+    UC13[UC13: Tạo bước trong chuỗi cung ứng]
+    UC14[UC14: Cập nhật trạng thái vận chuyển]
+    UC15[UC15: Xem lịch sử chuỗi cung ứng]
+    UC16[UC16: Theo dõi vị trí real-time]
+
+    %% Use Cases - Chữ ký số
+    UC17[UC17: Ký số tài liệu]
+    UC18[UC18: Xác thực chữ ký số]
+    UC19[UC19: Thu hồi chữ ký số]
+
+    %% Use Cases - Đánh giá
+    UC20[UC20: Đánh giá thuốc/nhà cung cấp]
+    UC21[UC21: Xem đánh giá]
+    UC22[UC22: Cập nhật điểm tín nhiệm]
+
+    %% Use Cases - Nhiệm vụ
+    UC23[UC23: Tạo nhiệm vụ]
+    UC24[UC24: Gán nhiệm vụ]
+    UC25[UC25: Cập nhật trạng thái nhiệm vụ]
+
+    %% Use Cases - Thông báo
+    UC26[UC26: Gửi thông báo]
+    UC27[UC27: Xem thông báo]
+    UC28[UC28: Đánh dấu đã đọc]
+
+    %% Relationships
+    Admin --> UC5
+    Admin --> UC10
+    Admin --> UC19
+    Admin --> UC22
+
+    Manufacturer --> UC1
+    Manufacturer --> UC2
+    Manufacturer --> UC3
+    Manufacturer --> UC4
+    Manufacturer --> UC6
+    Manufacturer --> UC7
+    Manufacturer --> UC8
+    Manufacturer --> UC9
+    Manufacturer --> UC13
+    Manufacturer --> UC17
+    Manufacturer --> UC23
+
+    Distributor --> UC1
+    Distributor --> UC2
+    Distributor --> UC3
+    Distributor --> UC4
+    Distributor --> UC8
+    Distributor --> UC9
+    Distributor --> UC14
+    Distributor --> UC15
+    Distributor --> UC16
+    Distributor --> UC17
+    Distributor --> UC24
+    Distributor --> UC25
+
+    Hospital --> UC1
+    Hospital --> UC2
+    Hospital --> UC3
+    Hospital --> UC4
+    Hospital --> UC8
+    Hospital --> UC9
+    Hospital --> UC11
+    Hospital --> UC12
+    Hospital --> UC15
+    Hospital --> UC20
+    Hospital --> UC21
+    Hospital --> UC27
+    Hospital --> UC28
+
+    Patient --> UC1
+    Patient --> UC2
+    Patient --> UC3
+    Patient --> UC4
+    Patient --> UC11
+    Patient --> UC12
+    Patient --> UC20
+    Patient --> UC21
+    Patient --> UC27
+    Patient --> UC28
+
+    System --> UC12
+    System --> UC16
+    System --> UC18
+    System --> UC22
+    System --> UC26
+```
+
+---
+
+## 2. DANH SÁCH USE CASE CHI TIẾT
 
 ### 1. QUẢN LÝ NGƯỜI DÙNG (USER MANAGEMENT)
 

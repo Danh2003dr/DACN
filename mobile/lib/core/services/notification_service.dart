@@ -1,0 +1,3 @@
+// Main export file - uses conditional imports
+export 'notification_service_stub.dart'
+    if (dart.library.io) 'notification_service_mobile.dart';

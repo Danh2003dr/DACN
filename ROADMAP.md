@@ -46,6 +46,11 @@ Hệ thống Quản lý Nguồn gốc Xuất xứ Thuốc tại Bệnh viện b�
 - [x] Reports & Analytics cơ bản
 - [x] QR Code Scanner
 - [x] Blockchain Integration cơ bản
+- [x] **Inventory Management** (Nhập/Xuất/Chuyển/Điều chỉnh/Kiểm kê kho)
+- [x] **Orders Management** (Quản lý đơn hàng)
+- [x] **Suppliers Management** (Quản lý nhà cung ứng)
+- [x] **Invoices & Payments** (Hóa đơn và thanh toán)
+- [x] **Import/Export** (Nhập/Xuất dữ liệu)
 
 ### 🔄 Đang phát triển
 - [x] **Performance Optimization** ✅
@@ -144,10 +149,92 @@ Hệ thống Quản lý Nguồn gốc Xuất xứ Thuốc tại Bệnh viện b�
   - [ ] Offline mode
   - [ ] Push notifications
   
-- [ ] **Cross-platform (React Native/Flutter)**
-  - [ ] Shared codebase
-  - [ ] Consistent UI/UX
-  - [ ] Performance optimization
+- [ ] **Cross-platform (Flutter)** ⭐ **Đã chọn Flutter**
+  - [ ] **Technology Decision** ✅
+    - [x] Đánh giá React Native vs Flutter
+    - [x] **Chọn Flutter** (team quen thuộc với Flutter, performance tốt, UI/UX native)
+    - [ ] Setup development environment (Flutter SDK, Android Studio/Xcode, Dart)
+  - [ ] **Shared Codebase & Architecture**
+    - [ ] API client (Dart/Flutter) - port từ frontend/src/utils/api.js
+    - [ ] Shared business logic (Dart services, utilities)
+    - [ ] Models/Data classes (Dart với json_serializable)
+    - [ ] State management (Provider, Riverpod, hoặc Bloc pattern)
+    - [ ] Clean Architecture pattern (presentation, domain, data layers)
+  - [ ] **Core Features Implementation**
+    - [ ] Authentication & Authorization (JWT, biometric login)
+    - [ ] QR Code Scanner (native camera integration)
+    - [ ] Drug Verification (scan QR → verify blockchain)
+    - [ ] Supply Chain Tracking (real-time updates)
+    - [ ] Inventory Management (view, basic operations)
+    - [ ] Notifications (push notifications)
+    - [ ] Offline Mode (local storage, sync when online)
+  - [ ] **UI/UX Consistency**
+    - [ ] Design system shared với web (colors, typography, spacing)
+    - [ ] Flutter Material Design 3 hoặc Cupertino widgets
+    - [ ] Custom theme matching web design (ThemeData)
+    - [ ] Navigation structure (Flutter Navigator 2.0 hoặc go_router)
+    - [ ] Responsive layouts cho tablets (LayoutBuilder, MediaQuery)
+    - [ ] Dark/Light theme support (ThemeMode)
+    - [ ] Reusable widgets library (buttons, cards, forms matching web)
+  - [ ] **Performance Optimization**
+    - [ ] Code splitting và lazy loading (deferred imports)
+    - [ ] Image optimization và caching (cached_network_image, flutter_cache_manager)
+    - [ ] API response caching (dio với interceptors, shared_preferences, hive)
+    - [ ] State management optimization (selective rebuilds với Provider/Riverpod)
+    - [ ] Widget optimization (const constructors, keys, ListView.builder)
+    - [ ] Memory management (dispose controllers, cancel streams)
+    - [ ] Build optimization (--release mode, AOT compilation)
+  - [ ] **Platform-Specific Features**
+    - [ ] iOS: Face ID/Touch ID authentication
+    - [ ] Android: Fingerprint authentication
+    - [ ] iOS: App Store optimization
+    - [ ] Android: Google Play optimization
+    - [ ] Deep linking (URL schemes)
+    - [ ] Share functionality (native share sheet)
+  - [ ] **Testing & Quality Assurance**
+    - [ ] Unit tests cho business logic (test package, mockito)
+    - [ ] Widget tests cho UI components (flutter_test)
+    - [ ] Integration tests cho API calls và navigation
+    - [ ] E2E tests với Flutter Driver hoặc integration_test package
+    - [ ] Golden tests cho UI consistency
+    - [ ] Device testing (iOS/Android, various screen sizes)
+    - [ ] Performance profiling (Flutter DevTools, Observatory)
+    - [ ] Code coverage (flutter test --coverage)
+  - [ ] **Deployment & Distribution**
+    - [ ] CI/CD pipeline (GitHub Actions với Flutter workflow)
+    - [ ] Build automation (flutter build apk/ipa, fastlane)
+    - [ ] App Store submission process (iOS certificates, provisioning profiles)
+    - [ ] Google Play submission process (signing keys, app bundles)
+    - [ ] Beta testing (TestFlight, Google Play Beta, Firebase App Distribution)
+    - [ ] Version management (pubspec.yaml versioning, semantic versioning)
+    - [ ] Update strategy (in-app updates, OTA updates nếu cần)
+    - [ ] Crash reporting (Firebase Crashlytics, Sentry)
+  - [ ] **Flutter Packages & Dependencies**
+    - [ ] **Core Packages**
+      - [ ] `dio` - HTTP client (thay cho axios)
+      - [ ] `shared_preferences` - Local storage
+      - [ ] `hive` hoặc `sqflite` - Database offline
+      - [ ] `provider` hoặc `riverpod` - State management
+      - [ ] `go_router` hoặc `auto_route` - Navigation
+    - [ ] **UI/UX Packages**
+      - [ ] `flutter_svg` - SVG support
+      - [ ] `cached_network_image` - Image caching
+      - [ ] `flutter_animate` - Animations
+      - [ ] `shimmer` - Loading placeholders
+      - [ ] `fluttertoast` hoặc `flutter_snackbar` - Notifications
+    - [ ] **Feature-Specific Packages**
+      - [ ] `mobile_scanner` hoặc `qr_code_scanner` - QR scanning
+      - [ ] `local_auth` - Biometric authentication
+      - [ ] `firebase_messaging` - Push notifications
+      - [ ] `connectivity_plus` - Network status
+      - [ ] `geolocator` - GPS tracking (cho supply chain)
+      - [ ] `permission_handler` - Permissions management
+    - [ ] **Utilities**
+      - [ ] `json_serializable` - JSON serialization
+      - [ ] `intl` - Internationalization
+      - [ ] `flutter_dotenv` - Environment variables
+      - [ ] `logger` - Logging
+      - [ ] `package_info_plus` - App info
 
 ### 🤖 AI/ML Features
 - [ ] **Drug Verification AI**
@@ -515,7 +602,7 @@ Hệ thống Quản lý Nguồn gốc Xuất xứ Thuốc tại Bệnh viện b�
 
 ---
 
-**Last Updated**: January 2025  
-**Version**: 1.0  
-**Status**: Active Development
+**Last Updated**: November 2025  
+**Version**: 1.1  
+**Status**: Active Development - Core Features Completed
 

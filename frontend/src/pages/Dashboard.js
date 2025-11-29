@@ -111,18 +111,34 @@ const Dashboard = () => {
 
         const response = await reportAPI.getDashboardSummary();
 
-        if (response.success) {
+        if (response && response.success) {
           setStats(response.data?.stats || null);
           setActivities(response.data?.recentActivities || []);
         } else {
-          const message = response.message || 'Không thể tải dữ liệu dashboard.';
-          setError(message);
-          toast.error(message);
+          // Empty data hoặc response không thành công - không phải lỗi nghiêm trọng
+          setStats(null);
+          setActivities([]);
+          // Chỉ set error message để hiển thị trên UI, không hiển thị toast
+          setError('Chưa có dữ liệu để hiển thị.');
         }
       } catch (err) {
-        const message = err.response?.data?.message || 'Không thể tải dữ liệu dashboard.';
-        setError(message);
-        toast.error(message);
+        // Chỉ hiển thị toast cho lỗi network hoặc server (500+)
+        const status = err.response?.status;
+        if (status && status >= 500) {
+          const message = err.response?.data?.message || 'Không thể kết nối đến server. Vui lòng kiểm tra kết nối.';
+          setError(message);
+          toast.error(message);
+        } else if (status === 404) {
+          // 404 = không có data, không phải lỗi
+          setStats(null);
+          setActivities([]);
+          setError('Chưa có dữ liệu để hiển thị.');
+        } else {
+          // Các lỗi khác (401, 403, etc) đã được xử lý bởi interceptor
+          setStats(null);
+          setActivities([]);
+          setError('Không thể tải dữ liệu dashboard.');
+        }
       } finally {
         setLoading(false);
       }

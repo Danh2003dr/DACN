@@ -1,5 +1,62 @@
 # HƯỚNG DẪN TÍCH HỢP BLOCKCHAIN - MULTI-CHAIN & LAYER 2
 
+## 🚀 QUICK START - DEPLOY SMART CONTRACT
+
+### ⚡ Các lệnh nhanh
+
+#### 1. Compile Smart Contract
+```bash
+npm run compile
+# hoặc
+npx truffle compile
+```
+
+#### 2. Deploy Contract
+
+**Development (Ganache Local)**
+```bash
+npm run migrate:development
+```
+
+**Sepolia Testnet (Ethereum)**
+```bash
+npm run migrate:sepolia
+```
+
+**BSC Testnet**
+```bash
+npm run migrate:bsc-testnet
+```
+
+**Polygon Mumbai**
+```bash
+npm run migrate:polygon-mumbai
+```
+
+**Arbitrum Sepolia (Layer 2)**
+```bash
+npm run migrate:arbitrum-sepolia
+```
+
+**Optimism Sepolia (Layer 2)**
+```bash
+npm run migrate:optimism-sepolia
+```
+
+### 📋 Checklist trước khi deploy
+
+1. ✅ Cài đặt dependencies: `npm install`
+2. ✅ Cấu hình `.env` với `MNEMONIC` hoặc `PRIVATE_KEY`
+3. ✅ Compile contracts: `npm run compile`
+4. ✅ Deploy: `npm run migrate:sepolia`
+
+**Lưu ý**: 
+- Không commit private key vào git
+- Luôn test trên testnet trước khi deploy mainnet
+- Đảm bảo account có đủ ETH/tokens để trả gas fees
+
+---
+
 ## 📋 TỔNG QUAN
 
 Hệ thống đã được nâng cấp với hỗ trợ đa blockchain và Layer 2 solutions để tối ưu hóa gas fees và mở rộng khả năng.

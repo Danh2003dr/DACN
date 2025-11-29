@@ -454,8 +454,9 @@ const getSupplyChains = async (req, res) => {
     // Admin và Patient xem tất cả (không filter)
     
     const supplyChains = await SupplyChain.find(filter)
-      .populate('drugId', 'name genericName manufacturer')
-      .populate('steps.actorId', 'fullName role')
+      .populate('drugId', 'name genericName manufacturer activeIngredient dosage form batchNumber')
+      .populate('steps.actorId', 'fullName role organizationInfo')
+      .populate('currentLocation.actorId', 'fullName role')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parseInt(limit));

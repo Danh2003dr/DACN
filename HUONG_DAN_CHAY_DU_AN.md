@@ -423,8 +423,65 @@ Nếu gặp vấn đề:
 1. Kiểm tra logs trong terminal
 2. Kiểm tra Browser Developer Tools (F12)
 3. Kiểm tra Network requests
-4. Xem file `README_SETUP.md` và `HUONG_DAN_SU_DUNG.md`
+4. Xem file `HUONG_DAN_SU_DUNG.md`
 
 **Chúc bạn chạy dự án thành công! 🎉**
+
+---
+
+## 🔄 Chạy Nhiều Tab/Instance
+
+### Chạy trên cùng một Port (Nhiều Tab Browser) - **KHUYẾN NGHỊ**
+
+**Cách đơn giản nhất**: Mở nhiều tab trong cùng một trình duyệt và truy cập cùng một URL.
+
+- Tab 1: `http://localhost:3000`
+- Tab 2: `http://localhost:3000` (tab mới)
+- Tab 3: `http://localhost:3000` (tab mới)
+
+**Lợi ích**:
+- ✅ Đồng bộ hóa tự động trạng thái đăng nhập giữa các tab
+- ✅ Khi đăng nhập ở một tab, các tab khác tự động cập nhật
+- ✅ Khi đăng xuất ở một tab, các tab khác tự động đăng xuất
+- ✅ Không cần cấu hình thêm
+- ✅ Tiết kiệm tài nguyên (chỉ chạy một instance)
+
+### Chạy trên Nhiều Port Khác Nhau
+
+Nếu bạn muốn chạy nhiều instance frontend trên các port khác nhau:
+
+**Windows PowerShell:**
+```powershell
+cd frontend
+.\start-multiple.ps1 3000,3001,3002
+```
+
+**Windows CMD:**
+```cmd
+cd frontend
+start-multiple.bat 3000 3001 3002
+```
+
+**Cách thủ công:**
+```powershell
+# Terminal 1
+cd frontend
+$env:PORT=3000; npm start
+
+# Terminal 2
+cd frontend
+$env:PORT=3001; npm start
+
+# Terminal 3
+cd frontend
+$env:PORT=3002; npm start
+```
+
+Sau đó truy cập:
+- Tab 1: `http://localhost:3000`
+- Tab 2: `http://localhost:3001`
+- Tab 3: `http://localhost:3002`
+
+**Lưu ý**: Mỗi instance sẽ có state riêng, nhưng vẫn dùng chung backend và database.
 
 

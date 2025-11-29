@@ -4,6 +4,11 @@ const blockchainService = require('../services/blockchainService');
 const Drug = require('../models/Drug');
 const { authenticate } = require('../middleware/auth');
 const { cacheMiddleware } = require('../middleware/cache');
+const {
+  getTransactions,
+  verifyTransaction,
+  getTransactionDetails
+} = require('../controllers/blockchainController');
 
 // Khởi tạo blockchain service
 let blockchainInitialized = false;
@@ -483,5 +488,24 @@ router.get('/status', authenticate, cacheMiddleware(60), async (req, res) => {
     });
   }
 });
+
+// ============================================
+// Mini Blockchain Explorer Endpoints
+// ============================================
+
+// @route   GET /api/blockchain/transactions
+// @desc    Lấy danh sách transactions gần nhất
+// @access  Private
+router.get('/transactions', authenticate, getTransactions);
+
+// @route   POST /api/blockchain/verify-transaction
+// @desc    Verify transaction on blockchain
+// @access  Private
+router.post('/verify-transaction', authenticate, verifyTransaction);
+
+// @route   GET /api/blockchain/transaction/:txHash
+// @desc    Lấy thông tin chi tiết transaction
+// @access  Private
+router.get('/transaction/:txHash', authenticate, getTransactionDetails);
 
 module.exports = router;

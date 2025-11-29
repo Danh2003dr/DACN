@@ -19,42 +19,62 @@ class CacheService {
    * Khởi tạo Redis client
    */
   async initialize() {
+    // Skip Redis nếu không có REDIS_URL hoặc REDIS_ENABLED=false
+    if (process.env.REDIS_ENABLED === 'false') {
+      console.log('⚠️  Redis bị tắt qua config, hệ thống chạy không có cache');
+      this.isEnabled = false;
+      return false;
+    }
+
     try {
       const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
       const redisPassword = process.env.REDIS_PASSWORD;
 
-      this.client = redis.createClient({
-        url: redisUrl,
-        password: redisPassword,
-        socket: {
-          reconnectStrategy: (retries) => {
-            if (retries > 10) {
-              console.error('Redis: Quá nhiều lần reconnect, dừng kết nối');
-              return new Error('Too many retries');
+      // Tạo promise với timeout 3 giây
+      const connectPromise = new Promise(async (resolve, reject) => {
+        try {
+          this.client = redis.createClient({
+            url: redisUrl,
+            password: redisPassword,
+            socket: {
+              connectTimeout: 3000,
+              reconnectStrategy: (retries) => {
+                if (retries > 2) {
+                  return new Error('Too many retries');
+                }
+                return Math.min(retries * 500, 2000);
+              }
             }
-            return Math.min(retries * 100, 3000);
-          }
+          });
+
+          this.client.on('error', (err) => {
+            this.isEnabled = false;
+          });
+
+          this.client.on('connect', () => {
+            console.log('✅ Redis đã kết nối');
+            this.isEnabled = true;
+          });
+
+          await this.client.connect();
+          resolve(true);
+        } catch (err) {
+          reject(err);
         }
       });
 
-      this.client.on('error', (err) => {
-        console.error('Redis Client Error:', err);
-        this.isEnabled = false;
+      // Timeout sau 3 giây
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('Redis connection timeout')), 3000);
       });
 
-      this.client.on('connect', () => {
-        console.log('✅ Redis đã kết nối');
-        this.isEnabled = true;
-      });
-
-      await this.client.connect();
-
-      // Redis v4 đã là async, không cần promisify
+      await Promise.race([connectPromise, timeoutPromise]);
       this.isEnabled = true;
       return true;
     } catch (error) {
-      console.warn('⚠️  Redis không khả dụng, hệ thống sẽ chạy không có cache:', error.message);
+      console.warn('⚠️  Redis không khả dụng, hệ thống chạy không có cache');
       this.isEnabled = false;
+      this.client = null;
       return false;
     }
   }

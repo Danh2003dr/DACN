@@ -22,7 +22,10 @@ import {
   MessageSquare,
   Star,
   FileSignature,
-  Award
+  Award,
+  ShoppingCart,
+  ExternalLink,
+  Search as SearchIcon
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -59,6 +62,18 @@ const Layout = ({ children }) => {
       roles: ['admin', 'manufacturer', 'distributor', 'hospital']
     },
     {
+      name: 'Quản lý Kho',
+      href: '/inventory',
+      icon: Package,
+      roles: ['admin', 'manufacturer', 'distributor', 'hospital']
+    },
+    {
+      name: 'Quản lý Đơn hàng',
+      href: '/orders',
+      icon: ShoppingCart,
+      roles: ['admin', 'manufacturer', 'distributor', 'hospital']
+    },
+    {
       name: 'Chuỗi Cung ứng',
       href: '/supply-chain',
       icon: Truck,
@@ -74,6 +89,12 @@ const Layout = ({ children }) => {
       name: 'Blockchain',
       href: '/blockchain',
       icon: Shield,
+      roles: ['admin', 'manufacturer', 'distributor', 'hospital']
+    },
+    {
+      name: 'Blockchain Explorer',
+      href: '/blockchain/explorer',
+      icon: ExternalLink,
       roles: ['admin', 'manufacturer', 'distributor', 'hospital']
     },
     {
@@ -107,16 +128,40 @@ const Layout = ({ children }) => {
       roles: ['admin', 'manufacturer', 'distributor', 'hospital']
     },
     {
+      name: 'Audit Log',
+      href: '/audit-logs',
+      icon: FileText,
+      roles: ['admin']
+    },
+        {
+          name: 'Backup & Restore',
+          href: '/backups',
+          icon: Shield,
+          roles: ['admin']
+        },
+        {
+          name: 'Hóa đơn & Thanh toán',
+          href: '/invoices',
+          icon: FileText,
+          roles: ['admin', 'manufacturer', 'distributor', 'hospital']
+        },
+        {
+          name: 'Import/Export',
+          href: '/import-export',
+          icon: FileText,
+          roles: ['admin']
+        },
+        {
+          name: 'Nhà cung ứng',
+          href: '/suppliers',
+          icon: Users,
+          roles: ['admin', 'manufacturer', 'distributor']
+        },
+    {
       name: 'Báo cáo',
       href: '/reports',
       icon: BarChart3,
       roles: ['admin', 'manufacturer', 'hospital']
-    },
-    {
-      name: 'Demo Bản Đồ',
-      href: '/map-demo',
-      icon: Search,
-      roles: ['admin', 'manufacturer', 'distributor', 'hospital', 'patient']
     },
     {
       name: 'Cài đặt',

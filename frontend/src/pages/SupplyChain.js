@@ -28,6 +28,7 @@ import {
 import { useAuth } from '../contexts/AuthContext';
 import { supplyChainAPI } from '../utils/api';
 import toast from 'react-hot-toast';
+import DrugTimeline from '../components/DrugTimeline';
 
 const SupplyChain = () => {
   const { user, hasRole } = useAuth();
@@ -324,33 +325,50 @@ const SupplyChain = () => {
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div>
                           <div className="text-sm font-medium text-gray-900">
-                            {supplyChain.drugId?.name}
+                            {supplyChain.drugId?.name || 'N/A'}
                           </div>
                           <div className="text-sm text-gray-500">
-                            {supplyChain.drugId?.genericName}
+                            {supplyChain.drugId?.activeIngredient || supplyChain.drugId?.genericName || supplyChain.drugBatchNumber}
                           </div>
                         </div>
                       </td>
                       
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center">
-                          <RoleIcon className="h-4 w-4 text-gray-400 mr-2" />
-                          <span className="text-sm text-gray-900">
-                            {currentStep?.actorName}
-                          </span>
+                          {currentStep ? (
+                            <>
+                              <RoleIcon className="h-4 w-4 text-gray-400 mr-2" />
+                              <span className="text-sm text-gray-900">
+                                {currentStep.actorName || 'N/A'}
+                              </span>
+                            </>
+                          ) : supplyChain.currentLocation ? (
+                            <>
+                              <RoleIcon className="h-4 w-4 text-gray-400 mr-2" />
+                              <span className="text-sm text-gray-900">
+                                {supplyChain.currentLocation.actorName || 'N/A'}
+                              </span>
+                            </>
+                          ) : (
+                            <span className="text-sm text-gray-400">Chưa có</span>
+                          )}
                         </div>
                       </td>
                       
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(supplyChain.status)}`}>
-                          {supplyChain.status}
+                        <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(supplyChain.status || 'active')}`}>
+                          {supplyChain.status || 'active'}
                         </span>
                       </td>
                       
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getActionColor(currentStep?.action)}`}>
-                          {currentStep?.action}
-                        </span>
+                        {currentStep?.action ? (
+                          <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getActionColor(currentStep.action)}`}>
+                            {currentStep.action}
+                          </span>
+                        ) : (
+                          <span className="text-sm text-gray-400">Chưa có</span>
+                        )}
                       </td>
                       
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
@@ -637,18 +655,86 @@ const AddStepModal = ({ supplyChain, onSubmit, onClose, loading }) => {
 
 // Supply Chain Detail Modal Component
 const SupplyChainDetailModal = ({ supplyChain, onClose, onAddStep }) => {
-  const getActionColor = (action) => {
-    const colors = {
-      created: 'bg-green-100 text-green-800',
-      shipped: 'bg-blue-100 text-blue-800',
-      received: 'bg-purple-100 text-purple-800',
-      stored: 'bg-yellow-100 text-yellow-800',
-      dispensed: 'bg-indigo-100 text-indigo-800',
-      recalled: 'bg-red-100 text-red-800',
-      quality_check: 'bg-orange-100 text-orange-800'
+  // Convert supply chain steps to DrugTimeline events format
+  const convertStepsToTimelineEvents = (steps, supplyChain) => {
+    const events = [];
+
+    // Map action to Vietnamese stage name
+    const getStageName = (action) => {
+      const stageMap = {
+        created: 'Sản xuất',
+        shipped: 'Vận chuyển',
+        received: 'Tiếp nhận',
+        stored: 'Lưu kho',
+        dispensed: 'Cấp phát',
+        recalled: 'Thu hồi',
+        quality_check: 'Kiểm tra chất lượng',
+        manufacturing: 'Sản xuất',
+        transportation: 'Vận chuyển',
+        hospital_reception: 'Tiếp nhận tại Bệnh viện',
+        warehouse: 'Lưu kho'
+      };
+      return stageMap[action] || action;
     };
-    return colors[action] || 'bg-gray-100 text-gray-800';
+
+    // Determine status based on step data
+    const getStatus = (step) => {
+      // Check if step has warning conditions
+      const temperature = step.metadata?.temperature;
+      const hasWarning = step.metadata?.hasWarning || step.metadata?.warning;
+      
+      // Temperature warning (exceeds 25°C)
+      if (temperature && temperature > 25) {
+        return 'warning';
+      }
+      
+      // Explicit warning flag
+      if (hasWarning) {
+        return 'warning';
+      }
+      
+      // Check if step is completed (has timestamp and actor)
+      if (step.timestamp && step.actorName) {
+        return 'normal';
+      }
+      
+      // Pending if no timestamp
+      return 'pending';
+    };
+
+    // If no steps, create an initial "created" step from supply chain info
+    if (!steps || steps.length === 0) {
+      if (supplyChain.createdAt) {
+        events.push({
+          stageName: 'Tạo hành trình',
+          location: supplyChain.currentLocation?.address || supplyChain.currentLocation?.actorName || 'N/A',
+          timestamp: supplyChain.createdAt,
+          signerName: supplyChain.createdBy?.fullName || 'Hệ thống',
+          isVerified: false,
+          temperature: null,
+          status: 'normal'
+        });
+      }
+      return events;
+    }
+
+    // Convert actual steps
+    return steps.map((step) => ({
+      stageName: getStageName(step.action),
+      location: step.location?.address || step.location?.name || step.actorName || 'N/A',
+      timestamp: step.timestamp || step.createdAt || new Date(),
+      signerName: step.actorName || step.actorId?.fullName || step.actorId?.organizationInfo?.name || 'N/A',
+      isVerified: step.digitalSignature || step.isVerified || step.blockchainVerified || false,
+      temperature: step.metadata?.temperature || step.temperature,
+      status: getStatus(step),
+      warningMessage: step.metadata?.warningMessage || 
+                     (step.metadata?.temperature && step.metadata.temperature > 25 
+                       ? `Nhiệt độ: ${step.metadata.temperature}°C - Vượt quá giới hạn cho phép (25°C)`
+                       : step.metadata?.warning || null)
+    }));
   };
+
+  const timelineEvents = convertStepsToTimelineEvents(supplyChain.steps, supplyChain);
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -689,36 +775,32 @@ const SupplyChainDetailModal = ({ supplyChain, onClose, onAddStep }) => {
         {/* Steps Timeline */}
         <div>
           <h4 className="font-medium text-gray-900 mb-4">Hành trình chi tiết</h4>
-          <div className="space-y-4">
-            {supplyChain.steps.map((step, index) => (
-              <div key={index} className="flex items-start space-x-4">
-                <div className="flex-shrink-0">
-                  <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
-                    <span className="text-blue-600 text-sm font-medium">{index + 1}</span>
-                  </div>
+          {timelineEvents.length > 0 ? (
+            <div className="bg-gray-50 rounded-lg p-4">
+              <DrugTimeline events={timelineEvents} />
+            </div>
+          ) : (
+            <div className="bg-gray-50 rounded-lg p-8 text-center">
+              <div className="flex flex-col items-center justify-center">
+                <div className="w-16 h-16 bg-gray-200 rounded-full flex items-center justify-center mb-4">
+                  <Clock className="w-8 h-8 text-gray-400" />
                 </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center space-x-2 mb-1">
-                    <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getActionColor(step.action)}`}>
-                      {step.action}
-                    </span>
-                    <span className="text-sm text-gray-500">
-                      {new Date(step.timestamp).toLocaleString('vi-VN')}
-                    </span>
-                  </div>
-                  <div className="text-sm text-gray-900">
-                    <p><span className="font-medium">Thực hiện bởi:</span> {step.actorName} ({step.actorRole})</p>
-                    {step.location?.address && (
-                      <p><span className="font-medium">Địa điểm:</span> {step.location.address}</p>
-                    )}
-                    {step.metadata?.notes && (
-                      <p><span className="font-medium">Ghi chú:</span> {step.metadata.notes}</p>
-                    )}
-                  </div>
-                </div>
+                <h5 className="text-lg font-medium text-gray-900 mb-2">
+                  Chưa có bước nào trong hành trình
+                </h5>
+                <p className="text-sm text-gray-500 mb-4 max-w-md">
+                  Hành trình này chưa có bước nào được ghi nhận. Hãy thêm bước đầu tiên để bắt đầu theo dõi hành trình của lô thuốc.
+                </p>
+                <button
+                  onClick={onAddStep}
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Thêm bước đầu tiên</span>
+                </button>
               </div>
-            ))}
-          </div>
+            </div>
+          )}
         </div>
         
         {/* Actions */}

@@ -8,6 +8,7 @@ const fs = require('fs');
 const blockchainService = require('../services/blockchainService');
 const getServerUrl = require('../utils/getServerUrl');
 const drugRiskService = require('../services/drugRiskService');
+const auditService = require('../services/auditService');
 
 // @desc    Tạo lô thuốc mới
 // @route   POST /api/drugs
@@ -125,6 +126,28 @@ const createDrug = async (req, res) => {
     // Populate manufacturer info
     await drug.populate('manufacturerId', 'fullName organizationInfo');
 
+    // Ghi audit log
+    await auditService.logCRUD.create(
+      req.user,
+      'Drug',
+      drug._id,
+      { name: drug.name, batchNumber: drug.batchNumber, drugId: drug.drugId },
+      'drug',
+      req,
+      `Tạo lô thuốc mới: ${drug.name} (${drug.batchNumber})`
+    );
+
+    // Ghi audit log cho blockchain
+    if (blockchainResult.success) {
+      await auditService.logBlockchain.record(
+        req.user,
+        'Drug',
+        drug._id,
+        blockchainResult,
+        req
+      );
+    }
+
     res.status(201).json({
       success: true,
       message: 'Tạo lô thuốc thành công và đã ghi lên blockchain.',
@@ -193,6 +216,16 @@ const getDrugs = async (req, res) => {
     }
     // Admin xem tất cả (không filter)
     // Distributor, Hospital, Patient xem tất cả (không filter)
+
+    // Loại trừ các thuốc đã được kiểm định bởi Bộ Y tế (chỉ áp dụng cho các role không phải admin)
+    // Admin có thể xem tất cả thuốc, kể cả thuốc đã được Bộ Y tế kiểm định
+    if (req.user.role !== 'admin') {
+      filter['qualityTest.testBy'] = {
+        $not: {
+          $regex: /(Bộ Y tế|Cục Quản lý Dược)/i
+        }
+      };
+    }
 
     // Tính toán pagination
     const skip = (page - 1) * limit;
@@ -310,11 +343,33 @@ const updateDrug = async (req, res) => {
     if (qualityTest) updateData.qualityTest = qualityTest;
     if (storage) updateData.storage = storage;
 
+    // Lưu dữ liệu trước khi cập nhật
+    const beforeData = {
+      name: drug.name,
+      activeIngredient: drug.activeIngredient,
+      dosage: drug.dosage,
+      form: drug.form,
+      qualityTest: drug.qualityTest,
+      storage: drug.storage
+    };
+
     const updatedDrug = await Drug.findByIdAndUpdate(
       req.params.id,
       updateData,
       { new: true, runValidators: true }
     ).populate('manufacturerId', 'fullName organizationInfo');
+
+    // Ghi audit log
+    await auditService.logCRUD.update(
+      req.user,
+      'Drug',
+      drug._id,
+      beforeData,
+      updateData,
+      'drug',
+      req,
+      `Cập nhật lô thuốc: ${drug.name} (${drug.batchNumber})`
+    );
 
     res.status(200).json({
       success: true,
@@ -683,14 +738,29 @@ const recallDrug = async (req, res) => {
 // @access  Private
 const getDrugStats = async (req, res) => {
   try {
-    const totalDrugs = await Drug.countDocuments();
-    const activeDrugs = await Drug.countDocuments({ status: 'active' });
-    const recalledDrugs = await Drug.countDocuments({ isRecalled: true });
-    const expiredDrugs = await Drug.countDocuments({ 
+    // Tạo filter để loại trừ thuốc đã được Bộ Y tế kiểm định (chỉ cho role không phải admin)
+    const baseFilter = {};
+    if (req.user.role !== 'admin') {
+      baseFilter['qualityTest.testBy'] = {
+        $not: {
+          $regex: /(Bộ Y tế|Cục Quản lý Dược)/i
+        }
+      };
+    }
+
+    const totalDrugs = await Drug.countDocuments(baseFilter);
+    const activeFilter = { ...baseFilter, status: 'active' };
+    const activeDrugs = await Drug.countDocuments(activeFilter);
+    const recalledFilter = { ...baseFilter, isRecalled: true };
+    const recalledDrugs = await Drug.countDocuments(recalledFilter);
+    const expiredFilter = { 
+      ...baseFilter,
       expiryDate: { $lt: new Date() } 
-    });
+    };
+    const expiredDrugs = await Drug.countDocuments(expiredFilter);
 
     const drugsByStatus = await Drug.aggregate([
+      { $match: baseFilter },
       {
         $group: {
           _id: '$status',
@@ -699,7 +769,17 @@ const getDrugStats = async (req, res) => {
       }
     ]);
 
-    const expiringSoon = await Drug.getExpiringSoon(30);
+    // Lấy thuốc sắp hết hạn với filter
+    const expiringSoonFilter = {
+      expiryDate: { 
+        $lte: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        $gte: new Date()
+      },
+      status: 'active',
+      isRecalled: false,
+      ...baseFilter
+    };
+    const expiringSoon = await Drug.find(expiringSoonFilter);
 
     res.status(200).json({
       success: true,
@@ -744,7 +824,25 @@ const deleteDrug = async (req, res) => {
       });
     }
 
+    // Lưu dữ liệu trước khi xóa
+    const drugData = {
+      name: drug.name,
+      batchNumber: drug.batchNumber,
+      drugId: drug.drugId
+    };
+
     await Drug.findByIdAndDelete(req.params.id);
+
+    // Ghi audit log
+    await auditService.logCRUD.delete(
+      req.user,
+      'Drug',
+      drug._id,
+      drugData,
+      'drug',
+      req,
+      `Xóa lô thuốc: ${drug.name} (${drug.batchNumber})`
+    );
 
     res.status(200).json({
       success: true,

@@ -1,5 +1,6 @@
 import axios from 'axios';
 import toast from 'react-hot-toast';
+import logger from './logger';
 
 // Tạo axios instance
 // Tự động detect API URL: ưu tiên REACT_APP_API_URL, nếu không có thì dùng IP hiện tại hoặc localhost
@@ -49,12 +50,12 @@ api.interceptors.response.use(
     return response;
   },
   (error) => {
-    // Cho phép bỏ qua xử lý lỗi toàn cục cho một số request (ví dụ: quét QR)
+    // Cho phép bỏ qua xử lý lỗi toàn cục cho một số request (ví dụ: quét QR, empty data)
     if (error.config && error.config.skipErrorHandler) {
       return Promise.reject(error);
     }
 
-    const { response } = error;
+    const { response, config } = error;
     
     if (response) {
       const { status, data } = response;
@@ -65,10 +66,28 @@ api.interceptors.response.use(
       switch (status) {
         case 401:
           // Token hết hạn hoặc không hợp lệ
-          localStorage.removeItem('token');
-          localStorage.removeItem('user');
-          window.location.href = '/login';
-          toast.error(message || 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
+          // Chỉ redirect nếu không phải đang ở trang login
+          if (window.location.pathname !== '/login') {
+            localStorage.removeItem('token');
+            localStorage.removeItem('user');
+            // Delay một chút để toast hiển thị
+            setTimeout(() => {
+              window.location.href = '/login';
+            }, 1000);
+            toast.error(message || 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.', {
+              duration: 3000
+            });
+          }
+          break;
+        case 500:
+          // Chỉ hiển thị toast cho lỗi 500 nếu không phải GET request hoặc có message cụ thể
+          // Nếu là GET request và có skipErrorHandler, không hiển thị toast
+          if (config.method === 'get' && config.skipErrorHandler) {
+            // Không hiển thị toast, chỉ log
+            console.warn('Server error (suppressed toast):', message || 'Lỗi server');
+          } else {
+            toast.error(message || 'Lỗi server. Vui lòng thử lại sau.');
+          }
           break;
 
         case 403:
@@ -76,7 +95,16 @@ api.interceptors.response.use(
           break;
 
         case 404:
-          toast.error(message || 'Không tìm thấy dữ liệu.');
+          // Chỉ hiển thị toast cho 404 nếu:
+          // 1. Không phải GET request (POST/PUT/DELETE 404 là lỗi thực sự)
+          // 2. Hoặc có message cụ thể từ server (không phải empty data)
+          const isGetRequest = !config.method || config.method.toLowerCase() === 'get';
+          const hasSpecificMessage = message && message !== 'Không tìm thấy dữ liệu.' && message !== 'Not found';
+          
+          if (!isGetRequest || hasSpecificMessage) {
+            toast.error(message || 'Không tìm thấy dữ liệu.');
+          }
+          // Nếu là GET request và không có message cụ thể, coi như empty data hợp lệ, không hiển thị toast
           break;
 
         case 400:
@@ -94,19 +122,28 @@ api.interceptors.response.use(
         case 503:
         case 504:
           // Lỗi hệ thống / network phía server
-          toast.error(message || 'Hệ thống đang bận hoặc gặp sự cố. Vui lòng thử lại sau.');
+          // Nếu là GET request với skipErrorHandler, không hiển thị toast
+          if (config.method === 'get' && config.skipErrorHandler) {
+            console.warn('Server error (suppressed toast):', message || 'Lỗi server');
+          } else {
+            toast.error(message || 'Hệ thống đang bận hoặc gặp sự cố. Vui lòng thử lại sau.');
+          }
           break;
 
         default:
           // Một số lỗi đặc thù (dựa trên code) có thể xử lý riêng nếu cần
           if (code === 'BLOCKCHAIN_ERROR' || code === 'HSM_ERROR' || code === 'CACHE_ERROR') {
             toast.error(message || 'Dịch vụ nền tảng đang gặp sự cố. Hệ thống sẽ tự động chuyển sang chế độ an toàn.');
-          } else {
+          } else if (status >= 500) {
             toast.error(message || 'Có lỗi xảy ra. Vui lòng thử lại.');
           }
+          // Không hiển thị toast cho các lỗi khác (như 404 GET đã xử lý ở trên)
       }
     } else {
-      toast.error('Không thể kết nối đến server. Vui lòng kiểm tra kết nối mạng hoặc thử lại sau.');
+      // Network error - không kết nối được đến server
+      toast.error('Không thể kết nối đến server. Vui lòng kiểm tra kết nối mạng hoặc thử lại sau.', {
+        id: 'network-error' // Dùng id để tránh duplicate toasts
+      });
     }
     
     return Promise.reject(error);
@@ -632,7 +669,9 @@ export const reportAPI = {
 
   // Get dashboard summary
   getDashboardSummary: async () => {
-    const response = await api.get('/reports/dashboard');
+    const response = await api.get('/reports/dashboard', {
+      skipErrorHandler: true // Bỏ qua error handler để tránh toast cho empty data
+    });
     return response.data;
   },
 
@@ -768,6 +807,447 @@ export const trustScoreAPI = {
   // Recalculate all trust scores (Admin only)
   recalculateAll: async () => {
     const response = await api.post('/trust-scores/recalculate-all');
+    return response.data;
+  }
+};
+
+// Audit Logs API
+export const auditLogAPI = {
+  // Get audit logs
+  getAuditLogs: async (params = {}) => {
+    const response = await api.get('/audit-logs', { 
+      params,
+      skipErrorHandler: true // Bỏ qua error handler để tránh toast cho empty data
+    });
+    return response.data;
+  },
+
+  // Get audit log by ID
+  getAuditLogById: async (id) => {
+    const response = await api.get(`/audit-logs/${id}`);
+    return response.data;
+  },
+
+  // Get entity history
+  getEntityHistory: async (entityType, entityId) => {
+    const response = await api.get(`/audit-logs/entity/${entityType}/${entityId}`);
+    return response.data;
+  },
+
+  // Get audit stats
+  getAuditStats: async (params = {}) => {
+    const response = await api.get('/audit-logs/stats', { 
+      params,
+      skipErrorHandler: true // Bỏ qua error handler để tránh toast cho empty data
+    });
+    return response.data;
+  },
+
+  // Export audit logs
+  exportAuditLogs: async (params = {}) => {
+    const response = await api.get('/audit-logs/export', { params, responseType: 'blob' });
+    return response;
+  }
+};
+
+// Backups API
+export const backupAPI = {
+  // Get backups
+  getBackups: async (params = {}) => {
+    const response = await api.get('/backups', { params });
+    return response.data;
+  },
+
+  // Get backup by ID
+  getBackupById: async (id) => {
+    const response = await api.get(`/backups/${id}`);
+    return response.data;
+  },
+
+  // Create backup
+  createBackup: async (data = {}) => {
+    const response = await api.post('/backups', data);
+    return response.data;
+  },
+
+  // Restore backup
+  restoreBackup: async (id, data = {}) => {
+    const response = await api.post(`/backups/${id}/restore`, data);
+    return response.data;
+  },
+
+  // Download backup
+  downloadBackup: async (id) => {
+    const response = await api.get(`/backups/${id}/download`, { responseType: 'blob' });
+    return response;
+  },
+
+  // Delete backup
+  deleteBackup: async (id) => {
+    const response = await api.delete(`/backups/${id}`);
+    return response.data;
+  },
+
+  // Get backup stats
+  getBackupStats: async () => {
+    const response = await api.get('/backups/stats');
+    return response.data;
+  },
+
+  // Cleanup backups
+  cleanupBackups: async () => {
+    const response = await api.post('/backups/cleanup');
+    return response.data;
+  }
+};
+
+// Inventory API
+export const inventoryAPI = {
+  // Get inventory
+  getInventory: async (params = {}) => {
+    const response = await api.get('/inventory', { params });
+    return response.data;
+  },
+
+  // Get inventory by ID
+  getInventoryById: async (id) => {
+    const response = await api.get(`/inventory/${id}`);
+    return response.data;
+  },
+
+  // Get inventory by location
+  getInventoryByLocation: async (locationId) => {
+    const response = await api.get(`/inventory/location/${locationId}`);
+    return response.data;
+  },
+
+  // Get total stock for a drug
+  getTotalStock: async (drugId) => {
+    const response = await api.get(`/inventory/drug/${drugId}/total`);
+    return response.data;
+  },
+
+  // Get inventory stats
+  getInventoryStats: async () => {
+    const response = await api.get('/inventory/stats', {
+      skipErrorHandler: true // Bỏ qua error handler để tránh toast cho empty data
+    });
+    return response.data;
+  },
+
+  // Alias for getInventoryStats
+  getStats: async (params = {}) => {
+    const response = await api.get('/inventory/stats', { 
+      params,
+      skipErrorHandler: true // Bỏ qua error handler để tránh toast cho empty data
+    });
+    return response.data;
+  },
+
+  // Stock in
+  stockIn: async (data) => {
+    const response = await api.post('/inventory/stock-in', data);
+    return response.data;
+  },
+
+  // Stock out
+  stockOut: async (data) => {
+    const response = await api.post('/inventory/stock-out', data);
+    return response.data;
+  },
+
+  // Adjust stock
+  adjustStock: async (data) => {
+    const response = await api.post('/inventory/adjust', data);
+    return response.data;
+  },
+
+  // Transfer stock
+  transferStock: async (data) => {
+    const response = await api.post('/inventory/transfer', data);
+    return response.data;
+  },
+
+  // Stocktake
+  stocktake: async (data) => {
+    const response = await api.post('/inventory/stocktake', data);
+    return response.data;
+  },
+
+  // Get transactions
+  getTransactions: async (params = {}) => {
+    const response = await api.get('/inventory/transactions', { params });
+    return response.data;
+  },
+
+  // Get transaction stats
+  getTransactionStats: async () => {
+    const response = await api.get('/inventory/transactions/stats');
+    return response.data;
+  }
+};
+
+// Orders API
+export const orderAPI = {
+  // Get orders
+  getOrders: async (params = {}) => {
+    const response = await api.get('/orders', { 
+      params,
+      skipErrorHandler: true // Bỏ qua error handler để tránh toast cho empty data
+    });
+    return response.data;
+  },
+
+  // Get order by ID
+  getOrderById: async (id) => {
+    const response = await api.get(`/orders/${id}`);
+    return response.data;
+  },
+
+  // Create order
+  createOrder: async (data) => {
+    const response = await api.post('/orders', data);
+    return response.data;
+  },
+
+  // Confirm order
+  confirmOrder: async (id) => {
+    const response = await api.post(`/orders/${id}/confirm`);
+    return response.data;
+  },
+
+  // Process order
+  processOrder: async (id) => {
+    const response = await api.post(`/orders/${id}/process`);
+    return response.data;
+  },
+
+  // Ship order
+  shipOrder: async (id, data = {}) => {
+    const response = await api.post(`/orders/${id}/ship`, data);
+    return response.data;
+  },
+
+  // Deliver order
+  deliverOrder: async (id) => {
+    const response = await api.post(`/orders/${id}/deliver`);
+    return response.data;
+  },
+
+  // Cancel order
+  cancelOrder: async (id, data = {}) => {
+    const response = await api.post(`/orders/${id}/cancel`, data);
+    return response.data;
+  },
+
+  // Get order stats
+  getOrderStats: async () => {
+    const response = await api.get('/orders/stats', {
+      skipErrorHandler: true // Bỏ qua error handler để tránh toast cho empty data
+    });
+    return response.data;
+  },
+
+  // Alias for getOrderStats
+  getStats: async (params = {}) => {
+    const response = await api.get('/orders/stats', { 
+      params,
+      skipErrorHandler: true // Bỏ qua error handler để tránh toast cho empty data
+    });
+    return response.data;
+  }
+};
+
+// Invoices API
+export const invoiceAPI = {
+  // Get invoices
+  getInvoices: async (params = {}) => {
+    const response = await api.get('/invoices', { params });
+    return response.data;
+  },
+
+  // Get invoice by ID
+  getInvoiceById: async (id) => {
+    const response = await api.get(`/invoices/${id}`);
+    return response.data;
+  },
+
+  // Create invoice
+  createInvoice: async (data) => {
+    const response = await api.post('/invoices', data);
+    return response.data;
+  },
+
+  // Create invoice from order
+  createInvoiceFromOrder: async (orderId) => {
+    const response = await api.post(`/invoices/from-order/${orderId}`);
+    return response.data;
+  },
+
+  // Record payment
+  recordPayment: async (id, data) => {
+    const response = await api.post(`/invoices/${id}/payment`, data);
+    return response.data;
+  },
+
+  // Get invoice stats
+  getInvoiceStats: async () => {
+    const response = await api.get('/invoices/stats');
+    return response.data;
+  }
+};
+
+// Payments API
+export const paymentAPI = {
+  // Get payments
+  getPayments: async (params = {}) => {
+    const response = await api.get('/payments', { params });
+    return response.data;
+  },
+
+  // Get payment by ID
+  getPaymentById: async (id) => {
+    const response = await api.get(`/payments/${id}`);
+    return response.data;
+  },
+
+  // Get payment stats
+  getPaymentStats: async () => {
+    const response = await api.get('/payments/stats');
+    return response.data;
+  }
+};
+
+// Suppliers API
+export const supplierAPI = {
+  // Get suppliers
+  getSuppliers: async (params = {}) => {
+    const response = await api.get('/suppliers', { 
+      params,
+      skipErrorHandler: true // Bỏ qua error handler để tránh toast cho empty data
+    });
+    return response.data;
+  },
+
+  // Get supplier by ID
+  getSupplierById: async (id) => {
+    const response = await api.get(`/suppliers/${id}`);
+    return response.data;
+  },
+
+  // Create supplier
+  createSupplier: async (data) => {
+    const response = await api.post('/suppliers', data);
+    return response.data;
+  },
+
+  // Update supplier rating
+  updateSupplierRating: async (id, data) => {
+    const response = await api.post(`/suppliers/${id}/rating`, data);
+    return response.data;
+  },
+
+  // Create contract
+  createContract: async (id, data) => {
+    const response = await api.post(`/suppliers/${id}/contracts`, data);
+    return response.data;
+  },
+
+  // Get contracts
+  getContracts: async (params = {}) => {
+    const response = await api.get('/suppliers/contracts', { params });
+    return response.data;
+  }
+};
+
+// Import/Export API
+export const importExportAPI = {
+  // Import drugs
+  importDrugs: async (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await api.post('/import-export/drugs/import', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      }
+    });
+    return response.data;
+  },
+
+  // Import inventory
+  importInventory: async (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await api.post('/import-export/inventory/import', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      }
+    });
+    return response.data;
+  },
+
+  // Export drugs
+  exportDrugs: async (params = {}) => {
+    const response = await api.get('/import-export/drugs/export', { 
+      params,
+      responseType: 'blob'
+    });
+    return response;
+  },
+
+  // Export inventory
+  exportInventory: async (params = {}) => {
+    const response = await api.get('/import-export/inventory/export', { 
+      params,
+      responseType: 'blob'
+    });
+    return response;
+  },
+
+  // Export orders
+  exportOrders: async (params = {}) => {
+    const response = await api.get('/import-export/orders/export', { 
+      params,
+      responseType: 'blob'
+    });
+    return response;
+  },
+
+  // Export invoices
+  exportInvoices: async (params = {}) => {
+    const response = await api.get('/import-export/invoices/export', { 
+      params,
+      responseType: 'blob'
+    });
+    return response;
+  }
+};
+
+// Blockchain Transactions API
+export const blockchainTransactionAPI = {
+  // Get recent transactions
+  getRecentTransactions: async (params = {}) => {
+    try {
+      const response = await api.get('/blockchain/transactions', { 
+        params,
+        skipErrorHandler: true // Bỏ qua error handler để tránh toast cho empty data
+      });
+      return response.data;
+    } catch (error) {
+      // Re-throw để component có thể handle
+      throw error;
+    }
+  },
+
+  // Verify transaction on chain
+  verifyTransaction: async (txHash) => {
+    const response = await api.post('/blockchain/verify-transaction', { txHash });
+    return response.data;
+  },
+
+  // Get transaction details
+  getTransactionDetails: async (txHash) => {
+    const response = await api.get(`/blockchain/transaction/${txHash}`);
     return response.data;
   }
 };

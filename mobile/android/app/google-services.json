@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "874430072046",
+    "project_id": "drug-traceability-system-d89c1",
+    "storage_bucket": "drug-traceability-system-d89c1.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:874430072046:android:e8d27eb2f331d147eb1fff",
+        "android_client_info": {
+          "package_name": "com.example.drug_traceability_mobile"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBZARaSSKIpJgw2Av-i-oRR5951hixPpps"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from 'react-query';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { setAuthToken } from './utils/api';
+import logger from './utils/logger';
 import Layout from './components/Layout';
 import Login from './components/Login';
 import Dashboard from './pages/Dashboard';
@@ -19,11 +20,19 @@ import Notifications from './pages/Notifications';
 import Reviews from './pages/Reviews';
 import QRScanner from './pages/QRScanner';
 import Reports from './pages/Reports';
-import MapDemo from './pages/MapDemo';
 import BlockchainVerify from './pages/BlockchainVerify';
 import BlockchainDashboard from './pages/BlockchainDashboard';
+import BlockchainExplorer from './pages/BlockchainExplorer';
 import DigitalSignatures from './pages/DigitalSignatures';
 import TrustScores from './pages/TrustScores';
+import AuditLogs from './pages/AuditLogs';
+import Inventory from './pages/Inventory';
+import Orders from './pages/Orders';
+import Backups from './pages/Backups';
+import Invoices from './pages/Invoices';
+import ImportExport from './pages/ImportExport';
+import Suppliers from './pages/Suppliers';
+import DrugTimelineDemo from './pages/DrugTimelineDemo';
 
 // Create a client
 const queryClient = new QueryClient({
@@ -106,6 +115,12 @@ const GoogleCallback = () => {
 const AppRoutes = () => {
   const { isAuthenticated, isLoading } = useAuth();
   const navigate = useNavigate();
+  const location = window.location;
+  
+  // Log page views
+  React.useEffect(() => {
+    logger.pageView(location.pathname);
+  }, [location.pathname]);
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -161,6 +176,28 @@ const AppRoutes = () => {
           <ProtectedRoute requiredRoles={['admin', 'manufacturer', 'distributor', 'hospital']}>
             <Layout>
               <Drugs />
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/inventory"
+        element={
+          <ProtectedRoute requiredRoles={['admin', 'manufacturer', 'distributor', 'hospital']}>
+            <Layout>
+              <Inventory />
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/orders"
+        element={
+          <ProtectedRoute requiredRoles={['admin', 'manufacturer', 'distributor', 'hospital']}>
+            <Layout>
+              <Orders />
             </Layout>
           </ProtectedRoute>
         }
@@ -255,6 +292,17 @@ const AppRoutes = () => {
       />
 
       <Route
+        path="/blockchain/explorer"
+        element={
+          <ProtectedRoute requiredRoles={['admin', 'manufacturer', 'distributor', 'hospital']}>
+            <Layout>
+              <BlockchainExplorer />
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
         path="/digital-signatures"
         element={
           <ProtectedRoute requiredRoles={['admin', 'manufacturer', 'distributor', 'hospital']}>
@@ -277,15 +325,67 @@ const AppRoutes = () => {
       />
 
       <Route
-        path="/map-demo"
+        path="/audit-logs"
         element={
-          <ProtectedRoute requiredRoles={['admin', 'manufacturer', 'distributor', 'hospital', 'patient']}>
+          <ProtectedRoute requiredRoles={['admin']}>
             <Layout>
-              <MapDemo />
+              <AuditLogs />
             </Layout>
           </ProtectedRoute>
         }
       />
+
+        <Route
+          path="/backups"
+          element={
+            <ProtectedRoute requiredRoles={['admin']}>
+              <Layout>
+                <Backups />
+              </Layout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/invoices"
+          element={
+            <ProtectedRoute requiredRoles={['admin', 'manufacturer', 'distributor', 'hospital']}>
+              <Layout>
+                <Invoices />
+              </Layout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/import-export"
+          element={
+            <ProtectedRoute requiredRoles={['admin']}>
+              <Layout>
+                <ImportExport />
+              </Layout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/suppliers"
+          element={
+            <ProtectedRoute requiredRoles={['admin', 'manufacturer', 'distributor']}>
+              <Layout>
+                <Suppliers />
+              </Layout>
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/drug-timeline"
+          element={
+            <ProtectedRoute requiredRoles={['admin', 'manufacturer', 'distributor', 'hospital', 'patient']}>
+              <Layout>
+                <DrugTimelineDemo />
+              </Layout>
+            </ProtectedRoute>
+          }
+        />
 
       <Route
         path="/settings"

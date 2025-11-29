@@ -527,7 +527,8 @@ reviewSchema.statics.getReviewStats = function(targetType, targetId) {
                         $size: {
                           $filter: {
                             input: '$ratingDistribution',
-                            cond: { $eq: ['$$item', '$$this'] }
+                            as: 'rating',
+                            cond: { $eq: ['$$rating', '$$this'] }
                           }
                         }
                       }

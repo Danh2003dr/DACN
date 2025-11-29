@@ -1,0 +1,181 @@
+const express = require('express');
+const mongoose = require('mongoose');
+const cors = require('cors');
+const helmet = require('helmet');
+const compression = require('compression');
+require('dotenv').config();
+
+// Import logging
+const logger = require('./utils/logger');
+
+// Initialize Passport
+require('./config/passport');
+
+// Import routes
+const authRoutes = require('./routes/auth');
+const profileRoutes = require('./routes/profileRoutes');
+const userRoutes = require('./routes/users');
+const settingsRoutes = require('./routes/settings');
+const blockchainRoutes = require('./routes/blockchain');
+const trustScoreRoutes = require('./routes/trustScores');
+const metricsRoutes = require('./routes/metrics');
+
+// Import blockchain service
+const blockchainService = require('./services/blockchainService');
+
+const app = express();
+
+// Security middleware
+app.use(helmet());
+app.use(compression());
+
+// CORS configuration - cho phép tất cả trong dev
+app.use(cors({
+  origin: true,
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+}));
+
+// Body parser middleware
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Serve static files
+app.use('/uploads', express.static('uploads'));
+
+// Database connection
+const connectDB = async () => {
+  try {
+    const mongoUri = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/drug-traceability';
+    const conn = await mongoose.connect(mongoUri, {
+      useNewUrlParser: true,
+      useUnifiedTopology: true,
+    });
+    logger.info('MongoDB Connected', {
+      host: conn.connection.host,
+      database: conn.connection.name
+    });
+    console.log(`✅ [DEV] MongoDB connected: ${conn.connection.host}`);
+  } catch (error) {
+    logger.error('Database connection error', {
+      error: error.message,
+      stack: error.stack
+    });
+    console.error('❌ [DEV] Database connection error:', error);
+    process.exit(1);
+  }
+};
+
+// Connect to database
+connectDB();
+
+// Initialize blockchain service
+const initializeBlockchain = async () => {
+  try {
+    const blockchainInitialized = await blockchainService.initialize();
+    if (blockchainInitialized) {
+      logger.info('Blockchain service initialized successfully');
+    } else {
+      logger.info('Blockchain service initialized in mock mode');
+    }
+  } catch (error) {
+    logger.error('Blockchain initialization error', {
+      error: error.message,
+      stack: error.stack
+    });
+    logger.info('Continuing with mock blockchain mode');
+  }
+};
+
+initializeBlockchain();
+
+// Routes - Include TẤT CẢ routes
+app.use('/api/auth', authRoutes);
+app.use('/api/auth', profileRoutes);
+app.use('/api/users', userRoutes);
+app.use('/api/drugs', require('./routes/drugs'));
+app.use('/api/supply-chain', require('./routes/supplyChain'));
+app.use('/api/tasks', require('./routes/tasks'));
+app.use('/api/notifications', require('./routes/notifications'));
+app.use('/api/reviews', require('./routes/reviews'));
+app.use('/api/digital-signatures', require('./routes/digitalSignatures'));
+app.use('/api/reports', require('./routes/reports'));
+app.use('/api/settings', settingsRoutes);
+app.use('/api/blockchain', blockchainRoutes);
+app.use('/api/trust-scores', trustScoreRoutes);
+app.use('/api/metrics', metricsRoutes);
+app.use('/api/audit-logs', require('./routes/auditLogs'));
+app.use('/api/inventory', require('./routes/inventory'));
+app.use('/api/orders', require('./routes/orders'));
+app.use('/api/backups', require('./routes/backups'));
+app.use('/api/invoices', require('./routes/invoices'));
+app.use('/api/payments', require('./routes/payments'));
+app.use('/api/suppliers', require('./routes/suppliers'));
+app.use('/api/import-export', require('./routes/importExport'));
+
+// Health check endpoint
+app.get('/api/health', (req, res) => {
+  res.status(200).json({
+    success: true,
+    message: 'Dev server is running',
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV || 'development'
+  });
+});
+
+// API documentation endpoint
+app.get('/api', (req, res) => {
+  res.status(200).json({
+    success: true,
+    message: 'Drug Traceability Blockchain API',
+    version: '1.0.0',
+    endpoints: {
+      auth: '/api/auth',
+      users: '/api/users',
+      drugs: '/api/drugs',
+      orders: '/api/orders',
+      inventory: '/api/inventory',
+      reports: '/api/reports',
+      blockchain: '/api/blockchain',
+      health: '/api/health'
+    }
+  });
+});
+
+// Error handling middleware
+app.use((err, req, res, next) => {
+  logger.error('Unhandled error', {
+    error: err.message,
+    stack: err.stack,
+    path: req.path,
+    method: req.method
+  });
+
+  res.status(err.status || 500).json({
+    success: false,
+    message: err.message || 'Internal server error',
+    ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
+  });
+});
+
+// 404 handler
+app.use((req, res) => {
+  res.status(404).json({
+    success: false,
+    message: 'Route not found'
+  });
+});
+
+const PORT = process.env.PORT || 5000;
+const HOST = process.env.HOST || '0.0.0.0';
+
+app.listen(PORT, HOST, () => {
+  console.log('===========================================');
+  console.log('🚀 DEV Express server started');
+  console.log(`Port: ${PORT}`);
+  console.log(`Health: http://localhost:${PORT}/api/health`);
+  console.log('===========================================');
+});
+
+
