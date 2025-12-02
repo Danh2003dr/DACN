@@ -82,6 +82,94 @@ class DrugRepositoryImpl implements DrugRepository {
               manufacturerObj.toString();
         }
 
+        // Convert manufacturerId (populated) to string if needed
+        if (drugData['manufacturerId'] is Map) {
+          final manufacturerIdObj =
+              drugData['manufacturerId'] as Map<String, dynamic>;
+          drugData['manufacturerId'] = manufacturerIdObj['_id']?.toString() ??
+              manufacturerIdObj['id']?.toString() ??
+              manufacturerIdObj.toString();
+        }
+
+        // Convert description from object to string if needed
+        if (drugData['description'] is Map) {
+          drugData['description'] = drugData['description'].toString();
+        }
+
+        // Convert qrCode from object to string if needed
+        if (drugData['qrCode'] is Map) {
+          final qrCodeObj = drugData['qrCode'] as Map<String, dynamic>;
+          drugData['qrCode'] = qrCodeObj['data']?.toString() ??
+              qrCodeObj['code']?.toString() ??
+              qrCodeObj.toString();
+        }
+
+        // Convert image from object to string if needed
+        if (drugData['image'] is Map) {
+          final imageObj = drugData['image'] as Map<String, dynamic>;
+          drugData['image'] = imageObj['url']?.toString() ??
+              imageObj['path']?.toString() ??
+              imageObj.toString();
+        }
+
+        // Convert createdBy from object to string if needed
+        if (drugData['createdBy'] is Map) {
+          final createdByObj = drugData['createdBy'] as Map<String, dynamic>;
+          drugData['createdBy'] = createdByObj['_id']?.toString() ??
+              createdByObj['id']?.toString() ??
+              createdByObj.toString();
+        }
+
+        // Convert batchNumber from object to string if needed
+        if (drugData['batchNumber'] is Map) {
+          drugData['batchNumber'] = drugData['batchNumber'].toString();
+        }
+
+        // Convert drugId from object to string if needed
+        if (drugData['drugId'] is Map) {
+          drugData['drugId'] = drugData['drugId'].toString();
+        }
+
+        // Convert dates from various formats to ISO string if needed
+        if (drugData['manufactureDate'] != null &&
+            drugData['manufactureDate'] is! String) {
+          if (drugData['manufactureDate'] is DateTime) {
+            drugData['manufactureDate'] =
+                (drugData['manufactureDate'] as DateTime).toIso8601String();
+          } else {
+            drugData['manufactureDate'] =
+                drugData['manufactureDate'].toString();
+          }
+        }
+
+        if (drugData['expiryDate'] != null &&
+            drugData['expiryDate'] is! String) {
+          if (drugData['expiryDate'] is DateTime) {
+            drugData['expiryDate'] =
+                (drugData['expiryDate'] as DateTime).toIso8601String();
+          } else {
+            drugData['expiryDate'] = drugData['expiryDate'].toString();
+          }
+        }
+
+        if (drugData['createdAt'] != null && drugData['createdAt'] is! String) {
+          if (drugData['createdAt'] is DateTime) {
+            drugData['createdAt'] =
+                (drugData['createdAt'] as DateTime).toIso8601String();
+          } else {
+            drugData['createdAt'] = drugData['createdAt'].toString();
+          }
+        }
+
+        if (drugData['updatedAt'] != null && drugData['updatedAt'] is! String) {
+          if (drugData['updatedAt'] is DateTime) {
+            drugData['updatedAt'] =
+                (drugData['updatedAt'] as DateTime).toIso8601String();
+          } else {
+            drugData['updatedAt'] = drugData['updatedAt'].toString();
+          }
+        }
+
         // Ensure id is present
         drugData['id'] = drugData['id'] ??
             drugData['_id']?.toString() ??
@@ -121,6 +209,96 @@ class DrugRepositoryImpl implements DrugRepository {
                 manufacturerObj.toString();
           }
 
+          // Convert manufacturerId (populated) to string if needed
+          if (drugData['manufacturerId'] is Map) {
+            final manufacturerIdObj =
+                drugData['manufacturerId'] as Map<String, dynamic>;
+            drugData['manufacturerId'] = manufacturerIdObj['_id']?.toString() ??
+                manufacturerIdObj['id']?.toString() ??
+                manufacturerIdObj.toString();
+          }
+
+          // Convert description from object to string if needed
+          if (drugData['description'] is Map) {
+            drugData['description'] = drugData['description'].toString();
+          }
+
+          // Convert qrCode from object to string if needed
+          if (drugData['qrCode'] is Map) {
+            final qrCodeObj = drugData['qrCode'] as Map<String, dynamic>;
+            drugData['qrCode'] = qrCodeObj['data']?.toString() ??
+                qrCodeObj['code']?.toString() ??
+                qrCodeObj.toString();
+          }
+
+          // Convert image from object to string if needed
+          if (drugData['image'] is Map) {
+            final imageObj = drugData['image'] as Map<String, dynamic>;
+            drugData['image'] = imageObj['url']?.toString() ??
+                imageObj['path']?.toString() ??
+                imageObj.toString();
+          }
+
+          // Convert createdBy from object to string if needed
+          if (drugData['createdBy'] is Map) {
+            final createdByObj = drugData['createdBy'] as Map<String, dynamic>;
+            drugData['createdBy'] = createdByObj['_id']?.toString() ??
+                createdByObj['id']?.toString() ??
+                createdByObj.toString();
+          }
+
+          // Convert batchNumber from object to string if needed
+          if (drugData['batchNumber'] is Map) {
+            drugData['batchNumber'] = drugData['batchNumber'].toString();
+          }
+
+          // Convert drugId from object to string if needed
+          if (drugData['drugId'] is Map) {
+            drugData['drugId'] = drugData['drugId'].toString();
+          }
+
+          // Convert dates from various formats to ISO string if needed
+          if (drugData['manufactureDate'] != null &&
+              drugData['manufactureDate'] is! String) {
+            if (drugData['manufactureDate'] is DateTime) {
+              drugData['manufactureDate'] =
+                  (drugData['manufactureDate'] as DateTime).toIso8601String();
+            } else {
+              drugData['manufactureDate'] =
+                  drugData['manufactureDate'].toString();
+            }
+          }
+
+          if (drugData['expiryDate'] != null &&
+              drugData['expiryDate'] is! String) {
+            if (drugData['expiryDate'] is DateTime) {
+              drugData['expiryDate'] =
+                  (drugData['expiryDate'] as DateTime).toIso8601String();
+            } else {
+              drugData['expiryDate'] = drugData['expiryDate'].toString();
+            }
+          }
+
+          if (drugData['createdAt'] != null &&
+              drugData['createdAt'] is! String) {
+            if (drugData['createdAt'] is DateTime) {
+              drugData['createdAt'] =
+                  (drugData['createdAt'] as DateTime).toIso8601String();
+            } else {
+              drugData['createdAt'] = drugData['createdAt'].toString();
+            }
+          }
+
+          if (drugData['updatedAt'] != null &&
+              drugData['updatedAt'] is! String) {
+            if (drugData['updatedAt'] is DateTime) {
+              drugData['updatedAt'] =
+                  (drugData['updatedAt'] as DateTime).toIso8601String();
+            } else {
+              drugData['updatedAt'] = drugData['updatedAt'].toString();
+            }
+          }
+
           // Ensure id is present
           drugData['id'] = drugData['id'] ??
               drugData['_id']?.toString() ??
@@ -145,8 +323,142 @@ class DrugRepositoryImpl implements DrugRepository {
       }
     } on DioException catch (e) {
       if (e.response != null) {
+        final statusCode = e.response?.statusCode;
         final message =
             e.response?.data['message'] ?? 'Không thể xác minh thuốc';
+
+        // Handle 404 specifically - might still have data
+        if (statusCode == 404) {
+          final data = e.response?.data['data'];
+          if (data != null && data['drug'] != null) {
+            // Even 404 might have drug data
+            final rawDrugData = data['drug'] as Map<String, dynamic>;
+            final drugData = Map<String, dynamic>.from(rawDrugData);
+
+            // Convert manufacturer from object to string if needed
+            if (drugData['manufacturer'] is Map) {
+              final manufacturerObj =
+                  drugData['manufacturer'] as Map<String, dynamic>;
+              drugData['manufacturer'] = manufacturerObj['fullName'] ??
+                  manufacturerObj['name'] ??
+                  manufacturerObj['organizationInfo']?['name'] ??
+                  manufacturerObj.toString();
+            }
+
+            // Convert manufacturerId (populated) to string if needed
+            if (drugData['manufacturerId'] is Map) {
+              final manufacturerIdObj =
+                  drugData['manufacturerId'] as Map<String, dynamic>;
+              drugData['manufacturerId'] =
+                  manufacturerIdObj['_id']?.toString() ??
+                      manufacturerIdObj['id']?.toString() ??
+                      manufacturerIdObj.toString();
+            }
+
+            // Convert description from object to string if needed
+            if (drugData['description'] is Map) {
+              drugData['description'] = drugData['description'].toString();
+            }
+
+            // Convert qrCode from object to string if needed
+            if (drugData['qrCode'] is Map) {
+              final qrCodeObj = drugData['qrCode'] as Map<String, dynamic>;
+              drugData['qrCode'] = qrCodeObj['data']?.toString() ??
+                  qrCodeObj['code']?.toString() ??
+                  qrCodeObj.toString();
+            }
+
+            // Convert image from object to string if needed
+            if (drugData['image'] is Map) {
+              final imageObj = drugData['image'] as Map<String, dynamic>;
+              drugData['image'] = imageObj['url']?.toString() ??
+                  imageObj['path']?.toString() ??
+                  imageObj.toString();
+            }
+
+            // Convert createdBy from object to string if needed
+            if (drugData['createdBy'] is Map) {
+              final createdByObj =
+                  drugData['createdBy'] as Map<String, dynamic>;
+              drugData['createdBy'] = createdByObj['_id']?.toString() ??
+                  createdByObj['id']?.toString() ??
+                  createdByObj.toString();
+            }
+
+            // Convert batchNumber from object to string if needed
+            if (drugData['batchNumber'] is Map) {
+              drugData['batchNumber'] = drugData['batchNumber'].toString();
+            }
+
+            // Convert drugId from object to string if needed
+            if (drugData['drugId'] is Map) {
+              drugData['drugId'] = drugData['drugId'].toString();
+            }
+
+            // Convert dates from various formats to ISO string if needed
+            if (drugData['manufactureDate'] != null &&
+                drugData['manufactureDate'] is! String) {
+              if (drugData['manufactureDate'] is DateTime) {
+                drugData['manufactureDate'] =
+                    (drugData['manufactureDate'] as DateTime).toIso8601String();
+              } else {
+                drugData['manufactureDate'] =
+                    drugData['manufactureDate'].toString();
+              }
+            }
+
+            if (drugData['expiryDate'] != null &&
+                drugData['expiryDate'] is! String) {
+              if (drugData['expiryDate'] is DateTime) {
+                drugData['expiryDate'] =
+                    (drugData['expiryDate'] as DateTime).toIso8601String();
+              } else {
+                drugData['expiryDate'] = drugData['expiryDate'].toString();
+              }
+            }
+
+            if (drugData['createdAt'] != null &&
+                drugData['createdAt'] is! String) {
+              if (drugData['createdAt'] is DateTime) {
+                drugData['createdAt'] =
+                    (drugData['createdAt'] as DateTime).toIso8601String();
+              } else {
+                drugData['createdAt'] = drugData['createdAt'].toString();
+              }
+            }
+
+            if (drugData['updatedAt'] != null &&
+                drugData['updatedAt'] is! String) {
+              if (drugData['updatedAt'] is DateTime) {
+                drugData['updatedAt'] =
+                    (drugData['updatedAt'] as DateTime).toIso8601String();
+              } else {
+                drugData['updatedAt'] = drugData['updatedAt'].toString();
+              }
+            }
+
+            // Ensure id is present
+            drugData['id'] = drugData['id'] ??
+                drugData['_id']?.toString() ??
+                drugData['drugId']?.toString() ??
+                '';
+
+            final drug = DrugModel.fromJson(drugData);
+
+            return Right({
+              'drug': drug,
+              'blockchain': data['blockchain'],
+              'blockchainInfo': data['blockchainInfo'],
+              'risk': data['risk'],
+              'message': message,
+              'warning': data['warning'] ?? e.response?.data['warning'],
+              'alertType': e.response?.data['alertType'],
+              'isValid': false,
+            });
+          }
+          return Left(NotFoundFailure(message));
+        }
+
         return Left(ServerFailure(message));
       } else {
         return const Left(NetworkFailure('Không thể kết nối đến server'));

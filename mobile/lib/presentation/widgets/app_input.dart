@@ -74,6 +74,30 @@ class AppInput extends StatelessWidget {
           style: theme.textTheme.bodyLarge,
           // Prevent text from being lost on rebuild
           autofocus: false,
+          // Enable copy/paste functionality
+          // Mobile: Long press to show context menu with Copy/Paste options
+          // Desktop/Web: Right click menu or Ctrl+C/Ctrl+V keyboard shortcuts (built-in)
+          enableInteractiveSelection: true,
+          enableSuggestions: true,
+          autocorrect: keyboardType != TextInputType.emailAddress &&
+              keyboardType != TextInputType.visiblePassword,
+          // Prevent text from being cleared on rebuild
+          textInputAction: keyboardType == TextInputType.multiline
+              ? TextInputAction.newline
+              : TextInputAction.done,
+          // Critical: Prevent text loss on rebuild
+          // Don't rebuild counter widget unnecessarily
+          buildCounter: (context,
+                  {required currentLength, required isFocused, maxLength}) =>
+              null,
+          // Enable context menu for copy/paste
+          // Mobile: Long press shows menu with Copy/Paste/Select All
+          // Desktop/Web: Right click shows menu, Ctrl+C/Ctrl+V works automatically
+          contextMenuBuilder: (context, editableTextState) {
+            return AdaptiveTextSelectionToolbar.editableText(
+              editableTextState: editableTextState,
+            );
+          },
           decoration: InputDecoration(
             hintText: hint,
             hintStyle: theme.textTheme.bodyMedium?.copyWith(

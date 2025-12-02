@@ -67,6 +67,44 @@ exports.signDocument = async (req, res) => {
       options || {}
     );
     
+    // Lưu chữ ký số lên blockchain
+    if (result.success && result.digitalSignature) {
+      try {
+        const blockchainService = require('../services/blockchainService');
+        
+        // Khởi tạo blockchain service nếu chưa
+        if (!blockchainService.isInitialized) {
+          await blockchainService.initialize();
+        }
+        
+        // Ghi chữ ký số lên blockchain
+        const blockchainResult = await blockchainService.recordDigitalSignatureOnBlockchain({
+          signatureId: result.digitalSignature._id,
+          targetType,
+          targetId,
+          dataHash: result.dataHash,
+          signature: result.digitalSignature.signature,
+          certificateSerialNumber: result.digitalSignature.certificate.serialNumber,
+          signedBy: userId,
+          timestampedAt: result.digitalSignature.timestamp?.timestampedAt || new Date()
+        });
+        
+        // Cập nhật thông tin blockchain vào chữ ký số
+        if (blockchainResult.success) {
+          result.digitalSignature.blockchain = {
+            transactionHash: blockchainResult.transactionHash,
+            blockNumber: blockchainResult.blockNumber,
+            timestamp: blockchainResult.timestamp
+          };
+          await result.digitalSignature.save();
+        }
+      } catch (blockchainError) {
+        console.error('Error recording digital signature on blockchain:', blockchainError);
+        // Không throw error, vì chữ ký đã được lưu trong database
+        // Chỉ log để debug
+      }
+    }
+    
     // Cập nhật chữ ký số vào đối tượng được ký (nếu là drug)
     if (targetType === 'drug' && result.digitalSignature) {
       try {
@@ -75,6 +113,11 @@ exports.signDocument = async (req, res) => {
           drug.blockchain = drug.blockchain || {};
           drug.blockchain.digitalSignature = result.digitalSignature.signature;
           drug.blockchain.dataHash = result.dataHash;
+          // Cập nhật thông tin blockchain nếu có
+          if (result.digitalSignature.blockchain) {
+            drug.blockchain.signatureTransactionHash = result.digitalSignature.blockchain.transactionHash;
+            drug.blockchain.signatureBlockNumber = result.digitalSignature.blockchain.blockNumber;
+          }
           await drug.save();
         }
       } catch (updateError) {
@@ -85,7 +128,7 @@ exports.signDocument = async (req, res) => {
     
     res.status(201).json({
       success: true,
-      message: 'Ký số thành công',
+      message: 'Ký số thành công' + (result.digitalSignature?.blockchain ? ' và đã lưu lên blockchain' : ''),
       data: result
     });
   } catch (error) {

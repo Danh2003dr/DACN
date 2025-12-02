@@ -8,39 +8,99 @@ const BlockchainTransaction = require('../models/BlockchainTransaction');
  */
 const getTransactions = async (req, res) => {
   try {
-    const { page = 1, limit = 20, drugId, network, status } = req.query;
+    const { page = 1, limit = 20, drugId, network, status, search } = req.query;
+
+    console.log('\n========== Blockchain Explorer - API Call ==========');
+    console.log('Request params:', { page, limit, drugId, network, status, search });
+    console.log('Mongoose connection state:', require('mongoose').connection.readyState);
 
     // Initialize blockchain if needed
     if (!blockchainService.isInitialized) {
+      console.log('Initializing blockchain service...');
       await blockchainService.initialize();
     }
 
     // Get transactions from service
+    console.log('Calling blockchainService.getRecentTransactions...');
     const result = await blockchainService.getRecentTransactions({
       page: parseInt(page),
       limit: parseInt(limit),
       drugId: drugId || null,
       network: network || null,
-      status: status || null
+      status: status || null,
+      search: search || null
+    });
+
+    console.log('Service result:', {
+      success: result.success,
+      transactionsCount: result.transactions?.length || 0,
+      hasTransactions: !!result.transactions,
+      transactionsType: Array.isArray(result.transactions) ? 'array' : typeof result.transactions,
+      pagination: result.pagination,
+      error: result.error
     });
 
     if (result.success) {
+      // Ensure transactions is always an array (empty array is valid - means no transactions found)
+      const transactions = Array.isArray(result.transactions) ? result.transactions : [];
+      const pagination = result.pagination || { page: 1, limit: 20, total: 0, pages: 0 };
+      
+      console.log('✅ Sending SUCCESS response with', transactions.length, 'transactions');
+      console.log('Pagination:', pagination);
+      console.log('==================================================\n');
+      
       res.status(200).json({
         success: true,
         data: {
-          transactions: result.transactions,
-          pagination: result.pagination
+          transactions,
+          pagination
         }
       });
     } else {
-      res.status(500).json({
+      // Log detailed error information
+      console.error('❌ Service returned error or empty result');
+      console.error('Result object:', result);
+      console.error('Result type:', typeof result);
+      console.error('Result keys:', result ? Object.keys(result) : 'null');
+      console.error('Result.success:', result?.success);
+      console.error('Result.transactions:', result?.transactions);
+      console.error('Result.transactions type:', Array.isArray(result?.transactions) ? 'array' : typeof result?.transactions);
+      console.error('Result.transactions length:', result?.transactions?.length);
+      console.error('Result.error:', result?.error);
+      console.error('Result.pagination:', result?.pagination);
+      console.error('Full result JSON:', JSON.stringify(result, null, 2));
+      console.error('==================================================\n');
+      
+      // Return error response instead of empty success
+      res.status(200).json({
         success: false,
-        message: 'Không thể lấy danh sách transactions',
-        error: result.error
+        message: result?.error || result?.message || 'Không thể lấy danh sách transactions',
+        data: {
+          transactions: [],
+          pagination: {
+            page: parseInt(page) || 1,
+            limit: parseInt(limit) || 20,
+            total: 0,
+            pages: 0
+          }
+        },
+        error: result?.error || result?.message || 'Unknown error',
+        debug: {
+          resultType: typeof result,
+          resultKeys: result ? Object.keys(result) : [],
+          hasTransactions: !!result?.transactions,
+          transactionsType: Array.isArray(result?.transactions) ? 'array' : typeof result?.transactions,
+          transactionsLength: result?.transactions?.length || 0
+        }
       });
     }
   } catch (error) {
-    console.error('Get transactions error:', error);
+    console.error('\n========== Blockchain Explorer - ERROR ==========');
+    console.error('Error:', error.message);
+    console.error('Error name:', error.name);
+    console.error('Error stack:', error.stack);
+    console.error('==================================================\n');
+    
     res.status(500).json({
       success: false,
       message: 'Lỗi server khi lấy danh sách transactions',

@@ -3,8 +3,15 @@
 ## Tổng quan
 Hệ thống được phát triển để giải quyết vấn đề nghiêm trọng về thuốc giả và thuốc kém chất lượng tại Việt Nam thông qua công nghệ blockchain.
 
-## Tài liệu dành cho người dùng cuối
+## 📚 Tài Liệu
 
+### 🚀 Cài Đặt & Setup
+- ⚡ **[SETUP_QUICK.md](./SETUP_QUICK.md)** - Setup nhanh trong 5 phút
+- 📦 **[INSTALLATION_GUIDE.md](./INSTALLATION_GUIDE.md)** - Hướng dẫn cài đặt hoàn chỉnh (bao gồm Firebase)
+- 🔥 **[FIREBASE_COMPLETE_SETUP.md](./FIREBASE_COMPLETE_SETUP.md)** - Setup Firebase Authentication chi tiết
+- 📋 **[DOCUMENTATION_INDEX.md](./DOCUMENTATION_INDEX.md)** - Mục lục tất cả tài liệu
+
+### 📖 Tài Liệu Khác
 - 📘 **Hướng dẫn sử dụng chi tiết giao diện hệ thống**: xem file `HUONG_DAN_SU_DUNG.md`
 - ⚙️ **Hướng dẫn nhanh triển khai & deploy smart contract**: xem file `QUICK_START_BLOCKCHAIN.md`
 - 🧠 **Mô tả kiến trúc & nghiệp vụ hệ thống**: xem file `MO_TA_HE_THONG.md`
@@ -14,6 +21,7 @@ Hệ thống được phát triển để giải quyết vấn đề nghiêm tr�
 ### Core Features
 - ✅ **Quản lý tài khoản người dùng** với phân quyền rõ ràng (Admin, Manufacturer, Distributor, Hospital, Patient)
 - ✅ **Xác thực và bảo mật** với JWT và bcrypt
+- ✅ **Firebase Authentication** - Đăng nhập Google ⭐ NEW
 - ✅ **API RESTful** đầy đủ cho tất cả modules
 - ✅ **Quản lý lô thuốc** với blockchain integration
 - ✅ **Theo dõi chuỗi cung ứng** real-time
@@ -49,37 +57,43 @@ DACN/
 
 ## Cài đặt và chạy
 
-### 1. Cài đặt dependencies
+### ⚡ Quick Start (5 phút)
+
+Xem file **[SETUP_QUICK.md](./SETUP_QUICK.md)** để setup nhanh.
+
+### 📦 Cài Đặt Chi Tiết
+
+Xem file **[INSTALLATION_GUIDE.md](./INSTALLATION_GUIDE.md)** để có hướng dẫn cài đặt hoàn chỉnh, bao gồm:
+- Cài đặt dependencies
+- Cấu hình MongoDB
+- **Cấu hình Firebase Authentication (Google Login)**
+- Cấu hình environment variables
+- Test và troubleshooting
+
+### Tóm Tắt Nhanh
+
 ```bash
+# 1. Cài đặt
 npm install
-```
+cd frontend && npm install && cd ..
 
-### 2. Cấu hình environment
-```bash
+# 2. Cấu hình
 cp env.example .env
+# Chỉnh sửa .env với thông tin của bạn
+
+# 3. Setup Firebase (xem INSTALLATION_GUIDE.md)
+
+# 4. Start MongoDB
+# Windows: net start MongoDB
+# Mac/Linux: sudo systemctl start mongod
+
+# 5. Chạy
+npm run dev          # Terminal 1: Backend
+cd frontend && npm start  # Terminal 2: Frontend
 ```
 
-Chỉnh sửa file `.env` với thông tin của bạn:
-```env
-MONGODB_URI=mongodb://localhost:27017/drug-traceability
-JWT_SECRET=your_super_secret_jwt_key_here
-PORT=5000
-NODE_ENV=development
-```
-
-### 3. Khởi động MongoDB
-Đảm bảo MongoDB đang chạy trên localhost:27017
-
-### 4. Chạy server
-```bash
-# Development
-npm run dev
-
-# Production
-npm start
-```
-
-Server sẽ chạy tại: `http://localhost:5000`
+Server sẽ chạy tại: `http://localhost:5000`  
+Frontend sẽ chạy tại: `http://localhost:3000`
 
 ### 5. Hướng dẫn deploy nhanh Dev/Prod
 
@@ -103,7 +117,9 @@ Server sẽ chạy tại: `http://localhost:5000`
 ## API Endpoints
 
 ### Authentication
-- `POST /api/auth/login` - Đăng nhập
+- `POST /api/auth/login` - Đăng nhập (email/password)
+- `POST /api/auth/firebase` - Đăng nhập bằng Firebase (Google) ⭐ NEW
+- `GET /api/auth/google` - Đăng nhập bằng Google OAuth (Passport.js)
 - `POST /api/auth/register` - Đăng ký (Admin only)
 - `PUT /api/auth/change-password` - Đổi mật khẩu
 - `PUT /api/auth/first-change-password` - Đổi mật khẩu lần đầu
@@ -274,7 +290,7 @@ Trước mỗi lần release phiên bản mới, nên kiểm tra nhanh:
 - [ ] Performance Optimization
 - [ ] Comprehensive Testing
 - [ ] Security Audit
-- [ ] Documentation hoàn chỉnh
+- [x] Documentation hoàn chỉnh ✅
 
 ### 📝 Xem chi tiết
 Xem **[ROADMAP.md](./ROADMAP.md)** để biết chi tiết về hướng phát triển và kế hoạch dài hạn của dự án.

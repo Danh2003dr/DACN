@@ -4,24 +4,36 @@ const cors = require('cors');
 const helmet = require('helmet');
 const compression = require('compression');
 require('dotenv').config();
+console.log('🚀 [DEV] Khởi động dev-server...');
 
 // Import logging
 const logger = require('./utils/logger');
 
 // Initialize Passport
 require('./config/passport');
+console.log('✅ [DEV] Passport config đã được load');
 
 // Import routes
+console.log('⏳ [DEV] Đang load routes...');
 const authRoutes = require('./routes/auth');
+console.log('✅ [DEV] routes/auth loaded');
 const profileRoutes = require('./routes/profileRoutes');
+console.log('✅ [DEV] routes/profileRoutes loaded');
 const userRoutes = require('./routes/users');
+console.log('✅ [DEV] routes/users loaded');
 const settingsRoutes = require('./routes/settings');
+console.log('✅ [DEV] routes/settings loaded');
 const blockchainRoutes = require('./routes/blockchain');
+console.log('✅ [DEV] routes/blockchain loaded');
 const trustScoreRoutes = require('./routes/trustScores');
+console.log('✅ [DEV] routes/trustScores loaded');
 const metricsRoutes = require('./routes/metrics');
+console.log('✅ [DEV] routes/metrics loaded');
 
 // Import blockchain service
+console.log('⏳ [DEV] Đang load blockchainService...');
 const blockchainService = require('./services/blockchainService');
+console.log('✅ [DEV] blockchainService loaded');
 
 const app = express();
 
@@ -40,6 +52,10 @@ app.use(cors({
 // Body parser middleware
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// BigInt serializer middleware - Tự động xử lý BigInt trong tất cả JSON responses
+const { bigIntSerializerMiddleware } = require('./utils/jsonHelper');
+app.use(bigIntSerializerMiddleware);
 
 // Serve static files
 app.use('/uploads', express.static('uploads'));
@@ -68,6 +84,7 @@ const connectDB = async () => {
 };
 
 // Connect to database
+console.log('⏳ [DEV] Đang kết nối MongoDB...');
 connectDB();
 
 // Initialize blockchain service

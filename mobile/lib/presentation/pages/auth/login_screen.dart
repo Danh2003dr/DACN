@@ -272,6 +272,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                               : Icons.visibility_off,
                         ),
                         onPressed: () {
+                          // Toggle visibility - text is preserved by controller
                           setState(() {
                             _obscurePassword = !_obscurePassword;
                           });

@@ -561,6 +561,160 @@ const uploadAvatar = async (req, res) => {
   }
 };
 
+// @desc    Đăng nhập bằng Firebase (Google)
+// @route   POST /api/auth/firebase
+// @access  Public
+const loginWithFirebase = async (req, res) => {
+  try {
+    const { idToken } = req.body;
+    
+    // Validation
+    if (!idToken) {
+      return res.status(400).json({
+        success: false,
+        message: 'Thiếu ID token từ Firebase.'
+      });
+    }
+    
+    // Verify Firebase ID token
+    const admin = require('../config/firebaseAdmin');
+    
+    if (!admin) {
+      return res.status(503).json({
+        success: false,
+        message: 'Firebase Admin SDK chưa được cấu hình. Vui lòng thêm FIREBASE_SERVICE_ACCOUNT_KEY hoặc FIREBASE_PROJECT_ID vào file .env'
+      });
+    }
+    
+    let decodedToken;
+    try {
+      decodedToken = await admin.auth().verifyIdToken(idToken);
+    } catch (error) {
+      console.error('Firebase token verification error:', error);
+      return res.status(401).json({
+        success: false,
+        message: 'Token không hợp lệ hoặc đã hết hạn.'
+      });
+    }
+    
+    const { uid, email, name, picture } = decodedToken;
+    
+    // Tìm user đã tồn tại với firebaseUid
+    let user = await User.findOne({ firebaseUid: uid });
+    
+    if (user) {
+      // User đã tồn tại, cập nhật thông tin nếu cần
+      user.lastLogin = new Date();
+      
+      // Cập nhật avatar nếu có
+      if (picture && !user.avatar) {
+        user.avatar = picture;
+      }
+      
+      // Cập nhật fullName nếu chưa có
+      if (!user.fullName && name) {
+        user.fullName = name;
+      }
+      
+      await user.save();
+    } else {
+      // Tìm user với email từ Firebase
+      if (email) {
+        user = await User.findOne({ email });
+        
+        if (user) {
+          // User đã tồn tại với email này, liên kết với Firebase
+          user.firebaseUid = uid;
+          user.authProvider = 'firebase';
+          user.isEmailVerified = true;
+          
+          if (picture && !user.avatar) {
+            user.avatar = picture;
+          }
+          
+          if (!user.fullName && name) {
+            user.fullName = name;
+          }
+          
+          user.lastLogin = new Date();
+          await user.save();
+        }
+      }
+      
+      // Nếu vẫn chưa có user, tạo user mới
+      if (!user) {
+        // Tạo username từ email (trước @) hoặc từ name
+        const emailPrefix = email ? email.split('@')[0] : null;
+        const baseUsername = emailPrefix || (name ? name.toLowerCase().replace(/\s+/g, '') : `user${uid.substring(0, 8)}`);
+        let username = baseUsername;
+        let counter = 1;
+        
+        // Đảm bảo username là duy nhất
+        while (await User.findOne({ username })) {
+          username = `${baseUsername}${counter}`;
+          counter++;
+        }
+        
+        // Tạo user mới với role mặc định là patient
+        user = await User.create({
+          username: username,
+          email: email || `${uid}@firebase.local`,
+          firebaseUid: uid,
+          authProvider: 'firebase',
+          fullName: name || 'Người dùng Firebase',
+          avatar: picture || null,
+          role: 'patient', // Mặc định là patient, có thể cập nhật sau
+          isEmailVerified: !!email,
+          mustChangePassword: false, // Không cần đổi mật khẩu cho OAuth
+          lastLogin: new Date()
+        });
+      }
+    }
+    
+    // Tạo JWT token
+    const token = user.generateAuthToken();
+    
+    // Ghi audit log
+    await auditService.logAuth.login(user, req, 'success');
+    
+    // Thông tin user để trả về (không bao gồm password)
+    const userInfo = {
+      id: user._id,
+      username: user.username,
+      email: user.email,
+      fullName: user.fullName,
+      role: user.role,
+      organizationId: user.organizationId,
+      patientId: user.patientId,
+      organizationInfo: user.organizationInfo,
+      mustChangePassword: user.mustChangePassword,
+      lastLogin: user.lastLogin,
+      authProvider: user.authProvider,
+      avatar: user.avatar
+    };
+    
+    res.status(200).json({
+      success: true,
+      message: 'Đăng nhập bằng Firebase thành công.',
+      data: {
+        user: userInfo,
+        token: token
+      }
+    });
+    
+    // Log success
+    console.log(`✅ Firebase login success: ${user.email} (${user.role})`);
+    
+  } catch (error) {
+    console.error('Firebase login error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Lỗi server khi xử lý đăng nhập Firebase.',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
 module.exports = {
   login,
   register,
@@ -570,5 +724,6 @@ module.exports = {
   updateProfile,
   uploadAvatar,
   logout,
-  createDefaultAccounts
+  createDefaultAccounts,
+  loginWithFirebase
 };

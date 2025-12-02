@@ -4,13 +4,15 @@ import { useForm } from 'react-hook-form';
 import { Eye, EyeOff, Shield, Users, Building2, User, Heart, Pill, Lock, Mail, ArrowRight, Sparkles } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { authAPI } from '../utils/api';
+import { auth, googleProvider } from '../config/firebase';
+import { signInWithPopup, getRedirectResult } from 'firebase/auth';
 
 const Login = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [selectedRole, setSelectedRole] = useState(null);
   
-  const { login, isAuthenticated, user } = useAuth();
+  const { login, isAuthenticated, user, setToken } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   
@@ -28,6 +30,56 @@ const Login = () => {
       navigate(from, { replace: true });
     }
   }, [isAuthenticated, navigate, location]);
+
+  // Handle Firebase redirect result (nếu dùng signInWithRedirect)
+  useEffect(() => {
+    const handleRedirectResult = async () => {
+      try {
+        const result = await getRedirectResult(auth);
+        
+        if (result) {
+          console.log('Firebase redirect result detected');
+          setIsLoading(true);
+          
+          try {
+            const user = result.user;
+            const idToken = await user.getIdToken();
+            
+            const response = await authAPI.loginWithFirebase(idToken);
+            
+            if (response && response.success) {
+              setToken(response.data.token);
+              const redirectPath = location.state?.from?.pathname || '/dashboard';
+              navigate(redirectPath, { replace: true });
+            } else {
+              setError('root', {
+                type: 'manual',
+                message: response?.message || 'Đăng nhập với Google thất bại'
+              });
+            }
+          } catch (error) {
+            console.error('Error processing redirect result:', error);
+            setError('root', {
+              type: 'manual',
+              message: 'Lỗi khi xử lý kết quả đăng nhập. Vui lòng thử lại.'
+            });
+          } finally {
+            setIsLoading(false);
+          }
+        }
+      } catch (error) {
+        // Không có redirect result hoặc đã xử lý, bỏ qua
+        if (error.code !== 'auth/operation-not-supported-in-this-environment') {
+          console.log('No redirect result or error:', error.message);
+        }
+      }
+    };
+
+    // Chỉ check redirect result một lần khi component mount
+    if (!isAuthenticated) {
+      handleRedirectResult();
+    }
+  }, []); // Empty dependency array - chỉ chạy một lần
 
   const onSubmit = async (data) => {
     setIsLoading(true);
@@ -48,6 +100,110 @@ const Login = () => {
       setError('root', {
         type: 'manual',
         message: 'Có lỗi xảy ra. Vui lòng thử lại.'
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    setIsLoading(true);
+    setError('root', null); // Clear previous errors
+    
+    try {
+      console.log('Starting Google login...');
+      
+      // Sign in with Google using Firebase
+      const result = await signInWithPopup(auth, googleProvider);
+      
+      const user = result.user;
+      console.log('Firebase auth success, user:', user.email);
+      
+      // Get ID token from Firebase
+      const idToken = await user.getIdToken();
+      console.log('Got ID token, length:', idToken.length);
+      
+      // Send ID token to backend to verify and get JWT token
+      console.log('Sending token to backend...');
+      const response = await authAPI.loginWithFirebase(idToken);
+      console.log('Backend response:', response);
+      
+      if (response && response.success) {
+        // Set token in AuthContext
+        setToken(response.data.token);
+        
+        // Redirect to dashboard
+        const redirectPath = location.state?.from?.pathname || '/dashboard';
+        console.log('Redirecting to:', redirectPath);
+        navigate(redirectPath, { replace: true });
+      } else {
+        const errorMsg = response?.message || 'Đăng nhập với Google thất bại';
+        console.error('Backend returned error:', errorMsg);
+        setError('root', {
+          type: 'manual',
+          message: errorMsg
+        });
+      }
+    } catch (error) {
+      console.error('Google login error:', error);
+      console.error('Error details:', {
+        code: error.code,
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status
+      });
+      
+      let errorMessage = 'Đăng nhập với Google thất bại';
+      
+      // Firebase auth errors
+      if (error.code === 'auth/popup-closed-by-user') {
+        errorMessage = 'Bạn đã đóng cửa sổ đăng nhập. Vui lòng thử lại.';
+      } else if (error.code === 'auth/popup-blocked') {
+        errorMessage = 'Cửa sổ popup bị chặn. Vui lòng cho phép popup cho trang web này và thử lại.';
+      } else if (error.code === 'auth/network-request-failed') {
+        errorMessage = 'Lỗi kết nối mạng. Vui lòng kiểm tra kết nối internet và thử lại.';
+      } else if (error.code === 'auth/cancelled-popup-request') {
+        errorMessage = 'Yêu cầu đăng nhập đã bị hủy. Vui lòng thử lại.';
+      } else if (error.code === 'auth/unauthorized-domain') {
+        errorMessage = 'Domain chưa được authorize trong Firebase. Vui lòng thêm localhost vào authorized domains.';
+      } else if (error.code === 'auth/operation-not-allowed') {
+        errorMessage = 'Google Sign-in chưa được bật trong Firebase Console.';
+      } 
+      // API errors
+      else if (error.response) {
+        if (error.response.status === 404) {
+          errorMessage = 'Backend chưa sẵn sàng. Vui lòng đảm bảo backend đang chạy tại http://localhost:5000';
+        } else if (error.response.status === 503) {
+          errorMessage = error.response.data?.message || 'Firebase Admin SDK chưa được cấu hình. Vui lòng kiểm tra file .env';
+        } else if (error.response.status === 401) {
+          errorMessage = error.response.data?.message || 'Token không hợp lệ. Vui lòng thử lại.';
+        } else if (error.response.status >= 500) {
+          errorMessage = error.response.data?.message || 'Lỗi server. Vui lòng thử lại sau.';
+        } else {
+          errorMessage = error.response.data?.message || 'Lỗi khi đăng nhập. Vui lòng thử lại.';
+        }
+      } 
+      // Network errors
+      else if (error.code === 'ERR_NETWORK' || error.message?.includes('Network Error') || error.message?.includes('Failed to fetch')) {
+        errorMessage = 'Không thể kết nối đến backend. Vui lòng kiểm tra:\n1. Backend có đang chạy tại http://localhost:5000?\n2. Mở Browser Console (F12) để xem lỗi chi tiết';
+        console.error('Network error details:', {
+          code: error.code,
+          message: error.message,
+          config: error.config
+        });
+      }
+      // Timeout errors
+      else if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
+        errorMessage = 'Request timeout. Backend có thể đang quá tải. Vui lòng thử lại.';
+      } 
+      // Other errors
+      else if (error.message) {
+        errorMessage = error.message;
+      }
+      
+      setError('root', {
+        type: 'manual',
+        message: errorMessage
       });
     } finally {
       setIsLoading(false);
@@ -237,16 +393,26 @@ const Login = () => {
                 {/* Google Login */}
                 <button
                   type="button"
-                  onClick={() => authAPI.loginWithGoogle()}
-                  className="w-full py-4 px-6 bg-white/5 hover:bg-white/10 border border-slate-700 hover:border-slate-600 text-white font-medium rounded-xl transition-all duration-300 flex items-center justify-center gap-3"
+                  onClick={handleGoogleLogin}
+                  disabled={isLoading}
+                  className="w-full py-4 px-6 bg-white/5 hover:bg-white/10 border border-slate-700 hover:border-slate-600 text-white font-medium rounded-xl transition-all duration-300 flex items-center justify-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  <svg className="w-5 h-5" viewBox="0 0 24 24">
-                    <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
-                    <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-                    <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
-                    <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
-                  </svg>
-                  Đăng nhập với Google
+                  {isLoading ? (
+                    <>
+                      <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      Đang xử lý...
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-5 h-5" viewBox="0 0 24 24">
+                        <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                        <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                        <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
+                        <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
+                      </svg>
+                      Đăng nhập với Google
+                    </>
+                  )}
                 </button>
               </form>
 

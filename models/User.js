@@ -17,8 +17,8 @@ const userSchema = new mongoose.Schema({
   username: {
     type: String,
     required: function() {
-      // Username không bắt buộc nếu đăng nhập bằng Google
-      return !this.googleId;
+      // Username không bắt buộc nếu đăng nhập bằng Google hoặc Firebase
+      return !this.googleId && !this.firebaseUid;
     },
     unique: true,
     sparse: true,
@@ -39,7 +39,7 @@ const userSchema = new mongoose.Schema({
     type: String,
     required: function() {
       // Password không bắt buộc nếu đăng nhập bằng OAuth
-      return !this.googleId;
+      return !this.googleId && !this.firebaseUid;
     },
     minlength: [6, 'Mật khẩu phải có ít nhất 6 ký tự'],
     select: false // Không trả về password khi query
@@ -52,9 +52,16 @@ const userSchema = new mongoose.Schema({
     sparse: true
   },
   
+  // Firebase Authentication
+  firebaseUid: {
+    type: String,
+    unique: true,
+    sparse: true
+  },
+  
   authProvider: {
     type: String,
-    enum: ['local', 'google'],
+    enum: ['local', 'google', 'firebase'],
     default: 'local'
   },
   
@@ -117,7 +124,7 @@ const userSchema = new mongoose.Schema({
   organizationId: {
     type: String,
     required: function() {
-      if (this.googleId || this.authProvider === 'google') return false;
+      if (this.googleId || this.firebaseUid || this.authProvider === 'google' || this.authProvider === 'firebase') return false;
       return ['manufacturer', 'distributor', 'hospital'].includes(this.role);
     },
     unique: true,
@@ -127,7 +134,7 @@ const userSchema = new mongoose.Schema({
   patientId: {
     type: String,
     required: function() {
-      if (this.googleId || this.authProvider === 'google') return false;
+      if (this.googleId || this.firebaseUid || this.authProvider === 'google' || this.authProvider === 'firebase') return false;
       return this.role === 'patient';
     },
     unique: true,
@@ -197,6 +204,7 @@ userSchema.index({ role: 1 });
 userSchema.index({ organizationId: 1 });
 userSchema.index({ patientId: 1 });
 userSchema.index({ googleId: 1 });
+userSchema.index({ firebaseUid: 1 });
 userSchema.index({ 'location.coordinates': '2dsphere' }); // Index cho GeoJSON
 
 // Middleware trước khi save - mã hóa mật khẩu

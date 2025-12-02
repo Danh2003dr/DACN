@@ -90,10 +90,117 @@ class _DrugVerificationScreenState
 
               // Convert manufacturer object to string if needed
               if (cleanedDrugData['manufacturer'] is Map) {
-                final manufacturerObj = cleanedDrugData['manufacturer'] as Map;
+                final manufacturerObj =
+                    cleanedDrugData['manufacturer'] as Map<String, dynamic>;
                 cleanedDrugData['manufacturer'] = manufacturerObj['fullName'] ??
                     manufacturerObj['name'] ??
+                    manufacturerObj['organizationInfo']?['name'] ??
                     manufacturerObj.toString();
+              }
+
+              // Convert manufacturerId (populated) to string if needed
+              if (cleanedDrugData['manufacturerId'] is Map) {
+                final manufacturerIdObj =
+                    cleanedDrugData['manufacturerId'] as Map<String, dynamic>;
+                cleanedDrugData['manufacturerId'] =
+                    manufacturerIdObj['_id']?.toString() ??
+                        manufacturerIdObj['id']?.toString() ??
+                        manufacturerIdObj.toString();
+              }
+
+              // Convert description from object to string if needed
+              if (cleanedDrugData['description'] is Map) {
+                cleanedDrugData['description'] =
+                    cleanedDrugData['description'].toString();
+              }
+
+              // Convert qrCode from object to string if needed
+              if (cleanedDrugData['qrCode'] is Map) {
+                final qrCodeObj =
+                    cleanedDrugData['qrCode'] as Map<String, dynamic>;
+                cleanedDrugData['qrCode'] = qrCodeObj['data']?.toString() ??
+                    qrCodeObj['code']?.toString() ??
+                    qrCodeObj.toString();
+              }
+
+              // Convert image from object to string if needed
+              if (cleanedDrugData['image'] is Map) {
+                final imageObj =
+                    cleanedDrugData['image'] as Map<String, dynamic>;
+                cleanedDrugData['image'] = imageObj['url']?.toString() ??
+                    imageObj['path']?.toString() ??
+                    imageObj.toString();
+              }
+
+              // Convert createdBy from object to string if needed
+              if (cleanedDrugData['createdBy'] is Map) {
+                final createdByObj =
+                    cleanedDrugData['createdBy'] as Map<String, dynamic>;
+                cleanedDrugData['createdBy'] =
+                    createdByObj['_id']?.toString() ??
+                        createdByObj['id']?.toString() ??
+                        createdByObj.toString();
+              }
+
+              // Convert batchNumber from object to string if needed
+              if (cleanedDrugData['batchNumber'] is Map) {
+                cleanedDrugData['batchNumber'] =
+                    cleanedDrugData['batchNumber'].toString();
+              }
+
+              // Convert drugId from object to string if needed
+              if (cleanedDrugData['drugId'] is Map) {
+                cleanedDrugData['drugId'] =
+                    cleanedDrugData['drugId'].toString();
+              }
+
+              // Convert dates from various formats to ISO string if needed
+              if (cleanedDrugData['manufactureDate'] != null &&
+                  cleanedDrugData['manufactureDate'] is! String) {
+                if (cleanedDrugData['manufactureDate'] is DateTime) {
+                  cleanedDrugData['manufactureDate'] =
+                      (cleanedDrugData['manufactureDate'] as DateTime)
+                          .toIso8601String();
+                } else {
+                  cleanedDrugData['manufactureDate'] =
+                      cleanedDrugData['manufactureDate'].toString();
+                }
+              }
+
+              if (cleanedDrugData['expiryDate'] != null &&
+                  cleanedDrugData['expiryDate'] is! String) {
+                if (cleanedDrugData['expiryDate'] is DateTime) {
+                  cleanedDrugData['expiryDate'] =
+                      (cleanedDrugData['expiryDate'] as DateTime)
+                          .toIso8601String();
+                } else {
+                  cleanedDrugData['expiryDate'] =
+                      cleanedDrugData['expiryDate'].toString();
+                }
+              }
+
+              if (cleanedDrugData['createdAt'] != null &&
+                  cleanedDrugData['createdAt'] is! String) {
+                if (cleanedDrugData['createdAt'] is DateTime) {
+                  cleanedDrugData['createdAt'] =
+                      (cleanedDrugData['createdAt'] as DateTime)
+                          .toIso8601String();
+                } else {
+                  cleanedDrugData['createdAt'] =
+                      cleanedDrugData['createdAt'].toString();
+                }
+              }
+
+              if (cleanedDrugData['updatedAt'] != null &&
+                  cleanedDrugData['updatedAt'] is! String) {
+                if (cleanedDrugData['updatedAt'] is DateTime) {
+                  cleanedDrugData['updatedAt'] =
+                      (cleanedDrugData['updatedAt'] as DateTime)
+                          .toIso8601String();
+                } else {
+                  cleanedDrugData['updatedAt'] =
+                      cleanedDrugData['updatedAt'].toString();
+                }
               }
 
               // Ensure id is present
@@ -422,12 +529,213 @@ class _DrugVerificationScreenState
               style: Theme.of(context).textTheme.bodyMedium,
             ),
           ],
+          const SizedBox(height: 16),
+          // Nút Xem chi tiết
+          CustomButton(
+            text: 'Xem chi tiết',
+            onPressed: () => _showDetailDialog(drug),
+            variant: ButtonVariant.outline,
+            size: ButtonSize.medium,
+            icon: Icons.info_outline,
+            isFullWidth: true,
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildDetailRow(String label, String value, {bool isExpired = false}) {
+  void _showDetailDialog(DrugModel drug) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.9,
+        minChildSize: 0.5,
+        maxChildSize: 0.95,
+        builder: (context, scrollController) => Container(
+          decoration: BoxDecoration(
+            color: Theme.of(context).scaffoldBackgroundColor,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: Column(
+            children: [
+              // Handle bar
+              Container(
+                margin: const EdgeInsets.symmetric(vertical: 12),
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              // Header
+              Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Chi tiết thuốc',
+                        style:
+                            Theme.of(context).textTheme.headlineSmall?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                ),
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () => Navigator.of(context).pop(),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(),
+              // Content
+              Expanded(
+                child: SingleChildScrollView(
+                  controller: scrollController,
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Thông tin cơ bản
+                      _buildDetailSection(
+                        'Thông tin cơ bản',
+                        [
+                          _buildDetailRow('Tên thuốc', drug.name),
+                          _buildDetailRow('Mã thuốc', drug.drugId ?? 'N/A'),
+                          _buildDetailRow('Số lô', drug.batchNumber ?? 'N/A'),
+                          if (drug.manufacturer != null)
+                            _buildDetailRow('Nhà sản xuất', drug.manufacturer!),
+                          if (drug.manufactureDate != null)
+                            _buildDetailRow(
+                              'Ngày sản xuất',
+                              _formatDate(drug.manufactureDate!),
+                            ),
+                          if (drug.expiryDate != null)
+                            _buildDetailRow(
+                              'Hạn sử dụng',
+                              _formatDate(drug.expiryDate!),
+                              isExpired:
+                                  drug.expiryDate!.isBefore(DateTime.now()),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      // Blockchain Info
+                      if (_blockchainInfo != null)
+                        _buildDetailSection(
+                          'Thông tin Blockchain',
+                          [
+                            if (_blockchainInfo!['blockchainId'] != null)
+                              _buildDetailRow(
+                                'Blockchain ID',
+                                _blockchainInfo!['blockchainId'].toString(),
+                              ),
+                            if (_blockchainInfo!['transactionHash'] != null)
+                              _buildDetailRow(
+                                'Transaction Hash',
+                                _blockchainInfo!['transactionHash'].toString(),
+                                isMonospace: true,
+                              ),
+                            if (_blockchainInfo!['blockNumber'] != null)
+                              _buildDetailRow(
+                                'Block Number',
+                                _blockchainInfo!['blockNumber'].toString(),
+                              ),
+                            if (_blockchainInfo!['network'] != null)
+                              _buildDetailRow(
+                                'Network',
+                                _blockchainInfo!['network'].toString(),
+                              ),
+                            if (_blockchainInfo!['isOnBlockchain'] != null)
+                              _buildDetailRow(
+                                'Trạng thái',
+                                _blockchainInfo!['isOnBlockchain'] == true
+                                    ? 'Đã ghi trên Blockchain'
+                                    : 'Chưa ghi trên Blockchain',
+                              ),
+                          ],
+                        ),
+                      const SizedBox(height: 16),
+                      // QR Code Info
+                      if (drug.qrCode != null)
+                        _buildDetailSection(
+                          'Mã QR',
+                          [
+                            _buildDetailRow(
+                              'QR Code',
+                              drug.qrCode!,
+                              isMonospace: true,
+                            ),
+                          ],
+                        ),
+                      const SizedBox(height: 16),
+                      // Metadata
+                      if (drug.metadata != null && drug.metadata!.isNotEmpty)
+                        _buildDetailSection(
+                          'Thông tin bổ sung',
+                          drug.metadata!.entries.map((entry) {
+                            return _buildDetailRow(
+                              entry.key,
+                              entry.value.toString(),
+                            );
+                          }).toList(),
+                        ),
+                      const SizedBox(height: 16),
+                      // Timestamps
+                      _buildDetailSection(
+                        'Thông tin hệ thống',
+                        [
+                          if (drug.createdAt != null)
+                            _buildDetailRow(
+                              'Ngày tạo',
+                              _formatDateTime(drug.createdAt!),
+                            ),
+                          if (drug.updatedAt != null)
+                            _buildDetailRow(
+                              'Ngày cập nhật',
+                              _formatDateTime(drug.updatedAt!),
+                            ),
+                          if (drug.createdBy != null)
+                            _buildDetailRow('Người tạo', drug.createdBy!),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDetailSection(String title, List<Widget> children) {
+    return CustomCard(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+          ),
+          const SizedBox(height: 12),
+          ...children,
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDetailRow(String label, String value,
+      {bool isExpired = false, bool isMonospace = false}) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
@@ -443,11 +751,13 @@ class _DrugVerificationScreenState
             ),
           ),
           Expanded(
-            child: Text(
+            child: SelectableText(
               value,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     fontWeight: FontWeight.w500,
                     color: isExpired ? Colors.red : null,
+                    fontFamily: isMonospace ? 'monospace' : null,
+                    fontSize: isMonospace ? 12 : null,
                   ),
             ),
           ),
@@ -510,9 +820,7 @@ class _DrugVerificationScreenState
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-                onTap: () {
-                  // TODO: Show transaction details
-                },
+                onTap: () => _showTransactionDetailDialog(tx),
               ),
             )),
       ],
@@ -521,5 +829,237 @@ class _DrugVerificationScreenState
 
   String _formatDate(DateTime date) {
     return '${date.day}/${date.month}/${date.year}';
+  }
+
+  String _formatDateTime(DateTime date) {
+    return '${date.day}/${date.month}/${date.year} ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
+  }
+
+  void _showTransactionDetailDialog(BlockchainTransactionModel tx) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.9,
+        minChildSize: 0.5,
+        maxChildSize: 0.95,
+        builder: (context, scrollController) => Container(
+          decoration: BoxDecoration(
+            color: Theme.of(context).scaffoldBackgroundColor,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: Column(
+            children: [
+              // Handle bar
+              Container(
+                margin: const EdgeInsets.symmetric(vertical: 12),
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              // Header
+              Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Chi tiết giao dịch',
+                        style:
+                            Theme.of(context).textTheme.headlineSmall?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                ),
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () => Navigator.of(context).pop(),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(),
+              // Content
+              Expanded(
+                child: SingleChildScrollView(
+                  controller: scrollController,
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Status badge
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: tx.status == 'confirmed'
+                              ? Colors.green.shade50
+                              : Colors.orange.shade50,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: tx.status == 'confirmed'
+                                ? Colors.green.shade300
+                                : Colors.orange.shade300,
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              tx.status == 'confirmed'
+                                  ? Icons.check_circle
+                                  : Icons.pending,
+                              color: tx.status == 'confirmed'
+                                  ? Colors.green.shade700
+                                  : Colors.orange.shade700,
+                              size: 20,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              tx.status == 'confirmed'
+                                  ? 'Đã xác nhận'
+                                  : 'Đang chờ',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w600,
+                                color: tx.status == 'confirmed'
+                                    ? Colors.green.shade700
+                                    : Colors.orange.shade700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      // Transaction Info
+                      _buildDetailSection(
+                        'Thông tin giao dịch',
+                        [
+                          _buildDetailRow(
+                            'Transaction Hash',
+                            tx.transactionHash,
+                            isMonospace: true,
+                          ),
+                          if (tx.blockNumber != null)
+                            _buildDetailRow(
+                              'Block Number',
+                              tx.blockNumber.toString(),
+                            ),
+                          _buildDetailRow('Network', tx.network),
+                          if (tx.transactionType != null)
+                            _buildDetailRow(
+                                'Loại giao dịch', tx.transactionType!),
+                          if (tx.timestamp != null)
+                            _buildDetailRow(
+                              'Thời gian',
+                              _formatDateTime(tx.timestamp!),
+                            ),
+                          if (tx.confirmations != null)
+                            _buildDetailRow(
+                              'Số lần xác nhận',
+                              tx.confirmations.toString(),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      // Drug Info
+                      if (tx.drugName != null || tx.drugId != null)
+                        _buildDetailSection(
+                          'Thông tin thuốc',
+                          [
+                            if (tx.drugName != null)
+                              _buildDetailRow('Tên thuốc', tx.drugName!),
+                            if (tx.drugId != null)
+                              _buildDetailRow(
+                                'ID thuốc',
+                                tx.drugId!,
+                                isMonospace: true,
+                              ),
+                          ],
+                        ),
+                      const SizedBox(height: 16),
+                      // Addresses
+                      if (tx.from != null || tx.to != null)
+                        _buildDetailSection(
+                          'Địa chỉ',
+                          [
+                            if (tx.from != null)
+                              _buildDetailRow(
+                                'Từ',
+                                tx.from!,
+                                isMonospace: true,
+                              ),
+                            if (tx.to != null)
+                              _buildDetailRow(
+                                'Đến',
+                                tx.to!,
+                                isMonospace: true,
+                              ),
+                            if (tx.contractAddress != null)
+                              _buildDetailRow(
+                                'Contract Address',
+                                tx.contractAddress!,
+                                isMonospace: true,
+                              ),
+                          ],
+                        ),
+                      const SizedBox(height: 16),
+                      // Gas Info
+                      if (tx.gasUsed != null || tx.gasPrice != null)
+                        _buildDetailSection(
+                          'Gas',
+                          [
+                            if (tx.gasUsed != null)
+                              _buildDetailRow(
+                                'Gas Used',
+                                tx.gasUsed.toString(),
+                              ),
+                            if (tx.gasPrice != null)
+                              _buildDetailRow(
+                                'Gas Price',
+                                tx.gasPrice!,
+                                isMonospace: true,
+                              ),
+                          ],
+                        ),
+                      const SizedBox(height: 16),
+                      // Value
+                      if (tx.value != null)
+                        _buildDetailSection(
+                          'Giá trị',
+                          [
+                            _buildDetailRow(
+                              'Value',
+                              tx.value!,
+                              isMonospace: true,
+                            ),
+                          ],
+                        ),
+                      const SizedBox(height: 16),
+                      // Metadata
+                      if (tx.metadata != null && tx.metadata!.isNotEmpty)
+                        _buildDetailSection(
+                          'Metadata',
+                          tx.metadata!.entries.map((entry) {
+                            return _buildDetailRow(
+                              entry.key,
+                              entry.value.toString(),
+                              isMonospace: entry.value.toString().length > 20,
+                            );
+                          }).toList(),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }

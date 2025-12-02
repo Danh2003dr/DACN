@@ -1,31 +1,37 @@
 const blockchainService = require('../services/blockchainService');
 const mongoose = require('mongoose');
+const Settings = require('../models/Settings');
 
 // @desc    Lấy cài đặt hệ thống
 // @route   GET /api/settings
 // @access  Private (Admin only)
 const getSettings = async (req, res) => {
   try {
-    // Mock settings data - trong thực tế sẽ lấy từ database
-    const settings = {
-      systemName: 'Drug Traceability Blockchain System',
-      companyName: process.env.COMPANY_NAME || '',
-      companyAddress: process.env.COMPANY_ADDRESS || '',
-      companyPhone: process.env.COMPANY_PHONE || '',
-      companyEmail: process.env.COMPANY_EMAIL || 'admin@company.com',
-      blockchainNetwork: process.env.BLOCKCHAIN_NETWORK || 'sepolia',
-      blockchainProvider: process.env.BLOCKCHAIN_PROVIDER || 'infura',
-      notificationEmail: process.env.NOTIFICATION_EMAIL || 'admin@company.com',
-      backupFrequency: process.env.BACKUP_FREQUENCY || 'daily',
-      sessionTimeout: parseInt(process.env.SESSION_TIMEOUT) || 60,
-      maxLoginAttempts: parseInt(process.env.MAX_LOGIN_ATTEMPTS) || 5,
-      passwordMinLength: parseInt(process.env.PASSWORD_MIN_LENGTH) || 8,
-      requireSpecialChars: process.env.REQUIRE_SPECIAL_CHARS === 'true',
-      enableTwoFactor: process.env.ENABLE_TWO_FACTOR === 'true',
-      enableAuditLog: process.env.ENABLE_AUDIT_LOG === 'true',
-      enableEmailNotifications: process.env.ENABLE_EMAIL_NOTIFICATIONS === 'true',
-      enableSMSNotifications: process.env.ENABLE_SMS_NOTIFICATIONS === 'true'
-    };
+    // Lấy settings từ database, nếu không có thì tạo default
+    let settings = await Settings.findOne();
+    
+    if (!settings) {
+      // Tạo settings mặc định nếu chưa có
+      settings = await Settings.create({
+        systemName: process.env.SYSTEM_NAME || 'Drug Traceability Blockchain System',
+        companyName: process.env.COMPANY_NAME || '',
+        companyAddress: process.env.COMPANY_ADDRESS || '',
+        companyPhone: process.env.COMPANY_PHONE || '',
+        companyEmail: process.env.COMPANY_EMAIL || 'admin@company.com',
+        blockchainNetwork: process.env.BLOCKCHAIN_NETWORK || 'sepolia',
+        blockchainProvider: process.env.BLOCKCHAIN_PROVIDER || 'infura',
+        notificationEmail: process.env.NOTIFICATION_EMAIL || 'admin@company.com',
+        backupFrequency: process.env.BACKUP_FREQUENCY || 'daily',
+        sessionTimeout: parseInt(process.env.SESSION_TIMEOUT) || 60,
+        maxLoginAttempts: parseInt(process.env.MAX_LOGIN_ATTEMPTS) || 5,
+        passwordMinLength: parseInt(process.env.PASSWORD_MIN_LENGTH) || 8,
+        requireSpecialChars: process.env.REQUIRE_SPECIAL_CHARS === 'true' || true,
+        enableTwoFactor: process.env.ENABLE_TWO_FACTOR === 'true' || false,
+        enableAuditLog: process.env.ENABLE_AUDIT_LOG !== 'false', // Default true
+        enableEmailNotifications: process.env.ENABLE_EMAIL_NOTIFICATIONS !== 'false', // Default true
+        enableSMSNotifications: process.env.ENABLE_SMS_NOTIFICATIONS === 'true' || false
+      });
+    }
 
     res.json({
       success: true,
@@ -48,17 +54,59 @@ const updateSettings = async (req, res) => {
   try {
     const settingsData = req.body;
 
-    // Trong thực tế, sẽ lưu vào database
-    // Ở đây chỉ log ra để demo
-    console.log('Settings updated:', settingsData);
+    // Validate dữ liệu
+    if (settingsData.sessionTimeout && (settingsData.sessionTimeout < 5 || settingsData.sessionTimeout > 480)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Session timeout phải từ 5 đến 480 phút.'
+      });
+    }
+
+    if (settingsData.maxLoginAttempts && (settingsData.maxLoginAttempts < 3 || settingsData.maxLoginAttempts > 10)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Số lần đăng nhập tối đa phải từ 3 đến 10.'
+      });
+    }
+
+    if (settingsData.passwordMinLength && (settingsData.passwordMinLength < 6 || settingsData.passwordMinLength > 20)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Độ dài mật khẩu tối thiểu phải từ 6 đến 20 ký tự.'
+      });
+    }
+
+    // Lưu vào database (upsert: tìm và cập nhật, nếu không có thì tạo mới)
+    const settings = await Settings.findOneAndUpdate(
+      {}, // Tìm document đầu tiên (chỉ có 1 document settings)
+      { $set: settingsData },
+      { 
+        new: true, // Trả về document sau khi update
+        upsert: true, // Tạo mới nếu không tìm thấy
+        runValidators: true // Chạy validation
+      }
+    );
+
+    console.log('Settings updated in database:', settings);
 
     res.json({
       success: true,
       message: 'Cài đặt đã được cập nhật thành công.',
-      data: settingsData
+      data: settings
     });
   } catch (error) {
     console.error('Error updating settings:', error);
+    
+    // Xử lý validation errors
+    if (error.name === 'ValidationError') {
+      const messages = Object.values(error.errors).map(err => err.message);
+      return res.status(400).json({
+        success: false,
+        message: 'Dữ liệu không hợp lệ.',
+        errors: messages
+      });
+    }
+
     res.status(500).json({
       success: false,
       message: 'Lỗi server khi cập nhật cài đặt.',
@@ -278,16 +326,37 @@ const resetToDefaults = async (req, res) => {
       enableSMSNotifications: false
     };
 
-    // Trong thực tế, sẽ reset trong database
-    console.log('Settings reset to defaults:', defaultSettings);
+    // Reset trong database
+    const settings = await Settings.findOneAndUpdate(
+      {}, // Tìm document đầu tiên
+      { $set: defaultSettings },
+      { 
+        new: true, // Trả về document sau khi update
+        upsert: true, // Tạo mới nếu không tìm thấy
+        runValidators: true // Chạy validation
+      }
+    );
+
+    console.log('Settings reset to defaults in database:', settings);
 
     res.json({
       success: true,
       message: 'Đã reset về cài đặt mặc định.',
-      data: defaultSettings
+      data: settings
     });
   } catch (error) {
     console.error('Error resetting settings:', error);
+    
+    // Xử lý validation errors
+    if (error.name === 'ValidationError') {
+      const messages = Object.values(error.errors).map(err => err.message);
+      return res.status(400).json({
+        success: false,
+        message: 'Dữ liệu không hợp lệ.',
+        errors: messages
+      });
+    }
+
     res.status(500).json({
       success: false,
       message: 'Lỗi server khi reset cài đặt.',

@@ -87,10 +87,10 @@ const Suppliers = () => {
       }
     } catch (error) {
       console.error('Error loading suppliers:', error);
-      // Chỉ hiển thị toast cho lỗi server (500+), không phải 404
+      // Không hiển thị toast vì đã dùng skipErrorHandler
+      // Chỉ log để debug
       if (error.response?.status && error.response.status >= 500) {
-        // Error đã được xử lý bởi interceptor
-        console.warn('Server error loading suppliers:', error.message);
+        console.warn('Server error loading suppliers:', error.response?.data?.message || error.message);
       }
       // Luôn set empty để UI hiển thị "Không có dữ liệu"
       setSuppliers([]);

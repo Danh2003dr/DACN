@@ -7,6 +7,7 @@ import logger from './logger';
 const getApiUrl = () => {
   // Nếu có REACT_APP_API_URL trong env, dùng nó
   if (process.env.REACT_APP_API_URL) {
+    console.log('Using REACT_APP_API_URL:', process.env.REACT_APP_API_URL);
     return process.env.REACT_APP_API_URL;
   }
   
@@ -15,16 +16,23 @@ const getApiUrl = () => {
     const protocol = window.location.protocol;
     const hostname = window.location.hostname;
     const port = '5000'; // Backend port
-    return `${protocol}//${hostname}:${port}/api`;
+    const apiUrl = `${protocol}//${hostname}:${port}/api`;
+    console.log('Using network API URL:', apiUrl);
+    return apiUrl;
   }
   
   // Mặc định là localhost
-  return 'http://localhost:5000/api';
+  const defaultUrl = 'http://localhost:5000/api';
+  console.log('Using default API URL:', defaultUrl);
+  return defaultUrl;
 };
 
+const apiUrl = getApiUrl();
+console.log('🔗 API Base URL:', apiUrl);
+
 const api = axios.create({
-  baseURL: getApiUrl(),
-  timeout: 10000,
+  baseURL: apiUrl,
+  timeout: 30000, // Tăng timeout lên 30s để tránh timeout khi backend chậm
   headers: {
     'Content-Type': 'application/json',
   },
@@ -50,6 +58,29 @@ api.interceptors.response.use(
     return response;
   },
   (error) => {
+    // Log error để debug
+    if (error.code === 'ECONNABORTED') {
+      console.error('⏱️ Request timeout:', error.config?.url);
+    } else if (error.code === 'ERR_NETWORK' || error.message?.includes('Network Error')) {
+      console.error('🌐 Network error:', {
+        url: error.config?.url,
+        baseURL: error.config?.baseURL,
+        message: error.message
+      });
+      console.error('💡 Kiểm tra:');
+      console.error('   1. Backend có đang chạy không? (http://localhost:5000/api/health)');
+      console.error('   2. CORS có được cấu hình đúng không?');
+      console.error('   3. Firewall có chặn kết nối không?');
+    } else if (error.response) {
+      console.error('📡 API Error:', {
+        status: error.response.status,
+        url: error.config?.url,
+        message: error.response.data?.message
+      });
+    } else {
+      console.error('❌ Request error:', error);
+    }
+
     // Cho phép bỏ qua xử lý lỗi toàn cục cho một số request (ví dụ: quét QR, empty data)
     if (error.config && error.config.skipErrorHandler) {
       return Promise.reject(error);
@@ -80,9 +111,8 @@ api.interceptors.response.use(
           }
           break;
         case 500:
-          // Chỉ hiển thị toast cho lỗi 500 nếu không phải GET request hoặc có message cụ thể
-          // Nếu là GET request và có skipErrorHandler, không hiển thị toast
-          if (config.method === 'get' && config.skipErrorHandler) {
+          // Chỉ hiển thị toast cho lỗi 500 nếu không có skipErrorHandler
+          if (config.skipErrorHandler) {
             // Không hiển thị toast, chỉ log
             console.warn('Server error (suppressed toast):', message || 'Lỗi server');
           } else {
@@ -216,10 +246,21 @@ export const authAPI = {
     return response.data;
   },
   
-  // Đăng nhập bằng Google
+  // Đăng nhập bằng Google (Passport.js - redirect)
   loginWithGoogle: () => {
     const backendUrl = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
     window.location.href = `${backendUrl}/auth/google`;
+  },
+  
+  // Đăng nhập bằng Firebase Google
+  loginWithFirebase: async (idToken) => {
+    try {
+      const response = await api.post('/auth/firebase', { idToken });
+      return response.data;
+    } catch (error) {
+      // Re-throw để component có thể handle
+      throw error;
+    }
   },
 };
 

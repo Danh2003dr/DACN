@@ -56,22 +56,50 @@ const BlockchainExplorer = () => {
 
       const response = await blockchainTransactionAPI.getRecentTransactions(params);
       
+      // Debug: Log response để kiểm tra format
+      console.log('Blockchain Explorer - API Response:', response);
+      console.log('Response type:', typeof response);
+      console.log('Response keys:', response ? Object.keys(response) : 'null');
+      console.log('Response.data:', response?.data);
+      console.log('Response.data?.transactions:', response?.data?.transactions);
+      console.log('Response.data?.transactions length:', response?.data?.transactions?.length);
+      console.log('Response.data?.pagination:', response?.data?.pagination);
+      
+      if (response && response.debug) {
+        console.log('🔍 Debug info:', response.debug);
+      }
+      
       if (response && response.success) {
-        setTransactions(response.data.transactions || []);
-        setPagination(response.data.pagination || { page: 1, limit: 20, total: 0, pages: 0 });
+        const transactions = response.data?.transactions || response.transactions || [];
+        const pagination = response.data?.pagination || response.pagination || { page: 1, limit: 20, total: 0, pages: 0 };
+        
+        console.log('✅ Parsed transactions:', transactions.length);
+        console.log('✅ Parsed pagination:', pagination);
+        console.log('✅ First transaction:', transactions[0]);
+        
+        setTransactions(transactions);
+        setPagination(pagination);
         
         // Calculate stats
-        const totalGas = (response.data.transactions || []).reduce((sum, tx) => sum + (tx.gasUsed || 0), 0);
+        const totalGas = transactions.reduce((sum, tx) => sum + (tx.gasUsed || 0), 0);
         setStats({
-          totalTransactions: response.data.pagination?.total || 0,
+          totalTransactions: pagination.total || 0,
           totalGasUsed: totalGas
         });
       } else {
+        console.error('❌ API response error:', {
+          success: response?.success,
+          message: response?.message,
+          error: response?.error,
+          debug: response?.debug
+        });
         setTransactions([]);
         setPagination({ page: 1, limit: 20, total: 0, pages: 0 });
-        // Don't show error toast if it's just empty data
-        if (response && !response.success && response.message) {
-          console.warn('API returned error:', response.message);
+        // Show error toast with detailed message
+        if (response && !response.success) {
+          const errorMsg = response.error || response.message || 'Không thể tải danh sách transactions';
+          console.error('API error details:', errorMsg);
+          toast.error(errorMsg);
         }
       }
     } catch (error) {
@@ -137,9 +165,13 @@ const BlockchainExplorer = () => {
     });
   };
 
-  // Get explorer URL
+  // Get explorer URL - chỉ trả về URL cho networks thực, không phải development/mock
   const getExplorerUrl = (txHash, network = 'development') => {
-    const explorers = {
+    if (!txHash) return null;
+    
+    // Chỉ trả về URL cho networks thực sự trên blockchain
+    // Development và mock networks không có transactions thực trên explorer
+    const realNetworks = {
       'sepolia': `https://sepolia.etherscan.io/tx/${txHash}`,
       'mainnet': `https://etherscan.io/tx/${txHash}`,
       'polygon_mumbai': `https://mumbai.polygonscan.com/tx/${txHash}`,
@@ -151,7 +183,22 @@ const BlockchainExplorer = () => {
       'optimism_sepolia': `https://sepolia-optimism.etherscan.io/tx/${txHash}`,
       'optimism_mainnet': `https://optimistic.etherscan.io/tx/${txHash}`
     };
-    return explorers[network] || '#';
+    
+    // Chỉ trả về URL nếu network là real network
+    // Development và mock không có transactions thực
+    if (network === 'development' || network === 'mock' || !realNetworks[network]) {
+      return null; // Không có URL cho development/mock
+    }
+    
+    return realNetworks[network];
+  };
+  
+  // Check if transaction is on real blockchain
+  const isRealBlockchainTransaction = (network) => {
+    const realNetworks = ['sepolia', 'mainnet', 'polygon_mumbai', 'polygon_mainnet', 
+                          'bsc_testnet', 'bsc_mainnet', 'arbitrum_sepolia', 'arbitrum_one',
+                          'optimism_sepolia', 'optimism_mainnet'];
+    return network && realNetworks.includes(network);
   };
 
   // Format timestamp
@@ -409,17 +456,28 @@ const BlockchainExplorer = () => {
                           >
                             <Copy className="w-4 h-4" />
                           </button>
-                          {tx.network && tx.network !== 'development' && (
-                            <a
-                              href={getExplorerUrl(tx.transactionHash, tx.network)}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-blue-600 hover:text-blue-800 transition"
-                              title="Mở trên Explorer"
-                            >
-                              <ExternalLink className="w-4 h-4" />
-                            </a>
-                          )}
+                          {tx.transactionHash && (() => {
+                            const explorerUrl = getExplorerUrl(tx.transactionHash, tx.network);
+                            const isReal = isRealBlockchainTransaction(tx.network);
+                            
+                            if (explorerUrl && isReal) {
+                              return (
+                                <a
+                                  href={explorerUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-blue-600 hover:text-blue-800 transition"
+                                  title={`Mở trên ${tx.network} Explorer\n${explorerUrl}`}
+                                >
+                                  <ExternalLink className="w-4 h-4" />
+                                </a>
+                              );
+                            } else {
+                              // Không hiển thị icon cho development/mock transactions
+                              // Vì chúng không tồn tại trên blockchain thực
+                              return null;
+                            }
+                          })()}
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">

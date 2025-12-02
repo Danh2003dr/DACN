@@ -145,7 +145,7 @@ const drugSchema = new mongoose.Schema({
     // Trạng thái trên blockchain
     blockchainStatus: {
       type: String,
-      enum: ['pending', 'confirmed', 'failed'],
+      enum: ['pending', 'confirmed', 'failed', 'mock'],
       default: 'pending'
     },
     // Lịch sử giao dịch

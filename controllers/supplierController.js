@@ -76,7 +76,8 @@ const getSuppliers = async (req, res) => {
     if (error.message && (
       error.message.includes('populate') || 
       error.message.includes('Cast to ObjectId') ||
-      error.message.includes('strictPopulate')
+      error.message.includes('strictPopulate') ||
+      error.message.includes('Cannot read property')
     )) {
       logger.warn('Non-critical error in getSuppliers, returning empty data', {
         error: error.message,
@@ -96,11 +97,14 @@ const getSuppliers = async (req, res) => {
       });
     }
     
+    // Nếu lỗi là do database connection hoặc lỗi nghiêm trọng
     logger.error('Error getting suppliers', {
       error: error.message,
       stack: error.stack,
       correlationId: req.correlationId
     });
+    
+    // Trả về lỗi nhưng vẫn có format đúng để frontend xử lý
     res.status(500).json({
       success: false,
       message: 'Lỗi server khi lấy danh sách nhà cung ứng.',

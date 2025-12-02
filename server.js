@@ -47,27 +47,46 @@ const allowedOriginsEnv = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(',').map(origin => origin.trim())
   : [];
 
+// Default allowed origins for development
+const defaultDevOrigins = [
+  'http://localhost:3000',
+  'http://127.0.0.1:3000',
+  'http://localhost:3001',
+  'http://127.0.0.1:3001'
+];
+
 const corsOptions = {
   origin: (origin, callback) => {
+    // Allow requests with no origin (like mobile apps or curl requests)
     if (!origin) {
       return callback(null, true);
     }
 
     if (process.env.NODE_ENV === 'production') {
+      // Production: chỉ cho phép origins được cấu hình
       const isAllowed = allowedOriginsEnv.includes(origin);
       if (isAllowed) {
         return callback(null, true);
       }
+      console.warn(`CORS blocked origin in production: ${origin}`);
       return callback(new Error('Not allowed by CORS'));
     }
 
-    // Development: cho phép mọi origin trong mạng nội bộ
-    // Cho phép chạy nhiều tab/port cùng lúc
+    // Development: cho phép localhost và các origins mặc định
+    const isLocalhost = origin.includes('localhost') || origin.includes('127.0.0.1');
+    const isDefaultDev = defaultDevOrigins.includes(origin);
+    
+    if (isLocalhost || isDefaultDev) {
+      return callback(null, true);
+    }
+
+    // Cho phép mọi origin trong development để dễ debug
+    console.log(`CORS allowing origin in development: ${origin}`);
     return callback(null, true);
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
   exposedHeaders: ['Authorization'],
   maxAge: 86400 // 24 hours
 };
@@ -77,6 +96,10 @@ app.use(cors(corsOptions));
 // Body parser middleware
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// BigInt serializer middleware - Tự động xử lý BigInt trong tất cả JSON responses
+const { bigIntSerializerMiddleware } = require('./utils/jsonHelper');
+app.use(bigIntSerializerMiddleware);
 
 // Serve static files
 app.use('/uploads', express.static('uploads'));

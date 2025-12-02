@@ -12,7 +12,8 @@ const {
   updateProfile,
   uploadAvatar,
   logout,
-  createDefaultAccounts
+  createDefaultAccounts,
+  loginWithFirebase
 } = require('../controllers/authController');
 
 // Import Google OAuth controllers
@@ -171,5 +172,11 @@ router.get('/google/success', checkGoogleOAuth, googleSuccess);
 // @desc    Google OAuth failure endpoint
 // @access  Public
 router.get('/google/failure', checkGoogleOAuth, googleFailure);
+
+// Firebase Authentication
+// @route   POST /api/auth/firebase
+// @desc    Đăng nhập bằng Firebase (Google)
+// @access  Public
+router.post('/firebase', loginWithFirebase);
 
 module.exports = router;

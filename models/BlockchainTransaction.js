@@ -115,7 +115,7 @@ blockchainTransactionSchema.index({ network: 1, timestamp: -1 }); // For filteri
 blockchainTransactionSchema.index({ status: 1, timestamp: -1 }); // For filtering by status
 
 // Static method to get recent transactions with pagination
-blockchainTransactionSchema.statics.getRecentTransactions = async function({ page = 1, limit = 20, drugId = null, network = null, status = null }) {
+blockchainTransactionSchema.statics.getRecentTransactions = async function({ page = 1, limit = 20, drugId = null, network = null, status = null, search = null }) {
   try {
     const skip = (page - 1) * limit;
     
@@ -130,24 +130,55 @@ blockchainTransactionSchema.statics.getRecentTransactions = async function({ pag
     if (status) {
       filter.status = status;
     }
+    // Add search filter for transactionHash
+    if (search && search.trim() !== '') {
+      filter.transactionHash = { $regex: search.trim(), $options: 'i' };
+    }
+
+    console.log('BlockchainTransaction Model - Filter:', JSON.stringify(filter, null, 2));
+    console.log('BlockchainTransaction Model - Skip:', skip, 'Limit:', limit);
 
     // Get transactions
-    const transactions = await this.find(filter)
-      .populate({
-        path: 'drugId',
-        select: 'name batchNumber drugId',
-        model: 'Drug'
-      })
-      .sort({ timestamp: -1 })
-      .skip(skip)
-      .limit(limit)
-      .lean();
+    let transactions;
+    try {
+      console.log('BlockchainTransaction Model - Attempting query with populate...');
+      transactions = await this.find(filter)
+        .populate({
+          path: 'drugId',
+          select: 'name batchNumber drugId',
+          model: 'Drug',
+          strictPopulate: false
+        })
+        .sort({ timestamp: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean();
+      console.log('BlockchainTransaction Model - Query with populate succeeded, found:', transactions.length);
+    } catch (populateError) {
+      // If populate fails, try without populate
+      console.warn('BlockchainTransaction Model - Populate error, retrying without populate:', populateError.message);
+      console.warn('Populate error stack:', populateError.stack);
+      try {
+        transactions = await this.find(filter)
+          .sort({ timestamp: -1 })
+          .skip(skip)
+          .limit(limit)
+          .lean();
+        console.log('BlockchainTransaction Model - Query without populate succeeded, found:', transactions.length);
+      } catch (queryError) {
+        console.error('BlockchainTransaction Model - Query without populate also failed:', queryError.message);
+        console.error('Query error stack:', queryError.stack);
+        throw queryError;
+      }
+    }
 
     // Get total count
+    console.log('BlockchainTransaction Model - Counting total documents...');
     const total = await this.countDocuments(filter);
+    console.log('BlockchainTransaction Model - Total count:', total);
 
-    return {
-      transactions,
+    const result = {
+      transactions: transactions || [],
       pagination: {
         page,
         limit,
@@ -155,8 +186,28 @@ blockchainTransactionSchema.statics.getRecentTransactions = async function({ pag
         pages: Math.ceil(total / limit)
       }
     };
+
+    console.log('BlockchainTransaction Model - Returning result:', {
+      transactionsCount: result.transactions.length,
+      pagination: result.pagination
+    });
+
+    return result;
   } catch (error) {
-    throw error;
+    console.error('BlockchainTransaction Model - Error in getRecentTransactions:', error);
+    console.error('Error name:', error.name);
+    console.error('Error message:', error.message);
+    console.error('Error stack:', error.stack);
+    // Return empty result instead of throwing error
+    return {
+      transactions: [],
+      pagination: {
+        page,
+        limit,
+        total: 0,
+        pages: 0
+      }
+    };
   }
 };
 

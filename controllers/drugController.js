@@ -9,6 +9,8 @@ const blockchainService = require('../services/blockchainService');
 const getServerUrl = require('../utils/getServerUrl');
 const drugRiskService = require('../services/drugRiskService');
 const auditService = require('../services/auditService');
+// Import JSON helper utilities để xử lý BigInt
+const { toJSONSafe, safeJsonResponse } = require('../utils/jsonHelper');
 
 // @desc    Tạo lô thuốc mới
 // @route   POST /api/drugs
@@ -80,9 +82,28 @@ const createDrug = async (req, res) => {
     }
 
     // Ghi dữ liệu lên blockchain
-    const blockchainResult = await blockchainService.recordDrugBatchOnBlockchain(drugData);
+    let blockchainResult;
+    try {
+      blockchainResult = await blockchainService.recordDrugBatchOnBlockchain({
+        ...drugData,
+        drugId: drug.drugId
+      });
+      
+      console.log('Blockchain result:', JSON.stringify(blockchainResult, null, 2));
+    } catch (error) {
+      console.error('Error recording to blockchain:', error);
+      blockchainResult = {
+        success: false,
+        error: error.message
+      };
+    }
     
-    if (blockchainResult.success) {
+    if (blockchainResult && blockchainResult.success) {
+      // Lấy contract address từ blockchain service
+      const contractAddress = blockchainService.getContractAddress 
+        ? blockchainService.getContractAddress(blockchainService.currentNetwork)
+        : (process.env.CONTRACT_ADDRESS_SEPOLIA || process.env.CONTRACT_ADDRESS || 'mock');
+      
       // Cập nhật thông tin blockchain vào drug
       drug.blockchain = {
         blockchainId: blockchainResult.blockchainId,
@@ -92,8 +113,8 @@ const createDrug = async (req, res) => {
         digitalSignature: blockchainResult.signature,
         dataHash: blockchainResult.hash,
         isOnBlockchain: true,
-        blockchainStatus: 'confirmed',
-        contractAddress: process.env.CONTRACT_ADDRESS || 'mock',
+        blockchainStatus: blockchainResult.mock ? 'pending' : 'confirmed',
+        contractAddress: contractAddress,
         transactionHistory: [{
           transactionHash: blockchainResult.transactionHash,
           blockNumber: blockchainResult.blockNumber,
@@ -104,6 +125,18 @@ const createDrug = async (req, res) => {
       };
       
       await drug.save();
+      console.log(`✅ Drug ${drug.drugId} đã được ghi lên blockchain: ${blockchainResult.transactionHash}`);
+    } else {
+      // Vẫn lưu drug nhưng đánh dấu là pending
+      drug.blockchain = {
+        isOnBlockchain: false,
+        blockchainStatus: 'pending',
+        lastUpdated: new Date(),
+        transactionHistory: [],
+        error: blockchainResult?.error || 'Unknown error'
+      };
+      await drug.save();
+      console.warn(`⚠️ Drug ${drug.drugId} chưa được ghi lên blockchain: ${blockchainResult?.error || 'Unknown error'}`);
     }
 
     // Tạo QR code với blockchain ID
@@ -516,7 +549,34 @@ const scanQRCode = async (req, res) => {
           message: findError.message
         });
       }
-      throw findError;
+      // Log lỗi nhưng vẫn tiếp tục thử tìm bằng cách khác
+      console.error('Error in findByQRCode:', findError);
+    }
+
+    // Nếu không tìm thấy bằng findByQRCode, thử tìm trực tiếp bằng blockchain ID, drugId, hoặc batchNumber
+    if (!drug) {
+      const searchText = typeof qrData === 'string' ? qrData.trim() : (qrData.blockchainId || qrData.drugId || qrData.batchNumber || '');
+      
+      // Thử tìm theo blockchain ID (ưu tiên)
+      if (searchText) {
+        drug = await Drug.findOne({ 'blockchain.blockchainId': searchText })
+          .populate('manufacturerId', 'fullName organizationInfo')
+          .populate('distribution.history.updatedBy', 'fullName role');
+      }
+      
+      // Nếu không có, thử tìm theo drugId
+      if (!drug && searchText) {
+        drug = await Drug.findOne({ drugId: searchText })
+          .populate('manufacturerId', 'fullName organizationInfo')
+          .populate('distribution.history.updatedBy', 'fullName role');
+      }
+      
+      // Nếu vẫn không có, thử tìm theo batchNumber
+      if (!drug && searchText) {
+        drug = await Drug.findOne({ batchNumber: searchText })
+          .populate('manufacturerId', 'fullName organizationInfo')
+          .populate('distribution.history.updatedBy', 'fullName role');
+      }
     }
 
     if (!drug) {
@@ -525,11 +585,17 @@ const scanQRCode = async (req, res) => {
         drug: null,
         user: req.user,
         success: false,
-        errorMessage: 'Không tìm thấy thông tin thuốc. Có thể đây là thuốc giả hoặc không có trong hệ thống.'
+        errorMessage: 'Không tìm thấy thông tin thuốc. Vui lòng kiểm tra lại mã blockchain ID, mã thuốc hoặc số lô.'
       });
       return res.status(404).json({
         success: false,
-        message: 'Không tìm thấy thông tin thuốc. Có thể đây là thuốc giả hoặc không có trong hệ thống.'
+        message: 'Không tìm thấy thông tin thuốc. Vui lòng kiểm tra lại mã blockchain ID, mã thuốc hoặc số lô.',
+        data: {
+          drug: null,
+          blockchain: null,
+          blockchainInfo: null,
+          risk: null
+        }
       });
     }
 
@@ -858,45 +924,83 @@ const deleteDrug = async (req, res) => {
   }
 };
 
-const drugPopulateOptions = [
-  {
-    path: 'manufacturerId',
-    select: 'fullName organizationInfo phone email address location'
-  },
-  { path: 'createdBy', select: 'fullName role' },
-  { path: 'distribution.history.updatedBy', select: 'fullName role' }
-];
+// Helper function để populate drug với đầy đủ thông tin
+const populateDrug = async (query) => {
+  if (!query) return null;
+  
+  try {
+    // Populate đơn giản với error handling
+    const drug = await query
+      .populate('manufacturerId', 'fullName organizationInfo phone email address location')
+      .populate('createdBy', 'fullName role');
+    
+    return drug;
+  } catch (error) {
+    console.error('[populateDrug] Error:', error.message);
+    console.error('[populateDrug] Error stack:', error.stack);
+    
+    // Nếu populate lỗi, tạo query mới không populate
+    try {
+      const Model = query.model;
+      const conditions = query.getQuery();
+      const drug = await Model.findOne(conditions);
+      return drug;
+    } catch (fallbackError) {
+      console.error('[populateDrug] Fallback error:', fallbackError.message);
+      return null;
+    }
+  }
+};
 
 const formatDrugResponse = (drugDoc) => {
-  if (!drugDoc) return null;
+  if (!drugDoc) {
+    console.error('[formatDrugResponse] drugDoc is null or undefined');
+    return null;
+  }
 
-  const manufacturerDoc = drugDoc.manufacturerId;
-  const manufacturer = manufacturerDoc
-    ? {
-        fullName: manufacturerDoc.fullName,
-        organizationInfo: manufacturerDoc.organizationInfo || null,
-        phone: manufacturerDoc.phone || null,
-        email: manufacturerDoc.email || null,
-        address: manufacturerDoc.address || null,
-        location: manufacturerDoc.location || null
-      }
-    : null;
+  try {
+    const manufacturerDoc = drugDoc.manufacturerId;
+    const manufacturer = manufacturerDoc
+      ? {
+          fullName: manufacturerDoc.fullName || null,
+          organizationInfo: manufacturerDoc.organizationInfo || null,
+          phone: manufacturerDoc.phone || null,
+          email: manufacturerDoc.email || null,
+          address: manufacturerDoc.address || null,
+          location: manufacturerDoc.location || null
+        }
+      : null;
 
   const distributionHistory = (drugDoc.distribution?.history || [])
     .slice(-5)
-    .map(entry => ({
-      status: entry.status,
-      location: entry.location,
-      organizationId: entry.organizationId,
-      organizationName: entry.organizationName,
-      note: entry.note,
-      timestamp: entry.timestamp,
-      updatedBy: entry.updatedBy ? {
-        id: entry.updatedBy._id,
-        fullName: entry.updatedBy.fullName,
-        role: entry.updatedBy.role
-      } : null
-    }))
+    .map(entry => {
+      let updatedBy = null;
+      if (entry.updatedBy) {
+        // Xử lý trường hợp updatedBy đã được populate (là object) hoặc chưa (là ObjectId)
+        if (typeof entry.updatedBy === 'object' && entry.updatedBy._id) {
+          updatedBy = {
+            id: entry.updatedBy._id,
+            fullName: entry.updatedBy.fullName || null,
+            role: entry.updatedBy.role || null
+          };
+        } else if (typeof entry.updatedBy === 'object' && entry.updatedBy.toString) {
+          // Chỉ là ObjectId, không populate
+          updatedBy = {
+            id: entry.updatedBy.toString()
+          };
+        }
+      }
+      
+      return {
+        status: entry.status,
+        location: entry.location,
+        organizationId: entry.organizationId,
+        organizationName: entry.organizationName,
+        note: entry.note,
+        timestamp: entry.timestamp,
+        updatedBy
+      };
+    })
     .reverse();
 
   return {
@@ -923,23 +1027,67 @@ const formatDrugResponse = (drugDoc) => {
     isRecalled: drugDoc.isRecalled,
     recallReason: drugDoc.recallReason || null,
     recallDate: drugDoc.recallDate || null,
-    daysUntilExpiry: typeof drugDoc.daysUntilExpiry === 'number' ? drugDoc.daysUntilExpiry : null,
-    isNearExpiry: typeof drugDoc.isNearExpiry === 'boolean' ? drugDoc.isNearExpiry : false,
-    blockchain: drugDoc.blockchain || null,
-    createdAt: drugDoc.createdAt,
-    updatedAt: drugDoc.updatedAt
+    daysUntilExpiry: (() => {
+      try {
+        if (typeof drugDoc.daysUntilExpiry === 'number') return drugDoc.daysUntilExpiry;
+        // Tính toán nếu là virtual field
+        if (drugDoc.expiryDate) {
+          const today = new Date();
+          const expiry = new Date(drugDoc.expiryDate);
+          const diffTime = expiry - today;
+          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+          return diffDays;
+        }
+        return null;
+      } catch (e) {
+        return null;
+      }
+    })(),
+    isNearExpiry: (() => {
+      try {
+        if (typeof drugDoc.isNearExpiry === 'boolean') return drugDoc.isNearExpiry;
+        // Tính toán nếu là virtual field
+        if (drugDoc.expiryDate) {
+          const today = new Date();
+          const expiry = new Date(drugDoc.expiryDate);
+          const diffTime = expiry - today;
+          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+          return diffDays <= 30 && diffDays > 0;
+        }
+        return false;
+      } catch (e) {
+        return false;
+      }
+    })(),
+    blockchain: drugDoc.blockchain ? toJSONSafe(drugDoc.blockchain) : null,
+    createdAt: drugDoc.createdAt || null,
+    updatedAt: drugDoc.updatedAt || null
   };
+  } catch (error) {
+    console.error('[formatDrugResponse] Error formatting drug:', error);
+    console.error('[formatDrugResponse] Error stack:', error.stack);
+    console.error('[formatDrugResponse] drugDoc keys:', drugDoc ? Object.keys(drugDoc) : 'null');
+    // Trả về object tối thiểu nếu có lỗi
+    return {
+      drugId: drugDoc?.drugId || drugDoc?._id?.toString() || null,
+      name: drugDoc?.name || null,
+      batchNumber: drugDoc?.batchNumber || null,
+      blockchain: drugDoc?.blockchain || null
+    };
+  }
 };
 
 // @desc    Verify QR code và lấy thông tin từ blockchain
 // @route   GET /api/drugs/verify/:blockchainId
 // @access  Public
 const verifyQRCode = async (req, res) => {
+  let blockchainId;
   try {
-    const { blockchainId } = req.params;
+    blockchainId = req.params?.blockchainId;
+    console.log('[verifyQRCode] Starting verification for blockchainId:', blockchainId);
 
     if (!blockchainId) {
-      return res.status(400).json({
+      return safeJsonResponse(res, 400, {
         success: false,
         message: 'Blockchain ID hoặc số lô là bắt buộc.'
       });
@@ -948,48 +1096,101 @@ const verifyQRCode = async (req, res) => {
     // Tìm drug trong database - thử nhiều cách
     let drug = null;
     
-    // 1. Thử tìm bằng blockchain.blockchainId
-    drug = await Drug.findOne({ 'blockchain.blockchainId': blockchainId })
-      .populate(drugPopulateOptions);
+    try {
+      // 1. Thử tìm bằng blockchain.blockchainId (ưu tiên nhất)
+      console.log('[verifyQRCode] Attempt 1: Searching by blockchain.blockchainId');
+      const query1 = Drug.findOne({ 'blockchain.blockchainId': blockchainId });
+      drug = await populateDrug(query1);
+      if (drug) {
+        console.log('[verifyQRCode] Found drug by blockchain.blockchainId:', drug.drugId);
+      }
+    } catch (err) {
+      console.error('[verifyQRCode] Error in attempt 1:', err.message);
+    }
 
     // 2. Nếu không tìm thấy, thử tìm bằng drugId (format DRUG_...)
     if (!drug && blockchainId.startsWith('DRUG_')) {
-      drug = await Drug.findOne({ drugId: blockchainId })
-        .populate(drugPopulateOptions);
+      try {
+        console.log('[verifyQRCode] Attempt 2: Searching by drugId (DRUG_ format)');
+        const query2 = Drug.findOne({ drugId: blockchainId });
+        drug = await populateDrug(query2);
+        if (drug) {
+          console.log('[verifyQRCode] Found drug by drugId:', drug.drugId);
+        }
+      } catch (err) {
+        console.error('[verifyQRCode] Error in attempt 2:', err.message);
+      }
     }
     
     // 3. Nếu vẫn không tìm thấy, thử tìm bằng batchNumber
     if (!drug) {
-      drug = await Drug.findOne({ batchNumber: blockchainId })
-        .populate(drugPopulateOptions);
+      try {
+        console.log('[verifyQRCode] Attempt 3: Searching by batchNumber');
+        const query3 = Drug.findOne({ batchNumber: blockchainId });
+        drug = await populateDrug(query3);
+        if (drug) {
+          console.log('[verifyQRCode] Found drug by batchNumber:', drug.drugId);
+        }
+      } catch (err) {
+        console.error('[verifyQRCode] Error in attempt 3:', err.message);
+      }
     }
     
     // 4. Thử tìm bằng drugId nếu chưa tìm thấy (cho các trường hợp khác)
     if (!drug) {
-      drug = await Drug.findOne({ drugId: blockchainId })
-        .populate(drugPopulateOptions);
+      try {
+        console.log('[verifyQRCode] Attempt 4: Searching by drugId (any format)');
+        const query4 = Drug.findOne({ drugId: blockchainId });
+        drug = await populateDrug(query4);
+        if (drug) {
+          console.log('[verifyQRCode] Found drug by drugId (any):', drug.drugId);
+        }
+      } catch (err) {
+        console.error('[verifyQRCode] Error in attempt 4:', err.message);
+      }
     }
     
     // 5. Nếu vẫn không tìm thấy, thử tìm từ SupplyChain
     if (!drug) {
-      const supplyChain = await SupplyChain.findOne({
-        $or: [
-          { 'qrCode.blockchainId': blockchainId },
-          { 'qrCode.code': blockchainId },
-          { drugBatchNumber: blockchainId }
-        ]
-      }).populate('drugId');
-      
-      if (supplyChain && supplyChain.drugId) {
-        drug = await Drug.findById(supplyChain.drugId)
-          .populate(drugPopulateOptions);
+      try {
+        console.log('[verifyQRCode] Attempt 5: Searching in SupplyChain');
+        const supplyChain = await SupplyChain.findOne({
+          $or: [
+            { 'qrCode.blockchainId': blockchainId },
+            { 'qrCode.code': blockchainId },
+            { drugBatchNumber: blockchainId }
+          ]
+        }).populate('drugId');
+        
+        if (supplyChain && supplyChain.drugId) {
+          const query5 = Drug.findById(supplyChain.drugId);
+          drug = await populateDrug(query5);
+          if (drug) {
+            console.log('[verifyQRCode] Found drug via SupplyChain:', drug.drugId);
+          }
+        }
+      } catch (err) {
+        console.error('[verifyQRCode] Error in attempt 5:', err.message);
       }
     }
 
     if (!drug) {
-      return res.status(404).json({
+      console.log('[verifyQRCode] Drug not found for blockchainId:', blockchainId);
+      return safeJsonResponse(res, 404, {
         success: false,
-        message: 'Không tìm thấy lô thuốc với blockchain ID, số lô hoặc mã thuốc này. Vui lòng kiểm tra lại thông tin.'
+        message: 'Không tìm thấy lô thuốc với blockchain ID, số lô hoặc mã thuốc này. Vui lòng kiểm tra lại thông tin.',
+        blockchainId: blockchainId
+      });
+    }
+
+    console.log('[verifyQRCode] Drug found:', drug.drugId || drug._id);
+    
+    // Validate drug object
+    if (!drug || (!drug.drugId && !drug._id)) {
+      console.error('[verifyQRCode] Invalid drug object:', drug);
+      return safeJsonResponse(res, 500, {
+        success: false,
+        message: 'Dữ liệu lô thuốc không hợp lệ.'
       });
     }
 
@@ -1000,7 +1201,22 @@ const verifyQRCode = async (req, res) => {
     
     try {
       if (actualBlockchainId && drug.blockchain?.isOnBlockchain) {
-        blockchainData = await blockchainService.getDrugBatchFromBlockchain(actualBlockchainId);
+        const rawBlockchainData = await blockchainService.getDrugBatchFromBlockchain(actualBlockchainId);
+        // Xử lý BigInt ngay khi lấy được - xử lý nhiều lần để chắc chắn
+        blockchainData = toJSONSafe(rawBlockchainData);
+        blockchainData = toJSONSafe(blockchainData); // Double check
+        // Đảm bảo không có BigInt bằng cách serialize và parse lại
+        try {
+          JSON.stringify(blockchainData, (key, value) => {
+            if (typeof value === 'bigint') {
+              throw new Error(`Found BigInt at key: ${key}`);
+            }
+            return value;
+          });
+        } catch (bigIntCheck) {
+          console.error('[verifyQRCode] Found BigInt in blockchainData after toJSONSafe:', bigIntCheck);
+          blockchainData = toJSONSafe(blockchainData); // Xử lý lại
+        }
       }
     } catch (blockchainError) {
       console.error('Error fetching blockchain data:', blockchainError);
@@ -1010,34 +1226,102 @@ const verifyQRCode = async (req, res) => {
     // Tính điểm rủi ro AI cho lô thuốc (bao lỗi để không làm fail verify)
     let risk = null;
     try {
-      risk = await drugRiskService.calculateDrugRisk(drug);
+      const rawRisk = await drugRiskService.calculateDrugRisk(drug);
+      // Xử lý BigInt trong risk data
+      risk = rawRisk ? toJSONSafe(rawRisk) : null;
     } catch (riskError) {
       console.error('Error calculating drug risk:', riskError);
       // Không throw, để vẫn trả về dữ liệu xác minh
       risk = null;
     }
 
-    res.json({
+    // Format drug response với error handling
+    let formattedDrug;
+    try {
+      formattedDrug = formatDrugResponse(drug);
+      // Xử lý BigInt trong formattedDrug
+      formattedDrug = toJSONSafe(formattedDrug);
+    } catch (formatError) {
+      console.error('[verifyQRCode] Error formatting drug response:', formatError);
+      console.error('[verifyQRCode] Format error stack:', formatError.stack);
+      // Nếu format lỗi, trả về dữ liệu đơn giản hơn
+      formattedDrug = {
+        drugId: drug.drugId || drug._id?.toString(),
+        name: drug.name,
+        batchNumber: drug.batchNumber,
+        blockchain: drug.blockchain || null
+      };
+      formattedDrug = toJSONSafe(formattedDrug);
+    }
+
+    console.log('[verifyQRCode] Verification successful for:', blockchainId);
+
+    // Xây dựng response payload và xử lý BigInt ngay từ đầu
+    const responsePayload = {
       success: true,
       message: 'Thông tin lô thuốc hợp lệ.',
       data: {
-        drug: formatDrugResponse(drug),
+        drug: formattedDrug,
         blockchain: blockchainData,
         verification: {
           isValid: true,
-          verifiedAt: new Date(),
+          verifiedAt: new Date().toISOString(), // Convert Date thành ISO string ngay
           blockchainStatus: drug.blockchain?.blockchainStatus || 'unknown'
         },
-        risk
+        risk: risk
       }
-    });
+    };
+
+    // Kiểm tra BigInt trong responsePayload trước khi gửi
+    try {
+      JSON.stringify(responsePayload, (key, value) => {
+        if (typeof value === 'bigint') {
+          console.error(`[verifyQRCode] Found BigInt in responsePayload at key: ${key}, value: ${value}`);
+          throw new Error(`BigInt found at ${key}`);
+        }
+        return value;
+      });
+    } catch (bigIntCheck) {
+      console.error('[verifyQRCode] BigInt detected in responsePayload, processing again...');
+      // Xử lý lại toàn bộ payload
+      responsePayload.data.drug = toJSONSafe(responsePayload.data.drug);
+      responsePayload.data.blockchain = toJSONSafe(responsePayload.data.blockchain);
+      responsePayload.data.risk = toJSONSafe(responsePayload.data.risk);
+    }
+
+    // Convert toàn bộ response để tránh BigInt
+    try {
+      safeJsonResponse(res, 200, responsePayload);
+      return;
+    } catch (jsonError) {
+      console.error('[verifyQRCode] Error serializing response:', jsonError);
+      console.error('[verifyQRCode] JSON error details:', {
+        message: jsonError.message,
+        stack: jsonError.stack
+      });
+      // Fallback: trả về response đơn giản nhất
+      safeJsonResponse(res, 200, {
+        success: true,
+        message: 'Thông tin lô thuốc hợp lệ.',
+        data: {
+          drug: {
+            drugId: String(drug.drugId || drug._id || ''),
+            name: String(drug.name || ''),
+            batchNumber: String(drug.batchNumber || '')
+          }
+        }
+      });
+      return;
+    }
 
   } catch (error) {
-    console.error('Error verifying QR code:', error);
-    res.status(500).json({
+    console.error('[verifyQRCode] Error verifying QR code:', error);
+    console.error('[verifyQRCode] Error stack:', error.stack);
+    console.error('[verifyQRCode] Blockchain ID:', blockchainId);
+    safeJsonResponse(res, 500, {
       success: false,
       message: 'Lỗi server khi xác minh QR code.',
-      error: error.message
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Vui lòng thử lại sau.'
     });
   }
 };
@@ -1057,9 +1341,9 @@ const verifyDrugByBlockchainId = async (req, res) => {
     }
 
     // Tìm thuốc theo blockchain ID
-    const drug = await Drug.findOne({ 
+    const drug = await populateDrug(Drug.findOne({ 
       'blockchain.blockchainId': blockchainId 
-    }).populate(drugPopulateOptions);
+    }));
 
     if (!drug) {
       return res.status(404).json({

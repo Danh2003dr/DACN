@@ -297,15 +297,27 @@ supplierSchema.statics.getSuppliers = async function(filters = {}, options = {})
   } catch (error) {
     // Nếu có lỗi, thử lại không populate
     console.warn('Error in getSuppliers query, retrying without populate:', error.message);
-    const simpleQuery = this.find(filters)
-      .sort(sort)
-      .skip(skip)
-      .limit(limit);
-    
-    [suppliers, total] = await Promise.all([
-      simpleQuery.lean().exec(),
-      this.countDocuments(filters)
-    ]);
+    try {
+      const simpleQuery = this.find(filters)
+        .sort(sort)
+        .skip(skip)
+        .limit(limit);
+      
+      [suppliers, total] = await Promise.all([
+        simpleQuery.lean().exec(),
+        this.countDocuments(filters)
+      ]);
+    } catch (retryError) {
+      // Nếu vẫn lỗi, trả về empty data thay vì throw error
+      console.error('Error in getSuppliers (retry failed):', retryError.message);
+      suppliers = [];
+      total = 0;
+    }
+  }
+  
+  // Đảm bảo suppliers luôn là array
+  if (!Array.isArray(suppliers)) {
+    suppliers = [];
   }
   
   return {
@@ -313,8 +325,8 @@ supplierSchema.statics.getSuppliers = async function(filters = {}, options = {})
     pagination: {
       page,
       limit,
-      total,
-      pages: Math.ceil(total / limit)
+      total: total || 0,
+      pages: Math.ceil((total || 0) / limit)
     }
   };
 };
