@@ -1146,8 +1146,8 @@ blockchainService.recordRecall = async function(recallData) {
   }
 };
 
-  // Ghi chữ ký số lên blockchain
-  async recordDigitalSignatureOnBlockchain(signatureData) {
+// Ghi chữ ký số lên blockchain
+blockchainService.recordDigitalSignatureOnBlockchain = async function(signatureData) {
     try {
       if (!this.isInitialized) {
         throw new Error('Blockchain service chưa được khởi tạo');
@@ -1165,40 +1165,57 @@ blockchainService.recordRecall = async function(recallData) {
       } = signatureData;
 
       if (this.contract && process.env.CONTRACT_ADDRESS !== '0x...') {
-        // Nếu smart contract có method recordSignature, dùng nó
-        // Hiện tại contract chưa có method này, nên sẽ emit event hoặc lưu vào notes của distribution
+        // Convert signatureId và targetId sang string nếu là ObjectId
+        const signatureIdStr = signatureId?.toString() || signatureId;
+        const targetIdStr = targetId?.toString() || targetId;
+        const targetTypeStr = targetType || 'drug';
+        const dataHashStr = dataHash || '';
+        const signatureStr = signature || '';
+        const certSerialStr = certificateSerialNumber || '';
         
-        // Tạm thời: Lưu chữ ký số vào event thông qua một transaction đơn giản
-        // Hoặc có thể lưu vào metadata của drug batch update
+        // Validate inputs
+        if (!signatureIdStr || !dataHashStr) {
+          throw new Error('signatureId và dataHash là bắt buộc');
+        }
         
-        // Option 1: Emit event (nếu contract có event DigitalSignatureRecorded)
-        // Option 2: Lưu vào notes của một distribution record
-        // Option 3: Tạo một transaction đơn giản để lưu hash
+        // Estimate gas cho recordDigitalSignature
+        const estimatedGas = await this.estimateGas('recordDigitalSignature', [
+          signatureIdStr,
+          targetTypeStr,
+          targetIdStr,
+          dataHashStr,
+          signatureStr,
+          certSerialStr
+        ], { defaultGas: 300000, maxGas: 1000000 });
         
-        // Tạm thời: Tạo một transaction để lưu signature hash
-        // Sử dụng recordDistribution với notes chứa signature info
-        const signatureInfo = JSON.stringify({
-          signatureId: signatureId.toString(),
-          targetType,
-          targetId: targetId.toString(),
-          dataHash,
-          certificateSerialNumber,
-          timestampedAt: timestampedAt || Date.now()
+        // Lấy gas price động
+        const gasPrice = await this.getGasPrice();
+        
+        // Gọi smart contract method recordDigitalSignature
+        const result = await this.contract.methods.recordDigitalSignature(
+          signatureIdStr,
+          targetTypeStr,
+          targetIdStr,
+          dataHashStr,
+          signatureStr,
+          certSerialStr
+        ).send({
+          from: this.account,
+          gas: Number(estimatedGas),
+          gasPrice: gasPrice
         });
-
-        // Lưu signature hash vào blockchain thông qua distribution record
-        // Hoặc tạo một method riêng nếu contract hỗ trợ
         
-        // Hiện tại: Trả về mock transaction hash
-        // TODO: Thêm method recordSignature vào smart contract
-        const mockTxHash = `0x${crypto.randomBytes(32).toString('hex')}`;
+        // Xử lý BigInt trong transaction result
+        const sanitizedBlockNumber = typeof result.blockNumber === 'bigint' 
+          ? Number(result.blockNumber) 
+          : Number(result.blockNumber || 0);
         
         return {
           success: true,
-          transactionHash: mockTxHash,
-          blockNumber: 0, // Sẽ được cập nhật khi có transaction thật
+          transactionHash: result.transactionHash || '',
+          blockNumber: sanitizedBlockNumber,
           timestamp: Date.now(),
-          message: 'Chữ ký số đã được lưu (mock - cần thêm method vào smart contract)'
+          signatureId: signatureIdStr
         };
       } else {
         // Mock implementation
@@ -1218,7 +1235,7 @@ blockchainService.recordRecall = async function(recallData) {
         error: error.message
       };
     }
-  }
+};
 
 blockchainService.getSupplyChainHistory = async function(drugBatchNumber) {
   try {

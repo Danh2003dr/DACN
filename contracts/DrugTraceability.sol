@@ -8,6 +8,8 @@ error InvalidExpiryDate();
 error DrugNotFound();
 error DrugRecalled();
 error Unauthorized();
+error SignatureIdEmpty();
+error DataHashEmpty();
 
 contract DrugTraceability {
     // Packed struct để tiết kiệm storage slots
@@ -41,11 +43,31 @@ contract DrugTraceability {
         string notes;                // Slot 4+
     }
     
+    // Struct cho chữ ký số
+    struct DigitalSignature {
+        address signedBy;            // 20 bytes
+        uint64 timestamp;            // 8 bytes
+        // Total: 28 bytes
+        string signatureId;          // Slot 2+
+        string targetType;           // Slot 3+
+        string targetId;             // Slot 4+
+        string dataHash;             // Slot 5+ (SHA-256 hash)
+        string signature;            // Slot 6+ (chữ ký số)
+        string certificateSerialNumber; // Slot 7+
+    }
+    
     // Mapping lưu trữ thông tin lô thuốc
     mapping(string => DrugBatch) public drugBatches;
     
     // Mapping lưu trữ lịch sử phân phối
     mapping(string => DistributionRecord[]) public distributionHistory;
+    
+    // Mapping lưu trữ chữ ký số
+    // Key: signatureId (unique identifier cho chữ ký)
+    mapping(string => DigitalSignature) public digitalSignatures;
+    
+    // Mapping để lưu danh sách signature IDs theo target (drugId, supplyChainId, etc.)
+    mapping(string => string[]) public targetSignatures;
     
     // Array lưu trữ tất cả drug IDs (tối ưu hóa bằng cách sử dụng mapping)
     string[] public allDrugIds;
@@ -89,6 +111,15 @@ contract DrugTraceability {
         string indexed drugId,
         address indexed verifier,
         bool isValid,
+        uint256 timestamp
+    );
+    
+    event DigitalSignatureRecorded(
+        string indexed signatureId,
+        string indexed targetType,
+        string indexed targetId,
+        address signedBy,
+        string dataHash,
         uint256 timestamp
     );
     
@@ -525,5 +556,78 @@ contract DrugTraceability {
         if (drugBatches[_drugId].createdAt == 0) revert DrugNotFound();
         
         emit DrugBatchVerified(_drugId, msg.sender, _isValid, block.timestamp);
+    }
+    
+    // Ghi chữ ký số lên blockchain
+    function recordDigitalSignature(
+        string memory _signatureId,
+        string memory _targetType,
+        string memory _targetId,
+        string memory _dataHash,
+        string memory _signature,
+        string memory _certificateSerialNumber
+    ) external onlyOwner {
+        if (bytes(_signatureId).length == 0) revert SignatureIdEmpty();
+        if (bytes(_dataHash).length == 0) revert DataHashEmpty();
+        
+        // Lưu chữ ký số
+        digitalSignatures[_signatureId] = DigitalSignature({
+            signedBy: msg.sender,
+            timestamp: uint64(block.timestamp),
+            signatureId: _signatureId,
+            targetType: _targetType,
+            targetId: _targetId,
+            dataHash: _dataHash,
+            signature: _signature,
+            certificateSerialNumber: _certificateSerialNumber
+        });
+        
+        // Thêm vào danh sách signatures của target
+        targetSignatures[_targetId].push(_signatureId);
+        
+        emit DigitalSignatureRecorded(
+            _signatureId,
+            _targetType,
+            _targetId,
+            msg.sender,
+            _dataHash,
+            block.timestamp
+        );
+    }
+    
+    // Lấy thông tin chữ ký số
+    function getDigitalSignature(string memory _signatureId) external view returns (
+        address signedBy,
+        uint256 timestamp,
+        string memory signatureId,
+        string memory targetType,
+        string memory targetId,
+        string memory dataHash,
+        string memory signature,
+        string memory certificateSerialNumber
+    ) {
+        DigitalSignature memory sig = digitalSignatures[_signatureId];
+        if (bytes(sig.signatureId).length == 0) revert();
+        
+        return (
+            sig.signedBy,
+            uint256(sig.timestamp),
+            sig.signatureId,
+            sig.targetType,
+            sig.targetId,
+            sig.dataHash,
+            sig.signature,
+            sig.certificateSerialNumber
+        );
+    }
+    
+    // Lấy danh sách signature IDs của một target
+    function getTargetSignatures(string memory _targetId) external view returns (string[] memory) {
+        return targetSignatures[_targetId];
+    }
+    
+    // Kiểm tra chữ ký số có tồn tại không
+    function digitalSignatureExists(string memory _signatureId) external view returns (bool) {
+        return bytes(digitalSignatures[_signatureId].signatureId).length > 0;
     }
 }
