@@ -1,5 +1,65 @@
 const User = require('../models/User');
 const { USER_ROLES } = require('../models/User');
+const mongoose = require('mongoose');
+
+/**
+ * Helper function để chuẩn hóa ObjectId từ request params
+ * Xử lý trường hợp ObjectId là object thay vì string
+ */
+function normalizeObjectId(id) {
+  if (!id) {
+    return null;
+  }
+  
+  // Nếu đã là string hợp lệ, trả về ngay
+  if (typeof id === 'string' && mongoose.Types.ObjectId.isValid(id)) {
+    return id;
+  }
+  
+  // Nếu đã là ObjectId instance, chuyển về string
+  if (mongoose.Types.ObjectId.isValid(id)) {
+    return String(id);
+  }
+  
+  // Nếu là object với các keys như '0', '1', '2'... (char array)
+  if (typeof id === 'object' && id !== null) {
+    if (Object.keys(id).every(key => /^\d+$/.test(key))) {
+      // Object có dạng { '0': '6', '1': '9', ... }
+      const normalized = Object.keys(id)
+        .sort((a, b) => parseInt(a) - parseInt(b))
+        .map(key => id[key])
+        .join('');
+      
+      if (mongoose.Types.ObjectId.isValid(normalized)) {
+        return normalized;
+      }
+    }
+    
+    // Thử lấy _id, id, hoặc giá trị đầu tiên
+    if (id._id) {
+      return normalizeObjectId(id._id);
+    }
+    if (id.id) {
+      return normalizeObjectId(id.id);
+    }
+    
+    // Thử toString() nếu có
+    if (id.toString && typeof id.toString === 'function') {
+      const str = id.toString();
+      if (mongoose.Types.ObjectId.isValid(str)) {
+        return str;
+      }
+    }
+  }
+  
+  // Cuối cùng, thử convert sang string
+  const str = String(id);
+  if (mongoose.Types.ObjectId.isValid(str)) {
+    return str;
+  }
+  
+  return null;
+}
 
 // @desc    Lấy danh sách tất cả users (chỉ Admin)
 // @route   GET /api/users
@@ -41,7 +101,9 @@ const getAllUsers = async (req, res) => {
       data: {
         users,
         pagination: {
+          page: page,
           current: page,
+          limit: limit,
           pages: Math.ceil(total / limit),
           total: total
         }
@@ -62,7 +124,17 @@ const getAllUsers = async (req, res) => {
 // @access  Private
 const getUserById = async (req, res) => {
   try {
-    const user = await User.findById(req.params.id).select('-password');
+    // Chuẩn hóa ID từ params
+    let userId = normalizeObjectId(req.params.id);
+    
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        message: 'ID user không hợp lệ.'
+      });
+    }
+    
+    const user = await User.findById(userId).select('-password');
     
     if (!user) {
       return res.status(404).json({
@@ -72,7 +144,7 @@ const getUserById = async (req, res) => {
     }
     
     // Kiểm tra quyền truy cập
-    if (req.user.role !== USER_ROLES.ADMIN && req.user._id.toString() !== req.params.id) {
+    if (req.user.role !== USER_ROLES.ADMIN && req.user._id.toString() !== userId) {
       return res.status(403).json({
         success: false,
         message: 'Bạn không có quyền xem thông tin user này.'

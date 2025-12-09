@@ -15,6 +15,7 @@ import {
   UserPlus
 } from 'lucide-react';
 import { userAPI, authAPI } from '../utils/api';
+import { useAuth } from '../contexts/AuthContext';
 import toast from 'react-hot-toast';
 
 // Component form để tạo/chỉnh sửa user
@@ -27,16 +28,32 @@ const CreateEditUserForm = ({ user, onSubmit, isLoading, onCancel, isEdit }) => 
       role: user.role || '',
       organizationId: user.organizationId || '',
       patientId: user.patientId || '',
-      address: {
-        street: user.address?.street || '',
-        ward: user.address?.ward || '',
-        district: user.address?.district || '',
-        city: user.address?.city || ''
-      },
+      address: (() => {
+        // Parse address string thành object nếu cần
+        if (typeof user.address === 'string' && user.address.trim()) {
+          // Thử parse từ string (format có thể là "street, ward, district, city")
+          const parts = user.address.split(',').map(p => p.trim());
+          return {
+            street: parts[0] || '',
+            ward: parts[1] || '',
+            district: parts[2] || '',
+            city: parts[3] || ''
+          };
+        } else if (typeof user.address === 'object' && user.address) {
+          return {
+            street: user.address.street || '',
+            ward: user.address.ward || '',
+            district: user.address.district || '',
+            city: user.address.city || ''
+          };
+        }
+        return { street: '', ward: '', district: '', city: '' };
+      })(),
       organizationInfo: {
         name: user.organizationInfo?.name || '',
-        license: user.organizationInfo?.license || '',
-        type: user.organizationInfo?.type || ''
+        address: user.organizationInfo?.address || '',
+        phone: user.organizationInfo?.phone || '',
+        email: user.organizationInfo?.email || ''
       },
       isActive: user.isActive !== undefined ? user.isActive : true
     } : {
@@ -56,24 +73,56 @@ const CreateEditUserForm = ({ user, onSubmit, isLoading, onCancel, isEdit }) => 
       },
       organizationInfo: {
         name: '',
-        license: '',
-        type: ''
+        address: '',
+        phone: '',
+        email: ''
       }
     }
   });
 
   const selectedRole = watch('role');
+  
+  // Kiểm tra xem user có đăng nhập bằng Firebase/Google không (không cần patientId)
+  const isOAuthUser = user && (user.firebaseUid || user.googleId || user.authProvider === 'firebase' || user.authProvider === 'google');
 
   const onFormSubmit = (data) => {
     if (isEdit) {
       // Chỉ gửi các trường có thể cập nhật
       const updateData = {
         fullName: data.fullName,
-        phone: data.phone,
-        address: data.address,
-        organizationInfo: data.organizationInfo,
-        isActive: data.isActive
+        phone: data.phone || null
       };
+      
+      // Chuyển đổi address object thành string
+      if (data.address) {
+        const addressParts = [
+          data.address.street,
+          data.address.ward,
+          data.address.district,
+          data.address.city
+        ].filter(Boolean);
+        updateData.address = addressParts.length > 0 ? addressParts.join(', ') : null;
+      }
+      
+      // Chỉ gửi organizationInfo nếu có giá trị và user có role cần organizationInfo
+      // Backend mong đợi: {name, address, phone, email} - không có license và type
+      if (data.organizationInfo && (selectedRole === 'manufacturer' || selectedRole === 'distributor' || selectedRole === 'hospital')) {
+        const orgInfo = {};
+        if (data.organizationInfo.name && data.organizationInfo.name.trim()) orgInfo.name = data.organizationInfo.name.trim();
+        if (data.organizationInfo.address && data.organizationInfo.address.trim()) orgInfo.address = data.organizationInfo.address.trim();
+        if (data.organizationInfo.phone && data.organizationInfo.phone.trim()) orgInfo.phone = data.organizationInfo.phone.trim();
+        if (data.organizationInfo.email && data.organizationInfo.email.trim()) orgInfo.email = data.organizationInfo.email.trim().toLowerCase();
+        
+        // Chỉ gửi nếu có ít nhất một field có giá trị
+        if (Object.keys(orgInfo).length > 0) {
+          updateData.organizationInfo = orgInfo;
+        }
+      }
+      
+      // Chỉ gửi isActive nếu user hiện tại là admin
+      // Backend sẽ kiểm tra lại, nhưng tốt nhất là không gửi nếu không phải admin
+      // (Chúng ta sẽ kiểm tra ở component cha vì form component không có access đến currentUser)
+      
       onSubmit(updateData);
     } else {
       // Gửi toàn bộ dữ liệu để tạo mới
@@ -238,17 +287,22 @@ const CreateEditUserForm = ({ user, onSubmit, isLoading, onCancel, isEdit }) => 
       {selectedRole === 'patient' && (
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
-            Mã bệnh nhân <span className="text-red-500">*</span>
+            Mã bệnh nhân {!isOAuthUser && <span className="text-red-500">*</span>}
           </label>
           <input
             type="text"
             {...register('patientId', { 
-              required: selectedRole === 'patient' ? 'Vui lòng nhập mã bệnh nhân' : false
+              required: selectedRole === 'patient' && !isOAuthUser ? 'Vui lòng nhập mã bệnh nhân' : false
             })}
             className={`form-input ${errors.patientId ? 'border-red-500' : ''}`}
-            placeholder="Nhập mã bệnh nhân"
+            placeholder={isOAuthUser ? "Mã bệnh nhân (tùy chọn cho tài khoản OAuth)" : "Nhập mã bệnh nhân"}
             disabled={isEdit}
           />
+          {isOAuthUser && (
+            <p className="text-xs text-gray-500 mt-1">
+              Tài khoản đăng nhập bằng Firebase/Google không bắt buộc mã bệnh nhân
+            </p>
+          )}
           {errors.patientId && (
             <p className="text-red-500 text-xs mt-1">{errors.patientId.message}</p>
           )}
@@ -340,29 +394,38 @@ const CreateEditUserForm = ({ user, onSubmit, isLoading, onCancel, isEdit }) => 
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Số giấy phép
+                Địa chỉ tổ chức
               </label>
               <input
                 type="text"
-                {...register('organizationInfo.license')}
+                {...register('organizationInfo.address')}
                 className="form-input"
-                placeholder="Nhập số giấy phép"
+                placeholder="Nhập địa chỉ tổ chức"
               />
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Loại tổ chức
+                Số điện thoại tổ chức
               </label>
-              <select
-                {...register('organizationInfo.type')}
+              <input
+                type="text"
+                {...register('organizationInfo.phone')}
                 className="form-input"
-              >
-                <option value="">Chọn loại tổ chức</option>
-                <option value="pharmaceutical_company">Công ty dược phẩm</option>
-                <option value="distribution_company">Công ty phân phối</option>
-                <option value="hospital">Bệnh viện</option>
-              </select>
+                placeholder="Nhập số điện thoại tổ chức"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Email tổ chức
+              </label>
+              <input
+                type="email"
+                {...register('organizationInfo.email')}
+                className="form-input"
+                placeholder="Nhập email tổ chức"
+              />
             </div>
           </div>
         </div>
@@ -415,6 +478,7 @@ const CreateEditUserForm = ({ user, onSubmit, isLoading, onCancel, isEdit }) => 
 };
 
 const Users = () => {
+  const { user: currentUser } = useAuth();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedRole, setSelectedRole] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
@@ -425,6 +489,105 @@ const Users = () => {
   const [showDetailsModal, setShowDetailsModal] = useState(false);
 
   const queryClient = useQueryClient();
+
+  // Helper function để chuẩn hóa ID - đảm bảo luôn trả về string
+  // Xử lý các trường hợp MongoDB ObjectId được serialize thành object
+  const normalizeId = (id, fallback = '') => {
+    if (!id) return fallback;
+    
+    // Nếu đã là string hợp lệ
+    if (typeof id === 'string') {
+      const trimmed = id.trim();
+      if (trimmed !== '' && trimmed !== '[object Object]') {
+        return trimmed;
+      }
+    }
+    
+    // Nếu là object (có thể là MongoDB ObjectId được serialize)
+    if (typeof id === 'object' && id !== null) {
+      // Trường hợp object có các keys như '0', '1', '2'... (char array - MongoDB ObjectId được serialize)
+      if (Object.keys(id).every(key => /^\d+$/.test(key))) {
+        const normalized = Object.keys(id)
+          .sort((a, b) => parseInt(a) - parseInt(b))
+          .map(key => id[key])
+          .join('');
+        if (normalized && normalized.trim() !== '' && normalized !== '[object Object]') {
+          return normalized;
+        }
+      }
+      
+      // Thử lấy nested _id hoặc id
+      if (id._id) {
+        const nestedResult = normalizeId(id._id, '');
+        if (nestedResult) return nestedResult;
+      }
+      if (id.id) {
+        const idResult = normalizeId(id.id, '');
+        if (idResult) return idResult;
+      }
+      
+      // Thử toString() nếu có
+      if (id.toString && typeof id.toString === 'function') {
+        try {
+          const str = id.toString();
+          if (str && str.trim() !== '' && str !== '[object Object]') {
+            return str;
+          }
+        } catch (e) {
+          // Ignore toString errors
+        }
+      }
+    }
+    
+    // Cuối cùng, thử convert sang string
+    try {
+      const str = String(id);
+      if (str && str.trim() !== '' && str !== '[object Object]') {
+        return str;
+      }
+    } catch (e) {
+      // Ignore conversion errors
+    }
+    
+    return fallback;
+  };
+
+  // Helper function để kiểm tra ID có hợp lệ không
+  const isValidId = (id) => {
+    if (!id) return false;
+    const normalized = normalizeId(id);
+    return Boolean(normalized && normalized.trim() !== '' && normalized !== '[object Object]');
+  };
+
+  // Helper function để tạo unique key - luôn đảm bảo trả về string và unique
+  const getUniqueKey = (item, idx) => {
+    // Luôn bắt đầu với index để đảm bảo uniqueness ngay từ đầu
+    let idPart = '';
+    
+    // Thử lấy ID từ nhiều nguồn
+    if (item._id) {
+      if (typeof item._id === 'string' && item._id.trim() !== '' && item._id !== '[object Object]') {
+        idPart = item._id;
+      } else if (typeof item._id === 'object' && item._id !== null) {
+        // Nếu _id là object, lấy nested _id hoặc id
+        const nestedId = item._id._id || item._id.id;
+        if (nestedId && typeof nestedId === 'string' && nestedId !== '[object Object]') {
+          idPart = nestedId;
+        }
+      }
+    }
+    
+    // Nếu không có ID hợp lệ, tạo từ các giá trị khác
+    if (!idPart || idPart === '[object Object]') {
+      const email = String(item.email || '');
+      const fullName = String(item.fullName || '');
+      const createdAt = item.createdAt ? String(new Date(item.createdAt).getTime()) : String(Date.now());
+      idPart = `${email}-${fullName}-${createdAt}`;
+    }
+    
+    // Luôn kết hợp index làm phần chính để đảm bảo unique tuyệt đối
+    return `user-${idx}-${idPart}`;
+  };
 
   // Fetch users
   const { data: usersData, isLoading, error } = useQuery(
@@ -453,19 +616,59 @@ const Users = () => {
   // Fetch user stats
   const { data: statsData } = useQuery('userStats', userAPI.getUserStats);
 
-  // Fetch user details when viewing
+  // Fetch user details when viewing - đảm bảo enabled luôn là boolean
+  const isUserDetailsQueryEnabled = Boolean(
+    showDetailsModal && selectedUser && isValidId(selectedUser._id)
+  );
+  
   const { data: userDetails, isLoading: isLoadingDetails } = useQuery(
     ['userDetails', selectedUser?._id],
-    () => {
-      if (!selectedUser?._id) {
+    async () => {
+      if (!selectedUser) {
+        return Promise.reject(new Error('User không được chọn'));
+      }
+      
+      // Chuẩn hóa ID trước khi gọi API
+      const normalizedId = normalizeId(selectedUser._id);
+      
+      // Debug log để kiểm tra
+      if (!normalizedId || normalizedId.trim() === '' || normalizedId === '[object Object]') {
+        console.error('User ID không hợp lệ:', {
+          originalId: selectedUser._id,
+          type: typeof selectedUser._id,
+          normalizedId: normalizedId,
+          selectedUser: selectedUser
+        });
         return Promise.reject(new Error('User ID không hợp lệ'));
       }
-      return userAPI.getUserById(selectedUser._id);
+      
+      try {
+        const result = await userAPI.getUserById(normalizedId);
+        return result;
+      } catch (error) {
+        console.error('API Error loading user details:', {
+          normalizedId,
+          error: error.response?.data || error.message,
+          status: error.response?.status
+        });
+        throw error;
+      }
     },
     {
-      enabled: showDetailsModal && selectedUser?._id != null,
+      enabled: isUserDetailsQueryEnabled,
+      retry: false,
       onError: (error) => {
-        toast.error(error.response?.data?.message || 'Không thể tải thông tin user');
+        // Chỉ log lỗi, không hiển thị toast nếu là lỗi validation ID
+        if (error.message === 'User ID không hợp lệ' || error.message === 'User không được chọn') {
+          console.warn('Bỏ qua query do ID không hợp lệ:', {
+            selectedUser,
+            error: error.message
+          });
+          return;
+        }
+        console.error('Error loading user details:', error);
+        const errorMessage = error.response?.data?.message || error.message || 'Không thể tải thông tin user';
+        toast.error(errorMessage);
       }
     }
   );
@@ -507,12 +710,38 @@ const Users = () => {
   const updateUserMutation = useMutation(
     ({ id, userData }) => userAPI.updateUser(id, userData),
     {
-      onSuccess: () => {
-        queryClient.invalidateQueries('users');
-        queryClient.invalidateQueries('userStats');
-        queryClient.invalidateQueries('userDetails');
+      onSuccess: async (response, variables) => {
+        // Invalidate các queries để refetch dữ liệu mới
+        await Promise.all([
+          queryClient.invalidateQueries('users'),
+          queryClient.invalidateQueries('userStats'),
+          queryClient.invalidateQueries('userDetails')
+        ]);
+        
+        // Cập nhật selectedUser với dữ liệu mới từ response
+        if (response?.data?.user && selectedUser) {
+          const updatedUser = response.data.user;
+          const normalizedId = normalizeId(selectedUser._id);
+          const responseId = normalizeId(updatedUser._id || updatedUser.id);
+          
+          if (normalizedId === responseId) {
+            setSelectedUser({
+              ...selectedUser,
+              ...updatedUser
+            });
+          }
+        }
+        
         setShowEditModal(false);
-        setSelectedUser(null);
+        
+        // Refetch userDetails nếu modal chi tiết đang mở
+        if (showDetailsModal && selectedUser) {
+          const userId = normalizeId(selectedUser._id);
+          if (userId) {
+            await queryClient.refetchQueries(['userDetails', userId]);
+          }
+        }
+        
         toast.success('Cập nhật user thành công!');
       },
       onError: (error) => {
@@ -522,12 +751,22 @@ const Users = () => {
   );
 
   const handleToggleLock = (userId) => {
-    toggleLockMutation.mutate(userId);
+    const normalizedId = normalizeId(userId);
+    if (!normalizedId || normalizedId.trim() === '' || normalizedId === '[object Object]') {
+      toast.error('User ID không hợp lệ');
+      return;
+    }
+    toggleLockMutation.mutate(normalizedId);
   };
 
   const handleDeleteUser = () => {
     if (selectedUser) {
-      deleteUserMutation.mutate(selectedUser.id);
+      const userId = normalizeId(selectedUser.id || selectedUser._id);
+      if (userId) {
+        deleteUserMutation.mutate(userId);
+      } else {
+        toast.error('User ID không hợp lệ');
+      }
     }
   };
 
@@ -553,7 +792,21 @@ const Users = () => {
     return colors[role] || 'badge-gray';
   };
 
-  const users = usersData?.data?.users || [];
+  // Normalize users data để đảm bảo tất cả _id đều là string hợp lệ
+  const normalizeUsersList = (usersList) => {
+    if (!Array.isArray(usersList)) return [];
+    return usersList.map(user => {
+      if (!user || typeof user !== 'object') return user;
+      const normalizedId = normalizeId(user._id);
+      return {
+        ...user,
+        _id: normalizedId || user._id
+      };
+    });
+  };
+
+  const rawUsers = usersData?.data?.users || [];
+  const users = normalizeUsersList(rawUsers);
   const pagination = usersData?.data?.pagination || {};
 
   return (
@@ -725,8 +978,8 @@ const Users = () => {
                   </td>
                 </tr>
               ) : (
-                users.map((user) => (
-                  <tr key={user._id} className="table-row">
+                users.map((user, idx) => (
+                  <tr key={getUniqueKey(user, idx)} className="table-row">
                     <td className="table-cell">
                       <div className="flex items-center">
                         <div className="h-10 w-10 rounded-full bg-primary-100 flex items-center justify-center">
@@ -768,8 +1021,20 @@ const Users = () => {
                       <div className="flex items-center space-x-2">
                         <button
                           onClick={() => {
-                            setSelectedUser(user);
-                            setShowDetailsModal(true);
+                            // Đảm bảo user object có _id hợp lệ trước khi set
+                            const normalizedUserId = normalizeId(user._id);
+                            if (normalizedUserId) {
+                              // Tạo một bản copy của user với _id đã được normalize
+                              const userWithNormalizedId = {
+                                ...user,
+                                _id: normalizedUserId
+                              };
+                              setSelectedUser(userWithNormalizedId);
+                              setShowDetailsModal(true);
+                            } else {
+                              console.error('Không thể normalize user ID:', user._id, user);
+                              toast.error('Không thể tải thông tin user: ID không hợp lệ');
+                            }
                           }}
                           className="text-blue-600 hover:text-blue-900"
                           title="Xem chi tiết"
@@ -813,7 +1078,7 @@ const Users = () => {
         </div>
 
         {/* Pagination */}
-        {pagination.total > pagination.limit && (
+        {pagination.pages > 1 && (
           <div className="bg-white px-4 py-3 flex items-center justify-between border-t border-gray-200 sm:px-6">
             <div className="flex-1 flex justify-between sm:hidden">
               <button
@@ -911,6 +1176,7 @@ const Users = () => {
                 </div>
               ) : userDetails?.data?.user ? (
                 <div className="space-y-6">
+                  {/* Show user details from API */}
                   {/* Avatar & Basic Info */}
                   <div className="flex items-start space-x-6">
                     <div className="h-24 w-24 rounded-full bg-primary-100 flex items-center justify-center">
@@ -998,16 +1264,28 @@ const Users = () => {
                         </p>
                       </div>
                     )}
-                    {userDetails.data.user.address && (
-                      <div className="md:col-span-2">
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Địa chỉ
-                        </label>
-                        <p className="text-sm text-gray-900 bg-gray-50 p-2 rounded">
-                          {userDetails.data.user.address.street}, {userDetails.data.user.address.ward}, {userDetails.data.user.address.district}, {userDetails.data.user.address.city}
-                        </p>
-                      </div>
-                    )}
+                    <div className="md:col-span-2">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Địa chỉ
+                      </label>
+                      <p className="text-sm text-gray-900 bg-gray-50 p-2 rounded">
+                        {(() => {
+                          const address = userDetails.data.user.address;
+                          if (!address) return '-';
+                          if (typeof address === 'string') return address;
+                          if (typeof address === 'object') {
+                            const parts = [
+                              address.street,
+                              address.ward,
+                              address.district,
+                              address.city
+                            ].filter(Boolean);
+                            return parts.length > 0 ? parts.join(', ') : '-';
+                          }
+                          return '-';
+                        })()}
+                      </p>
+                    </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">
                         Ngày tạo
@@ -1066,9 +1344,42 @@ const Users = () => {
                     </button>
                   </div>
                 </div>
+              ) : selectedUser ? (
+                // Fallback: Hiển thị thông tin từ selectedUser nếu không tải được từ API
+                <div className="space-y-6">
+                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
+                    <p className="text-sm text-yellow-800">
+                      ⚠️ Không thể tải thông tin chi tiết từ server. Đang hiển thị thông tin cơ bản từ danh sách.
+                    </p>
+                  </div>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="text-sm font-medium text-gray-500">Họ và tên</label>
+                      <p className="text-gray-900">{selectedUser.fullName || 'N/A'}</p>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-gray-500">Email</label>
+                      <p className="text-gray-900">{selectedUser.email || 'N/A'}</p>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-gray-500">Vai trò</label>
+                      <p className="text-gray-900">{getRoleDisplayName(selectedUser.role) || 'N/A'}</p>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-gray-500">Trạng thái</label>
+                      <p className="text-gray-900">{selectedUser.isActive ? 'Hoạt động' : 'Không hoạt động'}</p>
+                    </div>
+                  </div>
+                </div>
               ) : (
                 <div className="text-center py-12">
                   <p className="text-gray-500">Không thể tải thông tin user</p>
+                  <button
+                    onClick={() => setShowDetailsModal(false)}
+                    className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                  >
+                    Đóng
+                  </button>
                 </div>
               )}
             </div>
@@ -1126,7 +1437,19 @@ const Users = () => {
 
               <CreateEditUserForm
                 user={selectedUser}
-                onSubmit={(data) => updateUserMutation.mutate({ id: selectedUser._id, userData: data })}
+                onSubmit={(data) => {
+                  const userId = normalizeId(selectedUser._id || selectedUser.id);
+                  if (userId) {
+                    // Chỉ gửi isActive nếu user hiện tại là admin
+                    const userDataToSend = { ...data };
+                    if (currentUser?.role !== 'admin' && 'isActive' in userDataToSend) {
+                      delete userDataToSend.isActive;
+                    }
+                    updateUserMutation.mutate({ id: userId, userData: userDataToSend });
+                  } else {
+                    toast.error('User ID không hợp lệ');
+                  }
+                }}
                 isLoading={updateUserMutation.isLoading}
                 onCancel={() => {
                   setShowEditModal(false);
