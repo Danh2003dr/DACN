@@ -3,6 +3,7 @@ const SupplyChain = require('../models/SupplyChain');
 const Task = require('../models/Task');
 const Notification = require('../models/Notification');
 const DigitalSignature = require('../models/DigitalSignature');
+const Review = require('../models/Review');
 
 /**
  * Alert Service - Phát hiện và quản lý cảnh báo thời gian thực

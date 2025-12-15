@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, Controller } from 'react-hook-form';
 import {
   Star,
   ThumbsUp,
@@ -21,7 +21,7 @@ import {
   Trash2
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { reviewAPI } from '../utils/api';
+import { reviewAPI, drugAPI, userAPI } from '../utils/api';
 import toast from 'react-hot-toast';
 
 const Reviews = () => {
@@ -44,9 +44,9 @@ const Reviews = () => {
     maxRating: '',
     status: ''
   });
-  const [activeTab, setActiveTab] = useState('public'); // public, admin
+  const [activeTab, setActiveTab] = useState('public'); // public, my, admin
 
-  const { register, handleSubmit, reset, formState: { errors } } = useForm();
+  const { register, handleSubmit, reset, setValue, trigger, control, formState: { errors } } = useForm();
 
   const handleFilterChange = (field, value) => {
     setFilters((prev) => ({
@@ -57,6 +57,74 @@ const Reviews = () => {
       ...prev,
       current: 1
     }));
+  };
+
+  // Helper function để normalize ID (giống như trong Users.js và Drugs.js)
+  const normalizeId = (id, fallback = '') => {
+    if (!id) return fallback;
+    if (typeof id === 'string' && id.trim() !== '' && id !== '[object Object]') return id;
+    if (typeof id === 'object' && id !== null) {
+      // Handle MongoDB ObjectId serialized as { '0': '6', '1': '9', ... }
+      if (Object.keys(id).every(key => /^\d+$/.test(key))) {
+        const normalized = Object.keys(id)
+          .sort((a, b) => parseInt(a) - parseInt(b))
+          .map(key => id[key])
+          .join('');
+        if (normalized.length === 24 && /^[0-9a-fA-F]{24}$/.test(normalized)) {
+          return normalized;
+        }
+      }
+      if (id._id) {
+        const nestedId = id._id;
+        if (typeof nestedId === 'string' && nestedId.trim() !== '' && nestedId !== '[object Object]') {
+          return nestedId;
+        }
+      }
+      if (id.id) {
+        const idValue = id.id;
+        if (typeof idValue === 'string' && idValue.trim() !== '' && idValue !== '[object Object]') {
+          return idValue;
+        }
+      }
+      if (id.toString && typeof id.toString === 'function') {
+        try {
+          const str = id.toString();
+          if (str !== '[object Object]' && str.trim() !== '') {
+            return str;
+          }
+        } catch (e) {
+          console.error("Error in toString for ID:", id, e);
+        }
+      }
+    }
+    try {
+      const str = String(id);
+      if (str !== '[object Object]' && str.trim() !== '') {
+        return str;
+      }
+    } catch (e) {
+      console.error("Error in String(id) for ID:", id, e);
+    }
+    return fallback;
+  };
+
+  // Helper function để tạo unique key cho reviews
+  const getUniqueKey = (review, idx) => {
+    let idPart = '';
+    if (review._id) {
+      const normalizedId = normalizeId(review._id);
+      if (normalizedId && normalizedId !== '[object Object]') {
+        idPart = normalizedId;
+      }
+    }
+    if (!idPart || idPart === '[object Object]') {
+      const targetId = String(review.targetId || '');
+      const targetType = String(review.targetType || '');
+      const createdAt = review.createdAt ? String(new Date(review.createdAt).getTime()) : String(Date.now());
+      const title = String(review.title || '');
+      idPart = `${targetId}-${targetType}-${createdAt}-${title}`;
+    }
+    return `review-${idx}-${idPart}`;
   };
 
   // Load reviews
@@ -88,7 +156,27 @@ const Reviews = () => {
           setReviews([]);
           setPagination({ current: 1, pages: 1, total: 0 });
         }
+      } else if (activeTab === 'my') {
+        // Tab "Đánh giá của tôi" - filter theo user hiện tại
+        if (user && user._id) {
+          const normalizedUserId = normalizeId(user._id);
+          if (normalizedUserId && normalizedUserId !== '[object Object]') {
+            params.append('reviewer', normalizedUserId);
+            response = await reviewAPI.getReviewsForAdmin(params.toString());
+            if (response.success) {
+              setReviews(response.data.reviews);
+              setPagination(response.data.pagination || { current: 1, pages: 1, total: 0 });
+            }
+          } else {
+            setReviews([]);
+            setPagination({ current: 1, pages: 1, total: 0 });
+          }
+        } else {
+          setReviews([]);
+          setPagination({ current: 1, pages: 1, total: 0 });
+        }
       } else {
+        // Tab "Quản lý đánh giá" (admin)
         response = await reviewAPI.getReviewsForAdmin(params.toString());
         if (response.success) {
           setReviews(response.data.reviews);
@@ -101,7 +189,7 @@ const Reviews = () => {
     } finally {
       setLoading(false);
     }
-  }, [pagination.current, filters, activeTab, hasRole]);
+  }, [pagination.current, filters, activeTab, hasRole, user]);
 
   useEffect(() => {
     loadReviews();
@@ -135,7 +223,12 @@ const Reviews = () => {
   // Vote helpful
   const voteHelpful = async (id) => {
     try {
-      const response = await reviewAPI.voteHelpful(id);
+      const normalizedId = normalizeId(id);
+      if (!normalizedId || normalizedId === '[object Object]') {
+        toast.error('ID đánh giá không hợp lệ');
+        return;
+      }
+      const response = await reviewAPI.voteHelpful(normalizedId);
       
       if (response.success) {
         toast.success('Đã vote hữu ích');
@@ -143,6 +236,7 @@ const Reviews = () => {
       }
     } catch (error) {
       toast.error('Lỗi khi vote');
+      console.error('Vote error:', error);
     }
   };
 
@@ -203,6 +297,18 @@ const Reviews = () => {
             >
               Đánh giá công khai
             </button>
+            {user && (
+              <button
+                onClick={() => setActiveTab('my')}
+                className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                  activeTab === 'my'
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                Đánh giá của tôi
+              </button>
+            )}
             {hasRole('admin') && (
               <button
                 onClick={() => setActiveTab('admin')}
@@ -276,8 +382,8 @@ const Reviews = () => {
               Không có đánh giá nào
             </div>
           ) : (
-            reviews.map((review) => (
-              <div key={review._id} className="p-6 hover:bg-gray-50">
+            reviews.map((review, idx) => (
+              <div key={getUniqueKey(review, idx)} className="p-6 hover:bg-gray-50">
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
                     <div className="flex items-center space-x-2 mb-2">
@@ -319,7 +425,7 @@ const Reviews = () => {
                     
                     <div className="flex items-center space-x-4 mt-3">
                       <button
-                        onClick={() => voteHelpful(review._id)}
+                        onClick={() => voteHelpful(normalizeId(review._id))}
                         className="flex items-center space-x-1 text-green-600 hover:text-green-800"
                       >
                         <ThumbsUp className="h-4 w-4" />
@@ -327,7 +433,7 @@ const Reviews = () => {
                       </button>
                       
                       <button
-                        onClick={() => reportReview(review._id, 'other')}
+                        onClick={() => reportReview(normalizeId(review._id), 'other')}
                         className="flex items-center space-x-1 text-red-600 hover:text-red-800"
                       >
                         <Flag className="h-4 w-4" />
@@ -340,7 +446,12 @@ const Reviews = () => {
                           <button
                             onClick={async () => {
                               try {
-                                const response = await reviewAPI.updateReviewStatus(review._id, { status: 'approved' });
+                                const normalizedId = normalizeId(review._id);
+                                if (!normalizedId) {
+                                  toast.error('ID đánh giá không hợp lệ');
+                                  return;
+                                }
+                                const response = await reviewAPI.updateReviewStatus(normalizedId, { status: 'approved' });
                                 if (response.success) {
                                   toast.success('Đã duyệt đánh giá');
                                   loadReviews();
@@ -357,7 +468,12 @@ const Reviews = () => {
                           <button
                             onClick={async () => {
                               try {
-                                const response = await reviewAPI.updateReviewStatus(review._id, { status: 'rejected' });
+                                const normalizedId = normalizeId(review._id);
+                                if (!normalizedId) {
+                                  toast.error('ID đánh giá không hợp lệ');
+                                  return;
+                                }
+                                const response = await reviewAPI.updateReviewStatus(normalizedId, { status: 'rejected' });
                                 if (response.success) {
                                   toast.success('Đã từ chối đánh giá');
                                   loadReviews();
@@ -375,7 +491,12 @@ const Reviews = () => {
                             onClick={async () => {
                               if (!window.confirm('Bạn chắc chắn muốn xóa đánh giá này?')) return;
                               try {
-                                const response = await reviewAPI.deleteReview(review._id);
+                                const normalizedId = normalizeId(review._id);
+                                if (!normalizedId) {
+                                  toast.error('ID đánh giá không hợp lệ');
+                                  return;
+                                }
+                                const response = await reviewAPI.deleteReview(normalizedId);
                                 if (response.success) {
                                   toast.success('Đã xóa đánh giá');
                                   loadReviews();
@@ -435,7 +556,7 @@ const Reviews = () => {
 
 // Create Review Modal Component
 const CreateReviewModal = ({ onSubmit, onClose, loading }) => {
-  const { register, handleSubmit, formState: { errors } } = useForm({
+  const { register, handleSubmit, formState: { errors }, watch, setValue, trigger, control } = useForm({
     defaultValues: {
       targetType: '',
       overallRating: '',
@@ -445,6 +566,225 @@ const CreateReviewModal = ({ onSubmit, onClose, loading }) => {
       isAnonymous: true
     }
   });
+
+  const selectedTargetType = watch('targetType');
+  const selectedTargetId = watch('targetId'); // Watch để theo dõi ID đã chọn
+  const selectedTargetName = watch('targetName'); // Watch để theo dõi tên đã chọn
+  const [drugs, setDrugs] = useState([]);
+  const [organizations, setOrganizations] = useState([]);
+  const [loadingOptions, setLoadingOptions] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedOptionValue, setSelectedOptionValue] = useState(''); // State để control dropdown value
+  const [displayTargetId, setDisplayTargetId] = useState(''); // State để hiển thị ID
+  const [displayTargetName, setDisplayTargetName] = useState(''); // State để hiển thị tên
+
+  // Load drugs và organizations khi targetType thay đổi
+  useEffect(() => {
+    const loadOptions = async () => {
+      if (!selectedTargetType) {
+        setDrugs([]);
+        setOrganizations([]);
+        return;
+      }
+
+      setLoadingOptions(true);
+      try {
+        if (selectedTargetType === 'drug') {
+          // Load danh sách thuốc với search nếu có
+          const params = { limit: 100 }; // Giới hạn tối đa của API
+          if (searchTerm && searchTerm.trim()) {
+            params.search = searchTerm.trim();
+          }
+          const response = await drugAPI.getDrugs(params);
+          if (response.success && response.data?.drugs) {
+            setDrugs(response.data.drugs);
+          }
+        } else if (['manufacturer', 'distributor', 'hospital'].includes(selectedTargetType)) {
+          // Load danh sách tổ chức theo role
+          const roleMap = {
+            manufacturer: 'manufacturer',
+            distributor: 'distributor',
+            hospital: 'hospital'
+          };
+          const role = roleMap[selectedTargetType];
+          const params = { role, limit: 100 }; // Giới hạn tối đa của API
+          if (searchTerm && searchTerm.trim()) {
+            params.search = searchTerm.trim();
+          }
+          const response = await userAPI.getUsers(params);
+          if (response.success && response.data?.users) {
+            setOrganizations(response.data.users);
+          }
+        }
+      } catch (error) {
+        console.error('Error loading options:', error);
+        toast.error('Lỗi khi tải danh sách');
+      } finally {
+        setLoadingOptions(false);
+      }
+    };
+
+    loadOptions();
+  }, [selectedTargetType, searchTerm]);
+
+  // Helper để normalize ID
+  const normalizeId = (id) => {
+    if (!id) return '';
+    if (typeof id === 'string' && id.trim() !== '' && id !== '[object Object]') return id;
+    if (typeof id === 'object' && id !== null) {
+      if (id._id) {
+        const nestedId = id._id;
+        if (typeof nestedId === 'string' && nestedId.trim() !== '' && nestedId !== '[object Object]') {
+          return nestedId;
+        }
+      }
+      if (id.id) {
+        const idValue = id.id;
+        if (typeof idValue === 'string' && idValue.trim() !== '' && idValue !== '[object Object]') {
+          return idValue;
+        }
+      }
+      if (id.toString && typeof id.toString === 'function') {
+        try {
+          const str = id.toString();
+          if (str !== '[object Object]' && str.trim() !== '') {
+            return str;
+          }
+        } catch (e) {
+          console.error("Error in toString for ID:", id, e);
+        }
+      }
+    }
+    try {
+      const str = String(id);
+      if (str !== '[object Object]' && str.trim() !== '') {
+        return str;
+      }
+    } catch (e) {
+      console.error("Error in String(id) for ID:", id, e);
+    }
+    return '';
+  };
+
+  // Xử lý khi chọn thuốc/tổ chức từ dropdown
+  const handleTargetSelect = (value) => {
+    setSelectedOptionValue(value); // Update dropdown value first
+    
+    if (!value || value === '' || value.startsWith('drug-fallback') || value.startsWith('org-fallback')) {
+      setValue('targetId', '', { shouldValidate: false, shouldTouch: true });
+      setValue('targetName', '', { shouldValidate: false, shouldTouch: true });
+      setDisplayTargetId('');
+      setDisplayTargetName('');
+      return;
+    }
+
+    if (selectedTargetType === 'drug') {
+      // Tìm drug theo value - value là safeId được dùng trong option
+      const selectedDrug = drugs.find((d, idx) => {
+        const drugId = normalizeId(d._id);
+        const safeId = drugId && drugId !== '[object Object]' && drugId.trim() !== '' 
+          ? drugId 
+          : `drug-fallback-${idx}`;
+        // So sánh chính xác với safeId (giống như trong option value)
+        return safeId === value;
+      });
+      
+      if (selectedDrug) {
+        const normalizedId = normalizeId(selectedDrug._id);
+        // Ưu tiên name trước, sau đó mới đến drugId
+        const drugName = selectedDrug.name || selectedDrug.drugId || normalizedId || '';
+        // Ưu tiên drugId (mã lô) làm targetId, nếu không có thì dùng normalizedId
+        const finalTargetId = selectedDrug.drugId || normalizedId || '';
+        
+        console.log('🔍 Selected drug found:', {
+          value,
+          normalizedId,
+          drugId: selectedDrug.drugId,
+          drugName,
+          finalTargetId,
+          selectedDrug: {
+            _id: selectedDrug._id,
+            name: selectedDrug.name,
+            drugId: selectedDrug.drugId
+          }
+        });
+        
+        // Đảm bảo giá trị là string và không rỗng
+        const targetIdStr = String(finalTargetId || '').trim();
+        const targetNameStr = String(drugName || '').trim();
+        
+        // Cập nhật display states TRƯỚC để UI phản hồi ngay lập tức
+        setDisplayTargetId(targetIdStr);
+        setDisplayTargetName(targetNameStr);
+        
+        // Sau đó cập nhật form values với trigger validation
+        setValue('targetId', targetIdStr, { 
+          shouldValidate: true, 
+          shouldDirty: true, 
+          shouldTouch: true 
+        });
+        setValue('targetName', targetNameStr, { 
+          shouldValidate: true, 
+          shouldDirty: true, 
+          shouldTouch: true 
+        });
+        
+        // Force trigger validation và update form state
+        trigger('targetId');
+        trigger('targetName');
+        
+        console.log('✅ Updated form - targetId:', targetIdStr, 'targetName:', targetNameStr);
+      } else {
+        console.warn('Drug not found for value:', value);
+        console.warn('Available drugs:', drugs.map((d, idx) => {
+          const drugId = normalizeId(d._id);
+          const safeId = drugId && drugId !== '[object Object]' && drugId.trim() !== '' 
+            ? drugId 
+            : `drug-fallback-${idx}`;
+          return { safeId, name: d.name, drugId: d.drugId };
+        }));
+      }
+    } else if (['manufacturer', 'distributor', 'hospital'].includes(selectedTargetType)) {
+      const selectedOrg = organizations.find(org => {
+        const orgId = normalizeId(org._id);
+        const safeId = orgId && orgId !== '[object Object]' && orgId.trim() !== ''
+          ? orgId
+          : `org-fallback-${organizations.indexOf(org)}`;
+        return orgId === value || safeId === value;
+      });
+      if (selectedOrg) {
+        const normalizedId = normalizeId(selectedOrg._id);
+        const orgName = selectedOrg.organizationInfo?.name || selectedOrg.fullName || '';
+        
+        // Đảm bảo giá trị là string và không rỗng
+        const orgIdStr = String(normalizedId || '').trim();
+        const orgNameStr = String(orgName || '').trim();
+        
+        console.log('🔍 Selected organization found:', {
+          value,
+          normalizedId: orgIdStr,
+          orgName: orgNameStr,
+          selectedOrg
+        });
+        
+        // Cập nhật display states TRƯỚC
+        setDisplayTargetId(orgIdStr);
+        setDisplayTargetName(orgNameStr);
+        
+        // Sau đó cập nhật form values
+        setValue('targetId', orgIdStr, { shouldValidate: true, shouldDirty: true, shouldTouch: true });
+        setValue('targetName', orgNameStr, { shouldValidate: true, shouldDirty: true, shouldTouch: true });
+        
+        // Force trigger validation
+        trigger('targetId');
+        trigger('targetName');
+        
+        console.log('✅ Updated form - targetId:', orgIdStr, 'targetName:', orgNameStr);
+      } else {
+        console.warn('Organization not found for value:', value);
+      }
+    }
+  };
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -458,7 +798,20 @@ const CreateReviewModal = ({ onSubmit, onClose, loading }) => {
                 Loại đối tượng *
               </label>
               <select
-                {...register('targetType', { required: 'Loại đối tượng là bắt buộc' })}
+                {...register('targetType', { 
+                  required: 'Loại đối tượng là bắt buộc',
+                  onChange: (e) => {
+                    // Reset các field khi thay đổi loại đối tượng
+                    setValue('targetId', '');
+                    setValue('targetName', '');
+                    setDisplayTargetId('');
+                    setDisplayTargetName('');
+                    setDrugs([]);
+                    setOrganizations([]);
+                    setSearchTerm(''); // Reset search term
+                    setSelectedOptionValue(''); // Reset dropdown selection
+                  }
+                })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
               >
                 <option value="">Chọn loại</option>
@@ -493,16 +846,117 @@ const CreateReviewModal = ({ onSubmit, onClose, loading }) => {
             </div>
           </div>
 
+          {/* Search và Dropdown chọn thuốc/tổ chức */}
+          {selectedTargetType && (
+            <div className="space-y-2">
+              {/* Search box */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Tìm kiếm {selectedTargetType === 'drug' ? 'thuốc' : 'tổ chức'} (tùy chọn)
+                </label>
+                <input
+                  type="text"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  placeholder={`Nhập tên ${selectedTargetType === 'drug' ? 'thuốc' : 'tổ chức'} để tìm kiếm...`}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              
+              {/* Dropdown */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  {selectedTargetType === 'drug' ? 'Chọn thuốc *' : 'Chọn tổ chức *'}
+                </label>
+                {loadingOptions ? (
+                  <div className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50">
+                    <span className="text-sm text-gray-500">Đang tải danh sách...</span>
+                  </div>
+                ) : (
+                  <select
+                    value={selectedOptionValue}
+                    onChange={(e) => {
+                      const selectedValue = e.target.value;
+                      handleTargetSelect(selectedValue);
+                    }}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  >
+                    {!(selectedTargetType === 'drug' && drugs.length === 0 && !loadingOptions) && 
+                     !(['manufacturer', 'distributor', 'hospital'].includes(selectedTargetType) && organizations.length === 0 && !loadingOptions) && (
+                      <option value="" key={`select-placeholder-${selectedTargetType}`}>
+                        -- Chọn {selectedTargetType === 'drug' ? 'thuốc' : 'tổ chức'} --
+                      </option>
+                    )}
+                    {selectedTargetType === 'drug' && drugs.length === 0 && !loadingOptions && (
+                      <option value="" disabled key={`drug-empty-${selectedTargetType}-${searchTerm || 'no-search'}`}>
+                        {searchTerm ? `Không tìm thấy thuốc nào với từ khóa "${searchTerm}"` : 'Không có thuốc nào trong hệ thống'}
+                      </option>
+                    )}
+                    {selectedTargetType === 'drug' && drugs.map((drug, idx) => {
+                      const drugId = normalizeId(drug._id);
+                      const safeId = drugId && drugId !== '[object Object]' && drugId.trim() !== '' 
+                        ? drugId 
+                        : `drug-fallback-${idx}`;
+                      const uniqueKey = `drug-opt-${idx}-${safeId}-${drug.name || 'unknown'}`;
+                      return (
+                        <option key={uniqueKey} value={safeId}>
+                          {drug.name} {drug.drugId ? `(Mã lô: ${drug.drugId})` : (safeId && !safeId.startsWith('drug-fallback') ? `(ID: ${safeId.substring(0, 8)}...)` : '')}
+                        </option>
+                      );
+                    })}
+                    {['manufacturer', 'distributor', 'hospital'].includes(selectedTargetType) && organizations.length === 0 && !loadingOptions && (
+                      <option value="" disabled key={`org-empty-${selectedTargetType}-${searchTerm || 'no-search'}`}>
+                        {searchTerm ? `Không tìm thấy ${selectedTargetType === 'manufacturer' ? 'nhà sản xuất' : selectedTargetType === 'distributor' ? 'nhà phân phối' : 'bệnh viện'} nào với từ khóa "${searchTerm}"` : `Không có ${selectedTargetType === 'manufacturer' ? 'nhà sản xuất' : selectedTargetType === 'distributor' ? 'nhà phân phối' : 'bệnh viện'} nào trong hệ thống`}
+                      </option>
+                    )}
+                    {['manufacturer', 'distributor', 'hospital'].includes(selectedTargetType) && organizations.map((org, idx) => {
+                      const orgId = normalizeId(org._id);
+                      const orgName = org.organizationInfo?.name || org.fullName || 'Không có tên';
+                      const safeId = orgId && orgId !== '[object Object]' && orgId.trim() !== ''
+                        ? orgId
+                        : `org-fallback-${idx}`;
+                      const uniqueKey = `org-opt-${idx}-${safeId}-${orgName}`;
+                      return (
+                        <option key={uniqueKey} value={safeId}>
+                          {orgName} {org.organizationId ? `(Mã tổ chức: ${org.organizationId})` : (safeId && !safeId.startsWith('org-fallback') ? `(User ID: ${safeId.substring(0, 8)}...)` : '')}
+                        </option>
+                      );
+                    })}
+                  </select>
+                )}
+              </div>
+            </div>
+          )}
+
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Mã đối tượng (ID) *
               </label>
-              <input
-                type="text"
-                {...register('targetId', { required: 'Mã đối tượng là bắt buộc' })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                placeholder="Ví dụ: ID thuốc hoặc tổ chức"
+              <Controller
+                name="targetId"
+                control={control}
+                rules={{ required: 'Mã đối tượng là bắt buộc' }}
+                render={({ field }) => {
+                  // Ưu tiên displayTargetId, sau đó đến field.value từ form
+                  // Đảm bảo luôn là string, không bao giờ undefined
+                  const displayValue = String(displayTargetId || field.value || '');
+                  
+                  return (
+                    <input
+                      type="text"
+                      value={displayValue}
+                      onChange={(e) => {
+                        const newValue = e.target.value;
+                        field.onChange(newValue);
+                        setDisplayTargetId(newValue);
+                      }}
+                      readOnly
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                      placeholder="Sẽ tự động điền khi chọn ở trên"
+                    />
+                  );
+                }}
               />
               {errors.targetId && (
                 <p className="text-red-500 text-sm mt-1">{errors.targetId.message}</p>
@@ -513,11 +967,30 @@ const CreateReviewModal = ({ onSubmit, onClose, loading }) => {
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Tên đối tượng *
               </label>
-              <input
-                type="text"
-                {...register('targetName', { required: 'Tên đối tượng là bắt buộc' })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                placeholder="Tên thuốc / tổ chức"
+              <Controller
+                name="targetName"
+                control={control}
+                rules={{ required: 'Tên đối tượng là bắt buộc' }}
+                render={({ field }) => {
+                  // Ưu tiên displayTargetName, sau đó đến field.value từ form
+                  // Đảm bảo luôn là string, không bao giờ undefined
+                  const displayValue = String(displayTargetName || field.value || '');
+                  
+                  return (
+                    <input
+                      type="text"
+                      value={displayValue}
+                      onChange={(e) => {
+                        const newValue = e.target.value;
+                        field.onChange(newValue);
+                        setDisplayTargetName(newValue);
+                      }}
+                      readOnly
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                      placeholder="Sẽ tự động điền khi chọn ở trên"
+                    />
+                  );
+                }}
               />
               {errors.targetName && (
                 <p className="text-red-500 text-sm mt-1">{errors.targetName.message}</p>
@@ -601,6 +1074,55 @@ const CreateReviewModal = ({ onSubmit, onClose, loading }) => {
 
 // Review Detail Modal Component
 const ReviewDetailModal = ({ review, onClose, onVoteHelpful, onReport }) => {
+  // Helper function để normalize ID (giống như trong Reviews component)
+  const normalizeId = (id, fallback = '') => {
+    if (!id) return fallback;
+    if (typeof id === 'string' && id.trim() !== '' && id !== '[object Object]') return id;
+    if (typeof id === 'object' && id !== null) {
+      // Handle MongoDB ObjectId serialized as { '0': '6', '1': '9', ... }
+      if (Object.keys(id).every(key => /^\d+$/.test(key))) {
+        const normalized = Object.keys(id)
+          .sort((a, b) => parseInt(a) - parseInt(b))
+          .map(key => id[key])
+          .join('');
+        if (normalized.length === 24 && /^[0-9a-fA-F]{24}$/.test(normalized)) {
+          return normalized;
+        }
+      }
+      if (id._id) {
+        const nestedId = id._id;
+        if (typeof nestedId === 'string' && nestedId.trim() !== '' && nestedId !== '[object Object]') {
+          return nestedId;
+        }
+      }
+      if (id.id) {
+        const idValue = id.id;
+        if (typeof idValue === 'string' && idValue.trim() !== '' && idValue !== '[object Object]') {
+          return idValue;
+        }
+      }
+      if (id.toString && typeof id.toString === 'function') {
+        try {
+          const str = id.toString();
+          if (str !== '[object Object]' && str.trim() !== '') {
+            return str;
+          }
+        } catch (e) {
+          console.error("Error in toString for ID:", id, e);
+        }
+      }
+    }
+    try {
+      const str = String(id);
+      if (str !== '[object Object]' && str.trim() !== '') {
+        return str;
+      }
+    } catch (e) {
+      console.error("Error in String(id) for ID:", id, e);
+    }
+    return fallback;
+  };
+
   const renderStars = (rating) => {
     return Array.from({ length: 5 }, (_, i) => (
       <Star
@@ -668,8 +1190,14 @@ const ReviewDetailModal = ({ review, onClose, onVoteHelpful, onReport }) => {
         <div className="flex justify-end space-x-3 mt-6">
           <button
             onClick={() => {
-              onVoteHelpful(review._id);
-              onClose();
+              // Normalize ID trước khi gọi
+              const normalizedId = normalizeId(review._id);
+              if (normalizedId && normalizedId !== '[object Object]') {
+                onVoteHelpful(normalizedId);
+                onClose();
+              } else {
+                toast.error('ID đánh giá không hợp lệ');
+              }
             }}
             className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
           >
