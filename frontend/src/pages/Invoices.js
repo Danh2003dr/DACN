@@ -150,6 +150,31 @@ const Invoices = () => {
     return colors[status] || 'bg-gray-100 text-gray-800';
   };
 
+  // Helper function để tạo unique key - luôn đảm bảo trả về string và unique
+  const getUniqueKey = (item, idx) => {
+    let idPart = '';
+    
+    if (item._id) {
+      if (typeof item._id === 'string' && item._id.trim() !== '' && item._id !== '[object Object]') {
+        idPart = item._id;
+      } else if (typeof item._id === 'object' && item._id !== null) {
+        const nestedId = item._id._id || item._id.id;
+        if (nestedId && typeof nestedId === 'string' && nestedId !== '[object Object]') {
+          idPart = nestedId;
+        }
+      }
+    }
+    
+    if (!idPart || idPart === '[object Object]') {
+      const invoiceNumber = String(item.invoiceNumber || '');
+      const issueDate = item.issueDate ? String(new Date(item.issueDate).getTime()) : String(Date.now());
+      const totalAmount = String(item.totalAmount || '');
+      idPart = `${invoiceNumber}-${issueDate}-${totalAmount}`;
+    }
+    
+    return `invoice-${idx}-${idPart}`;
+  };
+
   return (
     <div className="p-6">
       <div className="mb-6">
@@ -294,8 +319,8 @@ const Invoices = () => {
                   </td>
                 </tr>
               ) : (
-                invoices.map((invoice) => (
-                  <tr key={invoice._id} className="hover:bg-gray-50">
+                invoices.map((invoice, idx) => (
+                  <tr key={getUniqueKey(invoice, idx)} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                       {invoice.invoiceNumber}
                     </td>

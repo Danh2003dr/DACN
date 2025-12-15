@@ -233,7 +233,9 @@ const digitalSignatureSchema = new mongoose.Schema({
   blockchain: {
     transactionHash: String,
     blockNumber: Number,
-    blockHash: String
+    blockHash: String,
+    network: String,        // Network name (sepolia, mainnet, etc.)
+    etherscanUrl: String    // URL để xem transaction trên Etherscan
   }
 }, {
   timestamps: true,

@@ -4,6 +4,7 @@ const { authenticate, authorize } = require('../middleware/auth');
 const {
   importDrugs,
   importInventory,
+  importDrugsFromPDF,
   exportDrugs,
   exportInventory,
   exportOrders,
@@ -16,6 +17,7 @@ router.use(authorize('admin'));
 
 // Import routes
 router.post('/drugs/import', importDrugs);
+router.post('/drugs/import-pdf', importDrugsFromPDF);
 router.post('/inventory/import', importInventory);
 
 // Export routes

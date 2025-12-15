@@ -157,12 +157,7 @@ class ProfileScreen extends ConsumerWidget {
                       color: colorScheme.onSurfaceVariant,
                     ),
                     onTap: () {
-                      // TODO: Navigate to change password screen
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Tính năng đang phát triển'),
-                        ),
-                      );
+                      context.push('/change-password');
                     },
                   ),
                   Divider(height: 1, color: colorScheme.outlineVariant),

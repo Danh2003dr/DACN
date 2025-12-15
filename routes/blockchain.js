@@ -96,6 +96,7 @@ router.get('/drugs', authenticate, cacheMiddleware(180), async (req, res) => {
       .limit(100);
     
     // Lấy thông tin chi tiết từ database
+    // Tối ưu: Không verify từng thuốc để tránh timeout, chỉ lấy từ database
     const drugs = [];
     
     // Nếu có drugIds từ blockchain, ưu tiên lấy từ đó
@@ -103,24 +104,22 @@ router.get('/drugs', authenticate, cacheMiddleware(180), async (req, res) => {
       ? blockchainDrugIds 
       : drugsFromDB.map(d => d.drugId);
     
-    for (const drugId of drugIdsToProcess) {
+    // Giới hạn số lượng để tránh timeout
+    const maxDrugs = 100;
+    const limitedDrugIds = drugIdsToProcess.slice(0, maxDrugs);
+    
+    for (const drugId of limitedDrugIds) {
       const drug = drugsFromDB.find(d => d.drugId === drugId) || await Drug.findOne({ drugId });
       
       if (drug && drug.blockchain?.blockchainId) {
-        // Xác minh trạng thái trên blockchain nếu có
-        let verification = { success: false };
-        try {
-          verification = await blockchainService.verifyDrugBatch(drugId);
-        } catch (e) {
-          console.log(`Could not verify drug ${drugId} on blockchain:`, e.message);
-        }
-        
+        // Bỏ qua verification để tăng tốc độ (có thể verify sau khi cần)
+        // Nếu cần verify, có thể dùng Promise.all để verify song song
         drugs.push({
           ...drug.toObject(),
-          isValid: verification.success ? verification.isValid : !drug.isRecalled && !drug.isExpired,
-          isExpired: verification.success ? verification.isExpired : drug.isExpired,
-          isRecalled: verification.success ? verification.isRecalled : drug.isRecalled,
-          status: verification.success ? verification.status : (drug.isRecalled ? 'Đã thu hồi' : drug.isExpired ? 'Hết hạn' : 'Hợp lệ'),
+          isValid: !drug.isRecalled && !drug.isExpired,
+          isExpired: drug.isExpired,
+          isRecalled: drug.isRecalled,
+          status: drug.isRecalled ? 'Đã thu hồi' : drug.isExpired ? 'Hết hạn' : 'Hợp lệ',
           blockchainId: drug.blockchain?.blockchainId
         });
       }

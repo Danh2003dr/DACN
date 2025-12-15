@@ -5,6 +5,7 @@ import toast from 'react-hot-toast';
 const ImportExport = () => {
   const [activeTab, setActiveTab] = useState('import');
   const [importType, setImportType] = useState('drugs');
+  const [importFormat, setImportFormat] = useState('csv'); // csv hoặc pdf
   const [selectedFile, setSelectedFile] = useState(null);
   const [importing, setImporting] = useState(false);
   const [exportType, setExportType] = useState('drugs');
@@ -14,10 +15,20 @@ const ImportExport = () => {
     const file = e.target.files[0];
     if (file) {
       const ext = file.name.split('.').pop().toLowerCase();
-      if (!['csv', 'xlsx', 'xls'].includes(ext)) {
-        toast.error('Chỉ chấp nhận file CSV hoặc Excel');
-        return;
+      
+      // Kiểm tra format dựa trên importFormat
+      if (importFormat === 'pdf') {
+        if (ext !== 'pdf') {
+          toast.error('Chỉ chấp nhận file PDF cho import từ công văn');
+          return;
+        }
+      } else {
+        if (!['csv', 'xlsx', 'xls'].includes(ext)) {
+          toast.error('Chỉ chấp nhận file CSV hoặc Excel');
+          return;
+        }
       }
+      
       setSelectedFile(file);
     }
   };
@@ -31,7 +42,11 @@ const ImportExport = () => {
     try {
       setImporting(true);
       let result;
-      if (importType === 'drugs') {
+      
+      if (importType === 'drugs' && importFormat === 'pdf') {
+        // Import từ PDF công văn Bộ Y tế
+        result = await importExportAPI.importDrugsFromPDF(selectedFile);
+      } else if (importType === 'drugs') {
         result = await importExportAPI.importDrugs(selectedFile);
       } else if (importType === 'inventory') {
         result = await importExportAPI.importInventory(selectedFile);
@@ -47,6 +62,7 @@ const ImportExport = () => {
       }
     } catch (error) {
       console.error('Error importing:', error);
+      toast.error(error.response?.data?.message || 'Lỗi khi import dữ liệu');
     } finally {
       setImporting(false);
     }
@@ -55,17 +71,68 @@ const ImportExport = () => {
   const handleExport = async () => {
     try {
       setExporting(true);
+      toast.loading('Đang chuẩn bị file CSV...', { id: 'export-loading' });
+      
+      let response;
       if (exportType === 'drugs') {
-        await importExportAPI.exportDrugs();
+        response = await importExportAPI.exportDrugs();
       } else if (exportType === 'inventory') {
-        await importExportAPI.exportInventory();
+        response = await importExportAPI.exportInventory();
       } else if (exportType === 'orders') {
-        await importExportAPI.exportOrders();
+        response = await importExportAPI.exportOrders();
       } else if (exportType === 'invoices') {
-        await importExportAPI.exportInvoices();
+        response = await importExportAPI.exportInvoices();
       }
+
+      // Kiểm tra nếu response là error (JSON error trong blob)
+      if (response.headers && response.headers['content-type'] && response.headers['content-type'].includes('application/json')) {
+        // Đây là JSON error được trả về dưới dạng blob
+        const text = await response.data.text();
+        const errorData = JSON.parse(text);
+        toast.error(errorData.message || 'Không thể xuất file', { id: 'export-loading' });
+        throw new Error(errorData.message || 'Không thể xuất file');
+      }
+
+      // Tạo blob từ response data
+      const blob = new Blob([response.data], { 
+        type: 'text/csv;charset=utf-8;' 
+      });
+      
+      // Tạo URL từ blob
+      const url = window.URL.createObjectURL(blob);
+      
+      // Tạo link download
+      const link = document.createElement('a');
+      link.href = url;
+      
+      // Lấy tên file từ Content-Disposition header hoặc tạo mới
+      const contentDisposition = response.headers['content-disposition'];
+      let filename = `${exportType}-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}.csv`;
+      if (contentDisposition) {
+        const filenameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+        if (filenameMatch && filenameMatch[1]) {
+          filename = filenameMatch[1].replace(/['"]/g, '');
+          // Decode URI nếu cần
+          try {
+            filename = decodeURIComponent(filename);
+          } catch (e) {
+            // Nếu không decode được, dùng filename gốc
+          }
+        }
+      }
+      
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      
+      // Cleanup
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      
+      toast.success(`Export thành công: ${filename}`, { id: 'export-loading' });
     } catch (error) {
       console.error('Error exporting:', error);
+      toast.error(error.response?.data?.message || error.message || 'Lỗi khi export dữ liệu', { id: 'export-loading' });
     } finally {
       setExporting(false);
     }
@@ -111,7 +178,7 @@ const ImportExport = () => {
               <div>
                 <h2 className="text-xl font-bold mb-4">Import Dữ liệu</h2>
                 <p className="text-gray-600 mb-4">
-                  Chọn loại dữ liệu và file CSV/Excel để import
+                  Chọn loại dữ liệu và file để import (CSV/Excel hoặc PDF công văn)
                 </p>
               </div>
 
@@ -121,7 +188,11 @@ const ImportExport = () => {
                 </label>
                 <select
                   value={importType}
-                  onChange={(e) => setImportType(e.target.value)}
+                  onChange={(e) => {
+                    setImportType(e.target.value);
+                    setSelectedFile(null);
+                    document.getElementById('file-input').value = '';
+                  }}
                   className="w-full px-3 py-2 border rounded-lg"
                 >
                   <option value="drugs">Thuốc (Drugs)</option>
@@ -129,14 +200,34 @@ const ImportExport = () => {
                 </select>
               </div>
 
+              {importType === 'drugs' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Định dạng file
+                  </label>
+                  <select
+                    value={importFormat}
+                    onChange={(e) => {
+                      setImportFormat(e.target.value);
+                      setSelectedFile(null);
+                      document.getElementById('file-input').value = '';
+                    }}
+                    className="w-full px-3 py-2 border rounded-lg"
+                  >
+                    <option value="csv">CSV/Excel (Thông thường)</option>
+                    <option value="pdf">PDF (Công văn Bộ Y tế)</option>
+                  </select>
+                </div>
+              )}
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Chọn file (CSV hoặc Excel)
+                  Chọn file {importFormat === 'pdf' ? '(PDF công văn)' : '(CSV hoặc Excel)'}
                 </label>
                 <input
                   id="file-input"
                   type="file"
-                  accept=".csv,.xlsx,.xls"
+                  accept={importFormat === 'pdf' ? '.pdf' : '.csv,.xlsx,.xls'}
                   onChange={handleFileSelect}
                   className="w-full px-3 py-2 border rounded-lg"
                 />
@@ -150,9 +241,19 @@ const ImportExport = () => {
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                 <h3 className="font-medium text-blue-900 mb-2">Lưu ý:</h3>
                 <ul className="text-sm text-blue-800 space-y-1 list-disc list-inside">
-                  <li>File CSV phải có header row</li>
-                  <li>Đối với Drugs: cần có các cột: name, batchNumber, productionDate, expiryDate</li>
-                  <li>Đối với Inventory: cần có các cột: drugId, locationId, quantity, unitPrice</li>
+                  {importFormat === 'pdf' ? (
+                    <>
+                      <li>File PDF phải là công văn của Bộ Y tế về danh mục thuốc được gia hạn giấy đăng ký</li>
+                      <li>Hệ thống sẽ tự động extract thông tin: Tên thuốc, Số đăng ký, Ngày hết hạn</li>
+                      <li>Thông tin còn thiếu sẽ được điền mặc định (có thể chỉnh sửa sau)</li>
+                    </>
+                  ) : (
+                    <>
+                      <li>File CSV phải có header row</li>
+                      <li>Đối với Drugs: cần có các cột: name, batchNumber, productionDate, expiryDate</li>
+                      <li>Đối với Inventory: cần có các cột: drugId, locationId, quantity, unitPrice</li>
+                    </>
+                  )}
                   <li>Kích thước file tối đa: 10MB</li>
                 </ul>
               </div>

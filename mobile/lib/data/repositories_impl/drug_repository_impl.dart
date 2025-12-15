@@ -2,7 +2,7 @@ import 'package:dartz/dartz.dart';
 import 'package:dio/dio.dart';
 
 import '../../core/api/dio_client.dart';
-import '../../core/constants/app_constants.dart';
+import '../../core/api/api_endpoints.dart';
 import '../../core/errors/failures.dart';
 import '../../core/services/connectivity_service.dart';
 import '../../core/services/sync_service.dart';
@@ -58,7 +58,7 @@ class DrugRepositoryImpl implements DrugRepository {
 
     try {
       final response = await dioClient.post(
-        '${AppConstants.drugs}/scan-qr',
+        ApiEndpoints.scanQR,
         data: {'qrData': qrData},
       );
 
@@ -471,7 +471,7 @@ class DrugRepositoryImpl implements DrugRepository {
   @override
   Future<Either<Failure, DrugEntity>> getDrugById(String drugId) async {
     try {
-      final response = await dioClient.get('${AppConstants.drugs}/$drugId');
+      final response = await dioClient.get(ApiEndpoints.drugById(drugId));
 
       if (response.statusCode == 200 && response.data['success'] == true) {
         final drugData = response.data['data']['drug'] as Map<String, dynamic>;
@@ -515,7 +515,7 @@ class DrugRepositoryImpl implements DrugRepository {
       }
 
       final response = await dioClient.get(
-        AppConstants.drugs,
+        ApiEndpoints.drugs,
         queryParameters: queryParams,
         skipErrorHandler: true,
       );
@@ -548,7 +548,8 @@ class DrugRepositoryImpl implements DrugRepository {
   ) async {
     try {
       final response = await dioClient.get(
-        '${AppConstants.supplyChains}?drugId=$drugId',
+        ApiEndpoints.supplyChains,
+        queryParameters: {'drugId': drugId},
         skipErrorHandler: true,
       );
 
@@ -576,7 +577,7 @@ class DrugRepositoryImpl implements DrugRepository {
       getDrugBlockchainTransactions(String drugId) async {
     try {
       final response = await dioClient.get(
-        '${AppConstants.blockchain}/transactions',
+        ApiEndpoints.blockchainTransactions,
         queryParameters: {'drugId': drugId},
         skipErrorHandler: true,
       );

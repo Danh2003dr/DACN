@@ -37,7 +37,9 @@ const BlockchainDashboard = () => {
 
       // Lấy danh sách thuốc từ blockchain
       try {
-        const drugsResponse = await api.get('/blockchain/drugs');
+        const drugsResponse = await api.get('/blockchain/drugs', {
+          timeout: 90000 // 90 giây cho blockchain endpoint
+        });
         console.log('Drugs response:', drugsResponse.data);
         
         if (drugsResponse.data.success) {

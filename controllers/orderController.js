@@ -331,6 +331,123 @@ const getOrderStats = async (req, res) => {
   }
 };
 
+/**
+ * @desc    Re-order - Lấy items từ đơn hàng cũ để đặt lại
+ * @route   POST /api/orders/:id/reorder
+ * @access  Private
+ */
+const reorder = async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Lấy order cũ
+    const order = await Order.findById(id)
+      .populate('items')
+      .populate('buyer', 'fullName organizationInfo')
+      .populate('seller', 'fullName organizationInfo');
+    
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: 'Không tìm thấy đơn hàng'
+      });
+    }
+    
+    // Kiểm tra quyền - chỉ buyer của order mới có thể reorder
+    if (req.user.role !== 'admin' && order.buyer._id.toString() !== req.user._id.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: 'Bạn chỉ có thể đặt lại đơn hàng của chính mình'
+      });
+    }
+    
+    // Kiểm tra order đã hoàn thành chưa (status: completed, delivered, hoặc shipped)
+    const validStatuses = ['completed', 'delivered', 'shipped'];
+    if (!validStatuses.includes(order.status)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Chỉ có thể đặt lại các đơn hàng đã hoàn thành'
+      });
+    }
+    
+    // Lấy thông tin items từ order items
+    const items = await Promise.all(order.items.map(async (item) => {
+      // item có thể là ObjectId hoặc populated object
+      const orderItem = item._id ? item : await OrderItem.findById(item);
+      
+      if (!orderItem) {
+        return null;
+      }
+      
+      // Tìm drug hiện tại để lấy thông tin cập nhật
+      const Drug = require('../models/Drug');
+      const drug = await Drug.findOne({ drugId: orderItem.drugId });
+      
+      if (!drug || drug.status !== 'active') {
+        // Nếu drug không còn tồn tại hoặc không active, vẫn trả về nhưng có flag
+        return {
+          drugId: orderItem.drugId,
+          drugName: orderItem.drugName,
+          quantity: orderItem.quantity,
+          unitPrice: orderItem.unitPrice,
+          batchNumber: orderItem.batchNumber,
+          unit: orderItem.unit,
+          available: false,
+          reason: drug ? 'Sản phẩm không còn bán' : 'Sản phẩm không còn tồn tại'
+        };
+      }
+      
+      // Tính giá hiện tại (có thể khác với giá cũ)
+      const currentPrice = drug.wholesalePrice || drug.basePrice || orderItem.unitPrice;
+      
+      return {
+        drugId: drug._id.toString(), // Sử dụng _id cho cart
+        drugIdString: drug.drugId, // Giữ drugId string để hiển thị
+        drugName: drug.name,
+        quantity: orderItem.quantity,
+        unitPrice: currentPrice, // Giá hiện tại
+        originalPrice: orderItem.unitPrice, // Giá cũ để so sánh
+        batchNumber: drug.batchNumber,
+        unit: drug.packaging?.unit || orderItem.unit || 'unit',
+        available: true,
+        imageUrl: drug.imageUrl
+      };
+    }));
+    
+    // Lọc bỏ null items
+    const validItems = items.filter(item => item !== null);
+    
+    if (validItems.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Không có sản phẩm nào có thể đặt lại từ đơn hàng này'
+      });
+    }
+    
+    res.status(200).json({
+      success: true,
+      message: 'Đã lấy thông tin đơn hàng cũ',
+      data: {
+        originalOrderNumber: order.orderNumber,
+        originalOrderDate: order.orderDate,
+        sellerId: order.seller._id,
+        sellerName: order.sellerName,
+        items: validItems,
+        // Thông tin shipping address từ order cũ (có thể dùng lại)
+        shippingAddress: order.shippingAddress,
+        billingAddress: order.billingAddress
+      }
+    });
+  } catch (error) {
+    console.error('Reorder error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Lỗi server khi lấy thông tin đơn hàng cũ',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
 module.exports = {
   createOrder,
   getOrders,
@@ -340,6 +457,7 @@ module.exports = {
   shipOrder,
   deliverOrder,
   cancelOrder,
-  getOrderStats
+  getOrderStats,
+  reorder
 };
 

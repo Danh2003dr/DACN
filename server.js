@@ -38,8 +38,111 @@ const metricsRoutes = require('./routes/metrics');
 
 const app = express();
 
-// Security middleware
-app.use(helmet());
+// Serve static files TRƯỚC helmet để tránh CORP header conflicts
+// Đặt ở đây để đảm bảo headers được set đúng trước khi helmet can thiệp
+app.use('/uploads', (req, res, next) => {
+  // Set CORS headers cho static files
+  const origin = req.headers.origin;
+  
+  // Allow từ frontend origins
+  if (origin && (origin.includes('localhost') || origin.includes('127.0.0.1'))) {
+    res.header('Access-Control-Allow-Origin', origin);
+  } else {
+    res.header('Access-Control-Allow-Origin', '*');
+  }
+  
+  res.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  
+  // QUAN TRỌNG: Remove CORP header trong development để tránh ERR_BLOCKED_BY_RESPONSE
+  if (process.env.NODE_ENV !== 'production') {
+    res.removeHeader('Cross-Origin-Resource-Policy');
+  }
+  
+  // Handle preflight requests
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(200);
+  }
+  
+  next();
+}, express.static('uploads', {
+  setHeaders: (res, path) => {
+    // Set cache headers cho images
+    if (path.endsWith('.jpg') || path.endsWith('.jpeg') || path.endsWith('.png') || path.endsWith('.gif') || path.endsWith('.webp')) {
+      res.setHeader('Cache-Control', 'public, max-age=31536000'); // 1 year
+      const contentType = path.endsWith('.jpg') || path.endsWith('.jpeg') ? 'image/jpeg' : 
+                         path.endsWith('.png') ? 'image/png' : 
+                         path.endsWith('.gif') ? 'image/gif' : 'image/webp';
+      res.setHeader('Content-Type', contentType);
+      
+      // QUAN TRỌNG: Remove CORP header trong development
+      if (process.env.NODE_ENV !== 'production') {
+        res.removeHeader('Cross-Origin-Resource-Policy');
+      }
+    }
+  }
+}));
+
+// Security middleware với cấu hình cho phép load images từ uploads
+// Trong development, disable một số policies để tránh CORS issues
+const helmetConfig = process.env.NODE_ENV === 'production' 
+  ? {
+      crossOriginResourcePolicy: { policy: "cross-origin" },
+      crossOriginEmbedderPolicy: false,
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'self'"],
+          imgSrc: ["'self'", "data:", "blob:", "https:", "http:"],
+          scriptSrc: ["'self'", "'unsafe-inline'"],
+          styleSrc: ["'self'", "'unsafe-inline'"],
+          connectSrc: ["'self'", "https:", "http:", "ws:", "wss:"]
+        }
+      }
+    }
+  : {
+      // Development: disable CORP hoàn toàn để tránh CORS issues
+      crossOriginResourcePolicy: false,
+      crossOriginEmbedderPolicy: false,
+      contentSecurityPolicy: false // Disable CSP trong development để tránh conflicts
+    };
+
+// Apply helmet
+app.use(helmet(helmetConfig));
+
+// Middleware để remove CORP header sau khi helmet chạy (cho /uploads)
+// QUAN TRỌNG: Phải đặt sau helmet để override CORP header mà helmet có thể set
+app.use('/uploads', (req, res, next) => {
+  // Remove CORP header trong development để tránh ERR_BLOCKED_BY_RESPONSE
+  if (process.env.NODE_ENV !== 'production') {
+    // Override setHeader để chặn CORP header
+    const originalSetHeader = res.setHeader.bind(res);
+    res.setHeader = function(name, value) {
+      if (name && name.toLowerCase() === 'cross-origin-resource-policy') {
+        // Không set CORP header trong development
+        return res;
+      }
+      return originalSetHeader(name, value);
+    };
+    
+    // Remove header nếu đã được set bởi helmet hoặc middleware khác
+    try {
+      res.removeHeader('Cross-Origin-Resource-Policy');
+    } catch (e) {
+      // Ignore nếu header không tồn tại
+    }
+    
+    // Đảm bảo CORS headers vẫn được set
+    const origin = req.headers.origin;
+    if (origin && (origin.includes('localhost') || origin.includes('127.0.0.1'))) {
+      res.header('Access-Control-Allow-Origin', origin);
+    } else {
+      res.header('Access-Control-Allow-Origin', '*');
+    }
+  }
+  next();
+});
+
 app.use(compression());
 
 // CORS configuration
@@ -101,13 +204,64 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 const { bigIntSerializerMiddleware } = require('./utils/jsonHelper');
 app.use(bigIntSerializerMiddleware);
 
-// Serve static files
-app.use('/uploads', express.static('uploads'));
-
 // Logging and monitoring middleware (phải đặt trước routes)
 app.use(correlationIdMiddleware); // Tạo correlation ID
 app.use(requestLogger); // Log HTTP requests với correlation ID
 app.use(metricsMiddleware); // Thu thập metrics
+
+// #region agent log
+// Debug: trace mọi request /api/drugs & /api/bids (status + duration)
+app.use((req, res, next) => {
+  const url = req.originalUrl || req.url || '';
+  const shouldTrace = url.startsWith('/api/drugs') || url.startsWith('/api/bids');
+  if (!shouldTrace) return next();
+
+  const startedAt = Date.now();
+  const method = req.method;
+
+  fetch('http://127.0.0.1:7242/ingest/225bc8d1-6824-4e38-b617-49570f639471', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      location: 'server.js:traceApi',
+      message: 'REQUEST_IN',
+      data: {
+        method,
+        url,
+        hasAuthHeader: !!req.headers?.authorization,
+        correlationId: req.headers?.['x-correlation-id'] || null
+      },
+      timestamp: Date.now(),
+      sessionId: 'debug-session',
+      runId: 'run2',
+      hypothesisId: 'H1,H2'
+    })
+  }).catch(() => {});
+
+  res.on('finish', () => {
+    fetch('http://127.0.0.1:7242/ingest/225bc8d1-6824-4e38-b617-49570f639471', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        location: 'server.js:traceApi',
+        message: 'REQUEST_OUT',
+        data: {
+          method,
+          url,
+          statusCode: res.statusCode,
+          durationMs: Date.now() - startedAt
+        },
+        timestamp: Date.now(),
+        sessionId: 'debug-session',
+        runId: 'run2',
+        hypothesisId: 'H1,H2,H3'
+      })
+    }).catch(() => {});
+  });
+
+  next();
+});
+// #endregion
 
 // Legacy morgan logging (chỉ dùng trong development nếu cần)
 if (process.env.NODE_ENV === 'development' && process.env.USE_MORGAN === 'true') {
@@ -199,6 +353,21 @@ app.use('/api/invoices', require('./routes/invoices'));
 app.use('/api/payments', require('./routes/payments'));
 app.use('/api/suppliers', require('./routes/suppliers'));
 app.use('/api/import-export', require('./routes/importExport'));
+// #region agent log
+try {
+  console.log('[DEBUG] server.js:302 - Requiring bids routes...', {hypothesisId:'H1'});
+  const bidsRoutes = require('./routes/bids');
+  console.log('[DEBUG] server.js:302 - Bids routes required successfully', {hasRouter:!!bidsRoutes,routerType:typeof bidsRoutes,hypothesisId:'H1'});
+  fetch('http://127.0.0.1:7242/ingest/225bc8d1-6824-4e38-b617-49570f639471',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'server.js:302',message:'Bids routes required successfully',data:{hasRouter:!!bidsRoutes,routerType:typeof bidsRoutes,timestamp:Date.now()},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H1'})}).catch(()=>{});
+  app.use('/api/bids', bidsRoutes);
+  console.log('[DEBUG] server.js:302 - Bids routes registered to app', {path:'/api/bids',hypothesisId:'H2'});
+  fetch('http://127.0.0.1:7242/ingest/225bc8d1-6824-4e38-b617-49570f639471',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'server.js:302',message:'Bids routes registered to app',data:{path:'/api/bids',timestamp:Date.now()},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H2'})}).catch(()=>{});
+} catch (error) {
+  console.error('[DEBUG] server.js:302 - Error requiring bids routes', {error:error.message,hypothesisId:'H1'});
+  fetch('http://127.0.0.1:7242/ingest/225bc8d1-6824-4e38-b617-49570f639471',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'server.js:302',message:'Error requiring bids routes',data:{error:error.message,stack:error.stack,timestamp:Date.now()},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H1'})}).catch(()=>{});
+  throw error;
+}
+// #endregion
 
 // Metrics endpoints (trước health check)
 app.get('/api/metrics', (req, res) => {
@@ -275,6 +444,11 @@ app.get('/api', (req, res) => {
 
 // 404 handler
 app.use('*', (req, res) => {
+  // #region agent log
+  const isBidsRoute = req.originalUrl.includes('/api/bids');
+  console.log('[DEBUG] server.js:378 - 404 handler triggered', {path:req.originalUrl,method:req.method,isBidsRoute,hypothesisId:'H2'});
+  fetch('http://127.0.0.1:7242/ingest/225bc8d1-6824-4e38-b617-49570f639471',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'server.js:378',message:'404 handler triggered',data:{path:req.originalUrl,method:req.method,isBidsRoute,matchedRoutes:app._router?.stack?.filter(layer=>layer.regexp?.test(req.path))?.length||0,timestamp:Date.now()},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H2'})}).catch(()=>{});
+  // #endregion
   res.status(404).json({
     success: false,
     message: 'Endpoint không tồn tại',

@@ -11,6 +11,18 @@ import '../../presentation/pages/scanner/qr_scanner_screen.dart';
 import '../../presentation/pages/drug_verification/drug_verification_screen.dart';
 import '../../presentation/pages/drug_verification/manual_verification_screen.dart';
 import '../../presentation/pages/profile/profile_screen.dart';
+import '../../presentation/pages/auth/change_password_screen.dart';
+import '../../presentation/pages/history/verification_history_screen.dart';
+import '../../presentation/pages/offline/offline_scans_screen.dart';
+import '../../presentation/pages/settings/settings_screen.dart';
+import '../../presentation/pages/settings/privacy_policy_screen.dart';
+import '../../presentation/pages/settings/terms_of_service_screen.dart';
+import '../../presentation/pages/auth/forgot_password_screen.dart';
+import '../../presentation/pages/notifications/notifications_screen.dart';
+import '../../presentation/pages/search/search_drugs_screen.dart';
+import '../../presentation/pages/supply_chain/supply_chain_timeline_screen.dart';
+import '../../presentation/pages/tasks/tasks_list_screen.dart';
+import '../../presentation/pages/tasks/task_detail_screen.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
   return GoRouter(
@@ -20,16 +32,18 @@ final routerProvider = Provider<GoRouter>((ref) {
       final token = prefs.getString(AppConstants.tokenKey);
       final isAuthenticated = token != null;
 
-      final isLoginRoute = state.matchedLocation == '/login';
-      final isSplashRoute = state.matchedLocation == '/splash';
+      final currentLocation = state.matchedLocation;
+
+      // Public routes that don't require authentication
+      final publicRoutes = ['/login', '/splash'];
 
       // If not authenticated and trying to access protected route
-      if (!isAuthenticated && !isLoginRoute && !isSplashRoute) {
+      if (!isAuthenticated && !publicRoutes.contains(currentLocation)) {
         return '/login';
       }
 
       // If authenticated and on login page, redirect to home
-      if (isAuthenticated && isLoginRoute) {
+      if (isAuthenticated && currentLocation == '/login') {
         return '/home';
       }
 
@@ -46,6 +60,11 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/login',
         name: 'login',
         builder: (context, state) => const LoginScreen(),
+      ),
+      GoRoute(
+        path: '/forgot-password',
+        name: 'forgot-password',
+        builder: (context, state) => const ForgotPasswordScreen(),
       ),
       GoRoute(
         path: '/home',
@@ -80,6 +99,71 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/profile',
         name: 'profile',
         builder: (context, state) => const ProfileScreen(),
+      ),
+      GoRoute(
+        path: '/change-password',
+        name: 'change-password',
+        builder: (context, state) => const ChangePasswordScreen(),
+      ),
+      GoRoute(
+        path: '/verification-history',
+        name: 'verification-history',
+        builder: (context, state) => const VerificationHistoryScreen(),
+      ),
+      GoRoute(
+        path: '/offline-scans',
+        name: 'offline-scans',
+        builder: (context, state) => const OfflineScansScreen(),
+      ),
+      GoRoute(
+        path: '/settings',
+        name: 'settings',
+        builder: (context, state) => const SettingsScreen(),
+      ),
+      GoRoute(
+        path: '/privacy-policy',
+        name: 'privacy-policy',
+        builder: (context, state) => const PrivacyPolicyScreen(),
+      ),
+      GoRoute(
+        path: '/terms-of-service',
+        name: 'terms-of-service',
+        builder: (context, state) => const TermsOfServiceScreen(),
+      ),
+      GoRoute(
+        path: '/notifications',
+        name: 'notifications',
+        builder: (context, state) => const NotificationsScreen(),
+      ),
+      GoRoute(
+        path: '/search',
+        name: 'search',
+        builder: (context, state) => const SearchDrugsScreen(),
+      ),
+      GoRoute(
+        path: '/supply-chain-timeline',
+        name: 'supply-chain-timeline',
+        builder: (context, state) {
+          final extra = state.extra as Map<String, dynamic>?;
+          return SupplyChainTimelineScreen(
+            supplyChainId: extra?['supplyChainId'] as String?,
+            drugId: extra?['drugId'] as String?,
+            supplyChain: extra?['supplyChain'] as dynamic,
+          );
+        },
+      ),
+      GoRoute(
+        path: '/tasks',
+        name: 'tasks',
+        builder: (context, state) => const TasksListScreen(),
+      ),
+      GoRoute(
+        path: '/tasks/:id',
+        name: 'task-detail',
+        builder: (context, state) {
+          final taskId = state.pathParameters['id']!;
+          return TaskDetailScreen(taskId: taskId);
+        },
       ),
     ],
     errorBuilder: (context, state) => Scaffold(

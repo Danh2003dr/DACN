@@ -9,10 +9,8 @@ import 'package:firebase_core/firebase_core.dart';
 import 'config/routes/app_router.dart';
 import 'config/theme/app_theme.dart';
 import 'presentation/blocs/theme_provider.dart';
-import 'core/services/connectivity_service.dart';
-import 'core/services/sync_service.dart';
 import 'core/services/notification_service.dart';
-import 'core/api/dio_client.dart';
+import 'core/utils/notification_navigator.dart';
 import 'data/models/offline_scan_model.dart';
 
 // Firebase options - đã được tạo bởi flutterfire configure
@@ -129,6 +127,9 @@ class MyApp extends ConsumerWidget {
 
     final router = ref.watch(routerProvider);
     final themeMode = ref.watch(themeProvider);
+
+    // Set router for notification navigation
+    NotificationNavigator.setRouter(router);
 
     return MaterialApp.router(
       title: appName,

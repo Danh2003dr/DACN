@@ -54,6 +54,12 @@ const inventorySchema = new mongoose.Schema({
       trim: true
     },
     
+    organizationId: {
+      type: String,
+      trim: true,
+      index: true
+    },
+    
     coordinates: {
       type: {
         type: String,

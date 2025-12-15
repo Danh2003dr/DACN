@@ -6,6 +6,107 @@ const mongoose = require('mongoose');
 const hsmService = require('../services/hsm/hsmService');
 
 /**
+ * Helper function để tạo Etherscan URL dựa trên network và transaction hash
+ */
+function getEtherscanUrl(network, transactionHash) {
+  if (!transactionHash || !network || network === 'mock' || network === 'development') {
+    return null;
+  }
+  
+  const hash = transactionHash.startsWith('0x') ? transactionHash : `0x${transactionHash}`;
+  
+  // Mapping network names to Etherscan URLs
+  const networkUrls = {
+    'mainnet': 'https://etherscan.io',
+    'sepolia': 'https://sepolia.etherscan.io',
+    'bsc_mainnet': 'https://bscscan.com',
+    'bsc_testnet': 'https://testnet.bscscan.com',
+    'polygon_mainnet': 'https://polygonscan.com',
+    'polygon_mumbai': 'https://mumbai.polygonscan.com',
+    'arbitrum_one': 'https://arbiscan.io',
+    'arbitrum_sepolia': 'https://sepolia.arbiscan.io',
+    'optimism_mainnet': 'https://optimistic.etherscan.io',
+    'optimism_sepolia': 'https://sepolia-optimism.etherscan.io'
+  };
+  
+  const baseUrl = networkUrls[network];
+  if (!baseUrl) {
+    return null;
+  }
+  
+  return `${baseUrl}/tx/${hash}`;
+}
+
+/**
+ * Helper function để chuẩn hóa ObjectId từ request body hoặc params
+ * Xử lý trường hợp ObjectId là object thay vì string
+ */
+function normalizeObjectId(id) {
+  if (!id) {
+    return null;
+  }
+  
+  // Reject string "[object Object]" ngay lập tức
+  if (typeof id === 'string' && (id === '[object Object]' || id === '"[object Object]"')) {
+    console.warn('Rejected invalid string "[object Object]"');
+    return null;
+  }
+  
+  // Nếu đã là string hợp lệ, trả về ngay
+  if (typeof id === 'string' && mongoose.Types.ObjectId.isValid(id)) {
+    return id;
+  }
+  
+  // Nếu đã là ObjectId instance, chuyển về string
+  if (mongoose.Types.ObjectId.isValid(id)) {
+    return String(id);
+  }
+  
+  // Nếu là object với các keys như '0', '1', '2'... (char array)
+  if (typeof id === 'object' && id !== null) {
+    if (Object.keys(id).every(key => /^\d+$/.test(key))) {
+      // Object có dạng { '0': '6', '1': '9', ... }
+      const normalized = Object.keys(id)
+        .sort((a, b) => parseInt(a) - parseInt(b))
+        .map(key => id[key])
+        .join('');
+      
+      if (mongoose.Types.ObjectId.isValid(normalized)) {
+        return normalized;
+      }
+    }
+    
+    // Thử lấy _id, id, hoặc giá trị đầu tiên
+    if (id._id) {
+      return normalizeObjectId(id._id);
+    }
+    if (id.id) {
+      return normalizeObjectId(id.id);
+    }
+    
+    // Thử toString() nếu có
+    if (id.toString && typeof id.toString === 'function') {
+      const str = id.toString();
+      if (mongoose.Types.ObjectId.isValid(str) && str !== '[object Object]') {
+        return str;
+      }
+    }
+  }
+  
+  // Cuối cùng, thử convert sang string
+  const str = String(id);
+  // Reject nếu là "[object Object]"
+  if (str === '[object Object]' || str === '"[object Object]"') {
+    return null;
+  }
+  if (mongoose.Types.ObjectId.isValid(str)) {
+    return str;
+  }
+  
+  return null;
+}
+
+/**
  * Ký số cho một đối tượng (drug, supplyChain, etc.)
  */
 exports.signDocument = async (req, res) => {
@@ -21,11 +122,23 @@ exports.signDocument = async (req, res) => {
       });
     }
     
+    // Normalize targetId để đảm bảo là ObjectId hợp lệ
+    const normalizedTargetId = normalizeObjectId(targetId);
+    if (!normalizedTargetId) {
+      console.error('Invalid targetId:', targetId, 'Type:', typeof targetId);
+      return res.status(400).json({
+        success: false,
+        message: 'targetId không hợp lệ'
+      });
+    }
+    
+    console.log('Signing document - targetType:', targetType, 'targetId:', normalizedTargetId, 'Original:', targetId);
+    
     // Lấy dữ liệu đối tượng nếu không có data
     let documentData = data;
     if (!documentData) {
       if (targetType === 'drug') {
-        const drug = await Drug.findById(targetId);
+        const drug = await Drug.findById(normalizedTargetId);
         if (!drug) {
           return res.status(404).json({
             success: false,
@@ -42,7 +155,7 @@ exports.signDocument = async (req, res) => {
           qualityTest: drug.qualityTest
         };
       } else if (targetType === 'supplyChain') {
-        const supplyChain = await SupplyChain.findById(targetId);
+        const supplyChain = await SupplyChain.findById(normalizedTargetId);
         if (!supplyChain) {
           return res.status(404).json({
             success: false,
@@ -61,27 +174,33 @@ exports.signDocument = async (req, res) => {
     // Ký số
     const result = await digitalSignatureService.signDocument(
       targetType,
-      targetId,
+      normalizedTargetId,
       userId,
       documentData,
       options || {}
     );
     
     // Lưu chữ ký số lên blockchain
+    let blockchainSaved = false;
     if (result.success && result.digitalSignature) {
       try {
         const blockchainService = require('../services/blockchainService');
         
+        console.log('🔄 Đang khởi tạo blockchain service...');
         // Khởi tạo blockchain service nếu chưa
         if (!blockchainService.isInitialized) {
           await blockchainService.initialize();
+          console.log('✅ Blockchain service đã được khởi tạo');
+        } else {
+          console.log('✅ Blockchain service đã sẵn sàng');
         }
         
+        console.log('📝 Đang ghi chữ ký số lên blockchain...');
         // Ghi chữ ký số lên blockchain
         const blockchainResult = await blockchainService.recordDigitalSignatureOnBlockchain({
           signatureId: result.digitalSignature._id,
           targetType,
-          targetId,
+          targetId: normalizedTargetId,
           dataHash: result.dataHash,
           signature: result.digitalSignature.signature,
           certificateSerialNumber: result.digitalSignature.certificate.serialNumber,
@@ -89,17 +208,47 @@ exports.signDocument = async (req, res) => {
           timestampedAt: result.digitalSignature.timestamp?.timestampedAt || new Date()
         });
         
+        console.log('📊 Kết quả lưu blockchain:', {
+          success: blockchainResult.success,
+          transactionHash: blockchainResult.transactionHash,
+          blockNumber: blockchainResult.blockNumber,
+          mock: blockchainResult.mock
+        });
+        
         // Cập nhật thông tin blockchain vào chữ ký số
         if (blockchainResult.success) {
+          // Lấy network từ blockchain service
+          const currentNetwork = blockchainService.currentNetwork || process.env.BLOCKCHAIN_NETWORK || 'development';
+          
+          // Tạo Etherscan URL
+          const etherscanUrl = getEtherscanUrl(currentNetwork, blockchainResult.transactionHash);
+          
           result.digitalSignature.blockchain = {
             transactionHash: blockchainResult.transactionHash,
             blockNumber: blockchainResult.blockNumber,
-            timestamp: blockchainResult.timestamp
+            timestamp: blockchainResult.timestamp,
+            network: currentNetwork,
+            etherscanUrl: etherscanUrl,
+            mock: blockchainResult.mock || false
           };
           await result.digitalSignature.save();
+          blockchainSaved = true;
+          console.log('✅ Đã lưu chữ ký số lên blockchain thành công');
+          if (etherscanUrl) {
+            console.log('🔗 Etherscan URL:', etherscanUrl);
+          }
+          if (blockchainResult.mock) {
+            console.log('⚠️  Lưu ý: Đang sử dụng mock blockchain (chế độ phát triển)');
+          }
+        } else {
+          console.warn('⚠️  Không thể lưu lên blockchain:', blockchainResult.error);
         }
       } catch (blockchainError) {
-        console.error('Error recording digital signature on blockchain:', blockchainError);
+        console.error('❌ Lỗi khi lưu chữ ký số lên blockchain:', blockchainError);
+        console.error('Chi tiết lỗi:', {
+          message: blockchainError.message,
+          stack: blockchainError.stack
+        });
         // Không throw error, vì chữ ký đã được lưu trong database
         // Chỉ log để debug
       }
@@ -108,7 +257,7 @@ exports.signDocument = async (req, res) => {
     // Cập nhật chữ ký số vào đối tượng được ký (nếu là drug)
     if (targetType === 'drug' && result.digitalSignature) {
       try {
-        const drug = await Drug.findById(targetId);
+        const drug = await Drug.findById(normalizedTargetId);
         if (drug) {
           drug.blockchain = drug.blockchain || {};
           drug.blockchain.digitalSignature = result.digitalSignature.signature;
@@ -126,10 +275,25 @@ exports.signDocument = async (req, res) => {
       }
     }
     
+    // Tạo thông báo chi tiết
+    let message = 'Ký số thành công';
+    if (blockchainSaved) {
+      if (result.digitalSignature?.blockchain?.mock) {
+        message += ' (đã lưu lên blockchain - chế độ mock)';
+      } else {
+        message += ' và đã lưu lên blockchain';
+      }
+    } else {
+      message += ' (chưa lưu lên blockchain - xem log để biết chi tiết)';
+    }
+    
     res.status(201).json({
       success: true,
-      message: 'Ký số thành công' + (result.digitalSignature?.blockchain ? ' và đã lưu lên blockchain' : ''),
-      data: result
+      message: message,
+      data: {
+        ...result,
+        blockchainSaved: blockchainSaved
+      }
     });
   } catch (error) {
     console.error('Error signing document:', error);
@@ -145,12 +309,22 @@ exports.signDocument = async (req, res) => {
  */
 exports.verifySignature = async (req, res) => {
   try {
-    const { signatureId, data } = req.body;
+    let { signatureId, data } = req.body;
     
     if (!signatureId) {
       return res.status(400).json({
         success: false,
         message: 'Thiếu signatureId'
+      });
+    }
+    
+    // Chuẩn hóa signatureId
+    signatureId = normalizeObjectId(signatureId);
+    
+    if (!signatureId) {
+      return res.status(400).json({
+        success: false,
+        message: 'signatureId không hợp lệ'
       });
     }
     
@@ -362,7 +536,17 @@ exports.getSignatures = async (req, res) => {
  */
 exports.getSignatureById = async (req, res) => {
   try {
-    const { id } = req.params;
+    let { id } = req.params;
+    
+    // Chuẩn hóa id
+    id = normalizeObjectId(id);
+    
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        message: 'ID không hợp lệ'
+      });
+    }
     
     const signature = await DigitalSignature.findById(id)
       .populate('signedBy', 'fullName email role organization')
@@ -415,9 +599,19 @@ exports.getSignaturesByTarget = async (req, res) => {
  */
 exports.revokeSignature = async (req, res) => {
   try {
-    const { id } = req.params;
+    let { id } = req.params;
     const { reason } = req.body;
     const userId = req.user.id;
+    
+    // Chuẩn hóa id
+    id = normalizeObjectId(id);
+    
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        message: 'ID không hợp lệ'
+      });
+    }
     
     if (!reason) {
       return res.status(400).json({

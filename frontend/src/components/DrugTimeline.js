@@ -28,7 +28,7 @@ import {
  *   - temperature: number - Temperature reading (optional)
  *   - status: 'normal' | 'warning' | 'pending' - Status of the event
  */
-const DrugTimeline = ({ events = [] }) => {
+const DrugTimeline = ({ events = [], onAddressClick = null }) => {
   const [hoveredIndex, setHoveredIndex] = useState(null);
 
   // Get icon based on stage name
@@ -159,7 +159,17 @@ const DrugTimeline = ({ events = [] }) => {
                       {event.location && (
                         <div className="flex items-center gap-1 text-sm text-gray-600">
                           <MapPin className="w-4 h-4" />
-                          <span>{event.location}</span>
+                          {onAddressClick && event.location !== 'N/A' ? (
+                            <button
+                              onClick={() => onAddressClick(event.location)}
+                              className="text-blue-600 hover:text-blue-800 hover:underline cursor-pointer"
+                              title="Click để xem trên bản đồ"
+                            >
+                              {event.location}
+                            </button>
+                          ) : (
+                            <span>{event.location}</span>
+                          )}
                         </div>
                       )}
                     </div>

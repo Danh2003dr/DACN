@@ -115,9 +115,25 @@ flutter build apk --release
 flutter build ios --release
 ```
 
+## Documentation
+
+### 📚 Guides
+- **[SETUP_GUIDE.md](SETUP_GUIDE.md)** - Hướng dẫn setup environment và kết nối backend API
+- **[FIREBASE_SETUP.md](FIREBASE_SETUP.md)** - Hướng dẫn setup Firebase cho push notifications
+- **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)** - Hướng dẫn xử lý các lỗi thường gặp
+
+### 📊 Reports & Roadmaps
+- **[BAO_CAO_TONG_HOP.md](BAO_CAO_TONG_HOP.md)** - Báo cáo tổng hợp: các phần đã làm & chưa làm
+- **[HOAN_THIEN_MOBILE_APP.md](HOAN_THIEN_MOBILE_APP.md)** - Kế hoạch hoàn thiện mobile app (đã cập nhật với checkmarks)
+- **[ROADMAP.md](ROADMAP.md)** - Roadmap phát triển dài hạn
+
+### 🔧 Implementation Guides
+- **[IMPLEMENTATION_GUIDE.md](IMPLEMENTATION_GUIDE.md)** - Hướng dẫn implement các tính năng quan trọng
+
 ## Notes
 
 - Make sure to run `flutter pub get` after adding new dependencies
 - Run `build_runner` when using code generation (json_serializable, hive)
 - Update `.env` file with correct API URLs for different environments
+- Xem [SETUP_GUIDE.md](SETUP_GUIDE.md) để biết cách setup environment variables
 

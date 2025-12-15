@@ -107,6 +107,55 @@ const Drugs = () => {
     }
   };
 
+  // Helper function để normalize ID (giống như trong Users.js)
+  const normalizeId = (id, fallback = '') => {
+    if (!id) return fallback;
+    if (typeof id === 'string' && id.trim() !== '' && id !== '[object Object]') return id;
+    if (typeof id === 'object' && id !== null) {
+      // Handle MongoDB ObjectId serialized as { '0': '6', '1': '9', ... }
+      if (Object.keys(id).every(key => /^\d+$/.test(key))) {
+        const normalized = Object.keys(id)
+          .sort((a, b) => parseInt(a) - parseInt(b))
+          .map(key => id[key])
+          .join('');
+        if (normalized.length === 24 && /^[0-9a-fA-F]{24}$/.test(normalized)) {
+          return normalized;
+        }
+      }
+      if (id._id) {
+        const nestedId = id._id;
+        if (typeof nestedId === 'string' && nestedId.trim() !== '' && nestedId !== '[object Object]') {
+          return nestedId;
+        }
+      }
+      if (id.id) {
+        const idValue = id.id;
+        if (typeof idValue === 'string' && idValue.trim() !== '' && idValue !== '[object Object]') {
+          return idValue;
+        }
+      }
+      if (id.toString && typeof id.toString === 'function') {
+        try {
+          const str = id.toString();
+          if (str !== '[object Object]' && str.trim() !== '') {
+            return str;
+          }
+        } catch (e) {
+          console.error("Error in toString for ID:", id, e);
+        }
+      }
+    }
+    try {
+      const str = String(id);
+      if (str !== '[object Object]' && str.trim() !== '') {
+        return str;
+      }
+    } catch (e) {
+      console.error("Error in String(id) for ID:", id, e);
+    }
+    return fallback;
+  };
+
   // Update drug
   const onSubmitEdit = async (data) => {
     if (!selectedDrug) return;
@@ -119,7 +168,15 @@ const Drugs = () => {
     };
 
     try {
-      const response = await drugAPI.updateDrug(selectedDrug._id, updatePayload);
+      // Normalize ID trước khi gọi API
+      const normalizedId = normalizeId(selectedDrug._id);
+      if (!normalizedId || normalizedId === '[object Object]') {
+        console.error('Drug ID không hợp lệ:', selectedDrug._id);
+        setError('ID lô thuốc không hợp lệ');
+        return;
+      }
+      
+      const response = await drugAPI.updateDrug(normalizedId, updatePayload);
       if (response.success) {
         setShowEditModal(false);
         setSelectedDrug(null);
@@ -139,7 +196,15 @@ const Drugs = () => {
     if (!window.confirm('Bạn có chắc chắn muốn xóa lô thuốc này?')) return;
     
     try {
-      const response = await api.delete(`/drugs/${drugId}`);
+      // Normalize ID trước khi gọi API
+      const normalizedId = normalizeId(drugId);
+      if (!normalizedId || normalizedId === '[object Object]') {
+        console.error('Drug ID không hợp lệ:', drugId);
+        setError('ID lô thuốc không hợp lệ');
+        return;
+      }
+      
+      const response = await api.delete(`/drugs/${normalizedId}`);
       if (response.data.success) {
         loadDrugs();
         loadStats();
@@ -157,7 +222,15 @@ const Drugs = () => {
     if (!reason) return;
     
     try {
-      const response = await api.put(`/drugs/${drugId}/recall`, { reason });
+      // Normalize ID trước khi gọi API
+      const normalizedId = normalizeId(drugId);
+      if (!normalizedId || normalizedId === '[object Object]') {
+        console.error('Drug ID không hợp lệ:', drugId);
+        setError('ID lô thuốc không hợp lệ');
+        return;
+      }
+      
+      const response = await api.put(`/drugs/${normalizedId}/recall`, { reason });
       if (response.data.success) {
         loadDrugs();
         loadStats();
@@ -218,7 +291,13 @@ const Drugs = () => {
     if (needsGenerate) {
       try {
         setLoading(true);
-        const response = await drugAPI.generateQRCode(drug._id);
+        const normalizedId = normalizeId(drug._id);
+        if (!normalizedId || normalizedId === '[object Object]') {
+          console.error('Drug ID không hợp lệ:', drug._id);
+          setError('ID lô thuốc không hợp lệ');
+          return;
+        }
+        const response = await drugAPI.generateQRCode(normalizedId);
         if (response.success) {
           // Cập nhật drug với QR code mới từ response
           let updatedDrug;
@@ -320,6 +399,37 @@ const Drugs = () => {
     };
     
     return qrData;
+  };
+
+  // Helper function để tạo unique key - luôn đảm bảo trả về string và unique
+  const getUniqueKey = (item, idx) => {
+    // Luôn bắt đầu với index để đảm bảo uniqueness ngay từ đầu
+    let idPart = '';
+    
+    // Thử lấy ID từ nhiều nguồn
+    if (item._id) {
+      if (typeof item._id === 'string' && item._id.trim() !== '' && item._id !== '[object Object]') {
+        idPart = item._id;
+      } else if (typeof item._id === 'object' && item._id !== null) {
+        // Nếu _id là object, lấy nested _id hoặc id
+        const nestedId = item._id._id || item._id.id;
+        if (nestedId && typeof nestedId === 'string' && nestedId !== '[object Object]') {
+          idPart = nestedId;
+        }
+      }
+    }
+    
+    // Nếu không có ID hợp lệ, tạo từ các giá trị khác
+    if (!idPart || idPart === '[object Object]') {
+      const drugId = String(item.drugId || '');
+      const batchNumber = String(item.batchNumber || '');
+      const name = String(item.name || '');
+      const createdAt = item.createdAt ? String(new Date(item.createdAt).getTime()) : String(Date.now());
+      idPart = `${drugId}-${batchNumber}-${name}-${createdAt}`;
+    }
+    
+    // Luôn kết hợp index làm phần chính để đảm bảo unique tuyệt đối
+    return `drug-${idx}-${idPart}`;
   };
 
   // Open blockchain modal
@@ -579,8 +689,8 @@ const Drugs = () => {
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {drugs.map((drug) => (
-                    <tr key={drug._id} className="hover:bg-gray-50">
+                  {drugs.map((drug, idx) => (
+                    <tr key={getUniqueKey(drug, idx)} className="hover:bg-gray-50">
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div>
                           <div className="text-sm font-medium text-gray-900">
@@ -1131,7 +1241,13 @@ const Drugs = () => {
                             onClick={async () => {
                               try {
                                 setLoading(true);
-                                const response = await drugAPI.generateQRCode(selectedDrug._id);
+                                const normalizedId = normalizeId(selectedDrug._id);
+                                if (!normalizedId || normalizedId === '[object Object]') {
+                                  console.error('Drug ID không hợp lệ:', selectedDrug._id);
+                                  setError('ID lô thuốc không hợp lệ');
+                                  return;
+                                }
+                                const response = await drugAPI.generateQRCode(normalizedId);
                                 if (response.success) {
                                   let updatedDrug;
                                   if (response.data.drug) {
@@ -1320,7 +1436,7 @@ const Drugs = () => {
                           <div className="mt-3 space-y-2">
                             {selectedDrug.blockchain.transactionHistory.map((tx, index) => (
                               <div
-                                key={index}
+                                key={`tx-${index}-${tx.action || ''}-${tx.timestamp || tx.date || ''}`}
                                 className="rounded-lg border border-gray-100 bg-gray-50 p-3"
                               >
                                 <div className="flex items-start justify-between">

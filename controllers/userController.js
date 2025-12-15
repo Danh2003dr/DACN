@@ -87,15 +87,17 @@ const getAllUsers = async (req, res) => {
     // Tính toán pagination
     const skip = (page - 1) * limit;
     
-    // Query users
+    // Query users - sử dụng lean() để trả về plain JavaScript objects thay vì Mongoose documents
     const users = await User.find(filter)
       .select('-password')
       .sort({ createdAt: -1 })
       .skip(skip)
-      .limit(limit);
+      .limit(limit)
+      .lean(); // Convert Mongoose documents thành plain objects
     
     const total = await User.countDocuments(filter);
     
+    // Đảm bảo _id được serialize đúng cách (MongoDB driver tự động làm điều này khi dùng lean())
     res.status(200).json({
       success: true,
       data: {

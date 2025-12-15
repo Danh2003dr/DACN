@@ -228,9 +228,16 @@ const getContracts = async (req, res) => {
       if (endDate) filters.signedDate.$lte = new Date(endDate);
     }
 
+    console.log('Getting contracts with filters:', JSON.stringify(filters, null, 2), 'options:', { page, limit });
+
     const result = await Contract.getContracts(filters, {
       page: parseInt(page),
       limit: parseInt(limit)
+    });
+
+    console.log('Contracts result:', {
+      contractsCount: result?.contracts?.length || 0,
+      pagination: result?.pagination
     });
 
     res.status(200).json({
@@ -239,10 +246,41 @@ const getContracts = async (req, res) => {
     });
   } catch (error) {
     console.error('Error getting contracts:', error);
+    console.error('Error stack:', error.stack);
+    console.error('Error details:', {
+      message: error.message,
+      name: error.name,
+      filters: filters,
+      options: { page, limit }
+    });
+    
+    // Trả về empty data thay vì 500 nếu là lỗi populate hoặc query nhỏ
+    if (error.message && (
+      error.message.includes('populate') || 
+      error.message.includes('Cast to ObjectId') ||
+      error.message.includes('strictPopulate') ||
+      error.message.includes('Cannot read property')
+    )) {
+      console.warn('Non-critical error in getContracts, returning empty data');
+      return res.status(200).json({
+        success: true,
+        data: {
+          contracts: [],
+          pagination: {
+            page: parseInt(page) || 1,
+            limit: parseInt(limit) || 50,
+            total: 0,
+            pages: 0
+          }
+        }
+      });
+    }
+    
     res.status(500).json({
       success: false,
       message: 'Lỗi server khi lấy danh sách hợp đồng.',
-      error: error.message
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 };

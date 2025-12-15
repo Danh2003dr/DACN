@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { inventoryAPI } from '../utils/api';
+import { useAuth } from '../contexts/AuthContext';
 import {
   Package,
   Plus,
@@ -24,10 +25,12 @@ import {
 import toast from 'react-hot-toast';
 
 const Inventory = () => {
+  const { user, hasRole, hasAnyRole } = useAuth();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState(null);
   const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, pages: 0 });
+  const [locations, setLocations] = useState([]);
   
   // Modal states
   const [showStockInModal, setShowStockInModal] = useState(false);
@@ -120,6 +123,11 @@ const Inventory = () => {
       }
     } catch (error) {
       console.error('Error loading inventory:', error);
+      if (error.response?.status === 403) {
+        toast.error(error.response?.data?.message || 'Bạn không có quyền xem danh sách tồn kho này');
+      } else if (error.response?.status !== 404) {
+        toast.error('Lỗi khi tải danh sách tồn kho');
+      }
     } finally {
       setLoading(false);
     }
@@ -136,6 +144,9 @@ const Inventory = () => {
       }
     } catch (error) {
       console.error('Error loading stats:', error);
+      if (error.response?.status === 403) {
+        toast.error(error.response?.data?.message || 'Bạn không có quyền xem thống kê tồn kho');
+      }
     }
   };
 
@@ -194,8 +205,12 @@ const Inventory = () => {
       }
     } catch (error) {
       console.error('Error stocking in:', error);
-      const errorMessage = error.response?.data?.message || error.message || 'Lỗi khi nhập kho. Vui lòng thử lại.';
-      toast.error(errorMessage);
+      if (error.response?.status === 403) {
+        toast.error(error.response?.data?.message || 'Bạn không có quyền nhập kho tại địa điểm này');
+      } else {
+        const errorMessage = error.response?.data?.message || error.message || 'Lỗi khi nhập kho. Vui lòng thử lại.';
+        toast.error(errorMessage);
+      }
     } finally {
       setLoading(false);
     }
@@ -245,8 +260,12 @@ const Inventory = () => {
       }
     } catch (error) {
       console.error('Error stocking out:', error);
-      const errorMessage = error.response?.data?.message || error.message || 'Lỗi khi xuất kho. Vui lòng thử lại.';
-      toast.error(errorMessage);
+      if (error.response?.status === 403) {
+        toast.error(error.response?.data?.message || 'Bạn không có quyền xuất kho tại địa điểm này');
+      } else {
+        const errorMessage = error.response?.data?.message || error.message || 'Lỗi khi xuất kho. Vui lòng thử lại.';
+        toast.error(errorMessage);
+      }
     } finally {
       setLoading(false);
     }
@@ -294,15 +313,34 @@ const Inventory = () => {
       }
     } catch (error) {
       console.error('Error transferring stock:', error);
-      const errorMessage = error.response?.data?.message || 'Lỗi khi chuyển kho. Vui lòng thử lại.';
-      toast.error(errorMessage);
+      if (error.response?.status === 403) {
+        toast.error(error.response?.data?.message || 'Bạn không có quyền chuyển kho giữa các địa điểm này');
+      } else {
+        const errorMessage = error.response?.data?.message || error.message || 'Lỗi khi chuyển kho. Vui lòng thử lại.';
+        toast.error(errorMessage);
+      }
     } finally {
       setLoading(false);
     }
   };
 
+  // Load locations for dropdown
+  const loadLocations = async () => {
+    try {
+      const response = await inventoryAPI.getLocations();
+      if (response && response.success) {
+        setLocations(response.data.locations || []);
+      }
+    } catch (error) {
+      console.error('Error loading locations:', error);
+    }
+  };
+
   // Open transfer modal with selected item
-  const handleOpenTransferModal = (item = null) => {
+  const handleOpenTransferModal = async (item = null) => {
+    // Load locations when opening modal
+    await loadLocations();
+    
     if (item) {
       setSelectedItem(item);
       setTransferForm({
@@ -316,6 +354,19 @@ const Inventory = () => {
       });
     }
     setShowTransferModal(true);
+  };
+
+  // Handle location selection for destination
+  const handleLocationSelect = (locationId) => {
+    const selectedLocation = locations.find(loc => loc.locationId === locationId);
+    if (selectedLocation) {
+      setTransferForm({
+        ...transferForm,
+        toLocationId: selectedLocation.locationId,
+        toLocationName: selectedLocation.locationName,
+        toLocationType: selectedLocation.locationType || 'warehouse'
+      });
+    }
   };
 
   // Stocktake
@@ -373,8 +424,12 @@ const Inventory = () => {
       }
     } catch (error) {
       console.error('Error stocktaking:', error);
-      const errorMessage = error.response?.data?.message || error.message || 'Lỗi khi kiểm kê kho. Vui lòng thử lại.';
-      toast.error(errorMessage);
+      if (error.response?.status === 403) {
+        toast.error(error.response?.data?.message || 'Bạn không có quyền kiểm kê kho tại địa điểm này');
+      } else {
+        const errorMessage = error.response?.data?.message || error.message || 'Lỗi khi kiểm kê kho. Vui lòng thử lại.';
+        toast.error(errorMessage);
+      }
     } finally {
       setLoading(false);
     }
@@ -429,8 +484,12 @@ const Inventory = () => {
       }
     } catch (error) {
       console.error('Error adjusting stock:', error);
-      const errorMessage = error.response?.data?.message || error.message || 'Lỗi khi điều chỉnh kho. Vui lòng thử lại.';
-      toast.error(errorMessage);
+      if (error.response?.status === 403) {
+        toast.error(error.response?.data?.message || 'Bạn không có quyền điều chỉnh kho tại địa điểm này');
+      } else {
+        const errorMessage = error.response?.data?.message || error.message || 'Lỗi khi điều chỉnh kho. Vui lòng thử lại.';
+        toast.error(errorMessage);
+      }
     } finally {
       setLoading(false);
     }
@@ -518,6 +577,37 @@ const Inventory = () => {
     }
   };
 
+  // Helper function để tạo unique key - luôn đảm bảo trả về string và unique
+  const getUniqueKey = (item, idx) => {
+    // Luôn bắt đầu với index để đảm bảo uniqueness ngay từ đầu
+    let idPart = '';
+    
+    // Thử lấy ID từ nhiều nguồn
+    if (item._id) {
+      if (typeof item._id === 'string' && item._id.trim() !== '' && item._id !== '[object Object]') {
+        idPart = item._id;
+      } else if (typeof item._id === 'object' && item._id !== null) {
+        // Nếu _id là object, lấy nested _id hoặc id
+        const nestedId = item._id._id || item._id.id;
+        if (nestedId && typeof nestedId === 'string' && nestedId !== '[object Object]') {
+          idPart = nestedId;
+        }
+      }
+    }
+    
+    // Nếu không có ID hợp lệ, tạo từ các giá trị khác
+    if (!idPart || idPart === '[object Object]') {
+      const drugId = String(item.drugId || item.drug?._id || '');
+      const batchNumber = String(item.batchNumber || '');
+      const locationId = String(item.location?.locationId || item.locationId || '');
+      const createdAt = item.createdAt ? String(new Date(item.createdAt).getTime()) : String(Date.now());
+      idPart = `${drugId}-${batchNumber}-${locationId}-${createdAt}`;
+    }
+    
+    // Luôn kết hợp index làm phần chính để đảm bảo unique tuyệt đối
+    return `inventory-${idx}-${idPart}`;
+  };
+
   return (
     <div className="p-6">
       <div className="mb-6 flex items-center justify-between">
@@ -533,34 +623,49 @@ const Inventory = () => {
             <RefreshCw className="w-4 h-4" />
             Refresh
           </button>
-          <button
-            onClick={() => setShowStockInModal(true)}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition flex items-center gap-2"
-          >
-            <Plus className="w-4 h-4" />
-            Nhập kho
-          </button>
-          <button
-            onClick={() => setShowStockOutModal(true)}
-            className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition flex items-center gap-2"
-          >
-            <Minus className="w-4 h-4" />
-            Xuất kho
-          </button>
-          <button
-            onClick={() => handleOpenTransferModal()}
-            className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition flex items-center gap-2"
-          >
-            <ArrowRightLeft className="w-4 h-4" />
-            Chuyển kho
-          </button>
-          <button
-            onClick={() => setShowStocktakeModal(true)}
-            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition flex items-center gap-2"
-          >
-            <ClipboardCheck className="w-4 h-4" />
-            Kiểm kê
-          </button>
+          {hasAnyRole(['admin', 'manufacturer', 'distributor', 'hospital']) && (
+            <>
+              <button
+                onClick={() => setShowStockInModal(true)}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition flex items-center gap-2"
+              >
+                <Plus className="w-4 h-4" />
+                Nhập kho
+              </button>
+              <button
+                onClick={() => setShowStockOutModal(true)}
+                className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition flex items-center gap-2"
+              >
+                <Minus className="w-4 h-4" />
+                Xuất kho
+              </button>
+              <button
+                onClick={() => handleOpenTransferModal()}
+                className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition flex items-center gap-2"
+              >
+                <ArrowRightLeft className="w-4 h-4" />
+                Chuyển kho
+              </button>
+            </>
+          )}
+          {hasAnyRole(['admin', 'manufacturer']) && (
+            <>
+              <button
+                onClick={() => handleOpenAdjustModal()}
+                className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition flex items-center gap-2"
+              >
+                <Package className="w-4 h-4" />
+                Điều chỉnh
+              </button>
+              <button
+                onClick={() => setShowStocktakeModal(true)}
+                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition flex items-center gap-2"
+              >
+                <ClipboardCheck className="w-4 h-4" />
+                Kiểm kê
+              </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -737,8 +842,8 @@ const Inventory = () => {
                   </td>
                 </tr>
               ) : (
-                items.map((item) => (
-                  <tr key={item._id} className="hover:bg-gray-50">
+                items.map((item, idx) => (
+                  <tr key={getUniqueKey(item, idx)} className="hover:bg-gray-50">
                     <td className="px-6 py-4">
                       <div className="text-sm font-medium text-gray-900">{item.drugName}</div>
                       <div className="text-sm text-gray-500">Lô: {item.batchNumber}</div>
@@ -778,38 +883,46 @@ const Inventory = () => {
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex gap-2 flex-wrap">
-                        <button
-                          onClick={() => handleOpenStockOutModal(item)}
-                          className="text-orange-600 hover:text-orange-800 text-sm flex items-center gap-1"
-                          title="Xuất kho"
-                        >
-                          <Minus className="w-3 h-3" />
-                          Xuất
-                        </button>
-                        <button
-                          onClick={() => handleOpenTransferModal(item)}
-                          className="text-purple-600 hover:text-purple-800 text-sm flex items-center gap-1"
-                          title="Chuyển kho"
-                        >
-                          <ArrowRightLeft className="w-3 h-3" />
-                          Chuyển
-                        </button>
-                        <button
-                          onClick={() => handleOpenAdjustModal(item)}
-                          className="text-blue-600 hover:text-blue-800 text-sm flex items-center gap-1"
-                          title="Điều chỉnh số lượng"
-                        >
-                          <Package className="w-3 h-3" />
-                          Điều chỉnh
-                        </button>
-                        <button
-                          onClick={() => addItemToStocktake(item)}
-                          className="text-green-600 hover:text-green-800 text-sm flex items-center gap-1"
-                          title="Thêm vào kiểm kê"
-                        >
-                          <ClipboardCheck className="w-3 h-3" />
-                          Kiểm kê
-                        </button>
+                        {hasAnyRole(['admin', 'manufacturer', 'distributor', 'hospital']) && (
+                          <>
+                            <button
+                              onClick={() => handleOpenStockOutModal(item)}
+                              className="text-orange-600 hover:text-orange-800 text-sm flex items-center gap-1"
+                              title="Xuất kho"
+                            >
+                              <Minus className="w-3 h-3" />
+                              Xuất
+                            </button>
+                            <button
+                              onClick={() => handleOpenTransferModal(item)}
+                              className="text-purple-600 hover:text-purple-800 text-sm flex items-center gap-1"
+                              title="Chuyển kho"
+                            >
+                              <ArrowRightLeft className="w-3 h-3" />
+                              Chuyển
+                            </button>
+                          </>
+                        )}
+                        {hasAnyRole(['admin', 'manufacturer']) && (
+                          <>
+                            <button
+                              onClick={() => handleOpenAdjustModal(item)}
+                              className="text-blue-600 hover:text-blue-800 text-sm flex items-center gap-1"
+                              title="Điều chỉnh số lượng"
+                            >
+                              <Package className="w-3 h-3" />
+                              Điều chỉnh
+                            </button>
+                            <button
+                              onClick={() => addItemToStocktake(item)}
+                              className="text-green-600 hover:text-green-800 text-sm flex items-center gap-1"
+                              title="Thêm vào kiểm kê"
+                            >
+                              <ClipboardCheck className="w-3 h-3" />
+                              Kiểm kê
+                            </button>
+                          </>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -1489,13 +1602,35 @@ const Inventory = () => {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Location ID đích *
+                      Chọn kho đích *
+                    </label>
+                    <select
+                      value={transferForm.toLocationId}
+                      onChange={(e) => handleLocationSelect(e.target.value)}
+                      required
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                    >
+                      <option value="">-- Chọn kho đích --</option>
+                      {locations
+                        .filter(loc => loc.locationId !== transferForm.fromLocationId)
+                        .map((location) => (
+                          <option key={location.locationId} value={location.locationId}>
+                            {location.locationName} ({location.locationId})
+                          </option>
+                        ))}
+                    </select>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Chọn từ {locations.length} kho có sẵn
+                    </p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Hoặc nhập Location ID mới
                     </label>
                     <input
                       type="text"
                       value={transferForm.toLocationId}
                       onChange={(e) => setTransferForm({ ...transferForm, toLocationId: e.target.value })}
-                      required
                       placeholder="VD: WH002, HOSP001"
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
                     />
@@ -1526,7 +1661,7 @@ const Inventory = () => {
                       <option value="distribution_center">Trung tâm phân phối</option>
                       <option value="hospital">Bệnh viện</option>
                       <option value="pharmacy">Nhà thuốc</option>
-                      <option value="clinic">Phòng khám</option>
+                      <option value="manufacturing_plant">Nhà máy</option>
                       <option value="other">Khác</option>
                     </select>
                   </div>
@@ -1669,7 +1804,7 @@ const Inventory = () => {
                     const difference = actualQty - currentQuantity;
 
                     return (
-                      <div key={index} className="border border-gray-200 rounded-lg p-4 bg-gray-50">
+                      <div key={`stocktake-item-${index}-${String(item.drugId || '')}-${index}`} className="border border-gray-200 rounded-lg p-4 bg-gray-50">
                         <div className="grid grid-cols-12 gap-3 items-start">
                           <div className="col-span-4">
                             <label className="block text-sm font-medium text-gray-700 mb-1">

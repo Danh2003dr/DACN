@@ -27,6 +27,7 @@ const TrustScores = () => {
   const [ranking, setRanking] = useState([]);
   const [stats, setStats] = useState(null);
   const [selectedSupplier, setSelectedSupplier] = useState(null);
+  const [selectedSupplierId, setSelectedSupplierId] = useState(null); // Lưu ID đã normalize
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [filters, setFilters] = useState({
     role: '',
@@ -37,6 +38,91 @@ const TrustScores = () => {
     pages: 1,
     total: 0
   });
+
+  // Helper function để normalize ID (giống như trong Reviews.js và Users.js)
+  const normalizeId = (id, fallback = '') => {
+    if (!id) return fallback;
+    if (typeof id === 'string' && id.trim() !== '' && id !== '[object Object]') return id;
+    if (typeof id === 'object' && id !== null) {
+      // Handle MongoDB ObjectId serialized as { '0': '6', '1': '9', ... }
+      if (Object.keys(id).every(key => /^\d+$/.test(key))) {
+        const normalized = Object.keys(id)
+          .sort((a, b) => parseInt(a) - parseInt(b))
+          .map(key => id[key])
+          .join('');
+        if (normalized.length === 24 && /^[0-9a-fA-F]{24}$/.test(normalized)) {
+          return normalized;
+        }
+      }
+      if (id._id) {
+        const nestedId = id._id;
+        if (typeof nestedId === 'string' && nestedId.trim() !== '' && nestedId !== '[object Object]') {
+          return nestedId;
+        }
+        // Nếu nestedId là object, đệ quy normalize
+        if (typeof nestedId === 'object') {
+          return normalizeId(nestedId, fallback);
+        }
+      }
+      if (id.id) {
+        const idValue = id.id;
+        if (typeof idValue === 'string' && idValue.trim() !== '' && idValue !== '[object Object]') {
+          return idValue;
+        }
+      }
+      if (id.toString && typeof id.toString === 'function') {
+        try {
+          const str = id.toString();
+          if (str !== '[object Object]' && str.trim() !== '') {
+            return str;
+          }
+        } catch (e) {
+          console.error("Error in toString for ID:", id, e);
+        }
+      }
+    }
+    try {
+      const str = String(id);
+      if (str !== '[object Object]' && str.trim() !== '') {
+        return str;
+      }
+    } catch (e) {
+      console.error("Error in String(id) for ID:", id, e);
+    }
+    return fallback;
+  };
+
+  // Helper function để tạo unique key
+  const getUniqueKey = (supplier, idx) => {
+    if (!supplier) return `supplier-${idx}-${Date.now()}`;
+    
+    // Normalize ID từ nhiều định dạng
+    let id = null;
+    if (supplier._id) {
+      if (typeof supplier._id === 'object' && supplier._id.toString) {
+        id = supplier._id.toString();
+      } else if (typeof supplier._id === 'string') {
+        id = supplier._id;
+      } else {
+        id = String(supplier._id);
+      }
+    }
+    
+    // Tạo unique key với nhiều fallback
+    const parts = [];
+    if (id) parts.push(id);
+    parts.push(`idx-${idx}`);
+    if (supplier.supplierName) parts.push(supplier.supplierName);
+    if (supplier.supplier?._id) {
+      const supplierId = typeof supplier.supplier._id === 'object' 
+        ? supplier.supplier._id.toString() 
+        : String(supplier.supplier._id);
+      parts.push(`supp-${supplierId}`);
+    }
+    if (supplier.trustScore !== undefined) parts.push(`score-${supplier.trustScore}`);
+    
+    return parts.join('-') || `supplier-${idx}-${Date.now()}`;
+  };
 
   // Load ranking
   const loadRanking = React.useCallback(async () => {
@@ -119,14 +205,21 @@ const TrustScores = () => {
   // View supplier detail
   const viewSupplierDetail = async (supplierId) => {
     try {
-      // Chuyển đổi supplierId thành string nếu là object
-      const id = typeof supplierId === 'object' && supplierId?._id 
-        ? supplierId._id.toString() 
-        : supplierId?.toString() || supplierId;
+      // Normalize ID từ nhiều định dạng khác nhau
+      const id = normalizeId(supplierId);
+      
+      if (!id || id === '') {
+        toast.error('Không thể xác định ID nhà cung ứng');
+        console.error('Invalid supplier ID:', supplierId);
+        return;
+      }
+      
+      console.log('Viewing supplier detail with ID:', id, 'from:', supplierId);
       
       const response = await trustScoreAPI.getTrustScore(id);
       if (response.success) {
         setSelectedSupplier(response.data.trustScore);
+        setSelectedSupplierId(id); // Lưu ID đã normalize
         setShowDetailModal(true);
       }
     } catch (error) {
@@ -291,7 +384,7 @@ const TrustScores = () => {
                   const BadgeIcon = badge.icon;
                   
                   return (
-                    <tr key={supplier._id} className="hover:bg-gray-50">
+                    <tr key={getUniqueKey(supplier, index)} className="hover:bg-gray-50">
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center">
                           {rank <= 3 && (
@@ -380,7 +473,12 @@ const TrustScores = () => {
       {showDetailModal && selectedSupplier && (
         <SupplierDetailModal
           supplier={selectedSupplier}
-          onClose={() => setShowDetailModal(false)}
+          supplierId={selectedSupplierId}
+          onClose={() => {
+            setShowDetailModal(false);
+            setSelectedSupplier(null);
+            setSelectedSupplierId(null);
+          }}
           hasRole={hasRole}
         />
       )}
@@ -389,38 +487,88 @@ const TrustScores = () => {
 };
 
 // Supplier Detail Modal
-const SupplierDetailModal = ({ supplier, onClose, hasRole }) => {
+const SupplierDetailModal = ({ supplier, supplierId, onClose, hasRole }) => {
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(false);
 
+  // Helper function để normalize ID (giống như trong component chính)
+  const normalizeId = (id, fallback = '') => {
+    if (!id) return fallback;
+    if (typeof id === 'string' && id.trim() !== '' && id !== '[object Object]') return id;
+    if (typeof id === 'object' && id !== null) {
+      // Handle MongoDB ObjectId serialized as { '0': '6', '1': '9', ... }
+      if (Object.keys(id).every(key => /^\d+$/.test(key))) {
+        const normalized = Object.keys(id)
+          .sort((a, b) => parseInt(a) - parseInt(b))
+          .map(key => id[key])
+          .join('');
+        if (normalized.length === 24 && /^[0-9a-fA-F]{24}$/.test(normalized)) {
+          return normalized;
+        }
+      }
+      if (id._id) {
+        const nestedId = id._id;
+        if (typeof nestedId === 'string' && nestedId.trim() !== '' && nestedId !== '[object Object]') {
+          return nestedId;
+        }
+        // Nếu nestedId là object, đệ quy normalize
+        if (typeof nestedId === 'object') {
+          return normalizeId(nestedId, fallback);
+        }
+      }
+      if (id.id) {
+        const idValue = id.id;
+        if (typeof idValue === 'string' && idValue.trim() !== '' && idValue !== '[object Object]') {
+          return idValue;
+        }
+      }
+      if (id.toString && typeof id.toString === 'function') {
+        try {
+          const str = id.toString();
+          if (str !== '[object Object]' && str.trim() !== '') {
+            return str;
+          }
+        } catch (e) {
+          console.error("Error in toString for ID:", id, e);
+        }
+      }
+    }
+    try {
+      const str = String(id);
+      if (str !== '[object Object]' && str.trim() !== '') {
+        return str;
+      }
+    } catch (e) {
+      console.error("Error in String(id) for ID:", id, e);
+    }
+    return fallback;
+  };
+
   useEffect(() => {
     loadHistory();
-  }, [supplier]);
+  }, [supplier, supplierId]);
 
   const loadHistory = async () => {
-    if (!supplier) return;
+    if (!supplier || !supplierId) return;
     
     try {
       setLoading(true);
-      // supplier là trustScore object, có field supplier là ObjectId hoặc populated object
-      // Cần lấy supplier._id (ObjectId của User) để gọi API history
-      let supplierId;
       
-      if (supplier.supplier) {
-        // supplier.supplier có thể là ObjectId hoặc populated object
-        if (typeof supplier.supplier === 'object') {
-          supplierId = supplier.supplier._id 
-            ? supplier.supplier._id.toString() 
-            : supplier.supplier.toString();
-        } else {
-          supplierId = supplier.supplier.toString();
-        }
-      } else {
-        console.error('Cannot determine supplier ID from trustScore');
+      // Sử dụng supplierId đã được normalize từ component cha
+      // Đảm bảo supplierId là string hợp lệ
+      const validSupplierId = typeof supplierId === 'string' && supplierId !== '[object Object]' 
+        ? supplierId 
+        : normalizeId(supplierId);
+      
+      if (!validSupplierId || validSupplierId === '' || validSupplierId === '[object Object]' || typeof validSupplierId !== 'string') {
+        console.error('Invalid supplier ID:', validSupplierId, 'from:', supplierId);
+        toast.error('Không thể xác định ID nhà cung ứng');
         return;
       }
       
-      const response = await trustScoreAPI.getScoreHistory(supplierId);
+      console.log('Loading history for supplier ID:', validSupplierId);
+      
+      const response = await trustScoreAPI.getScoreHistory(validSupplierId);
       if (response.success) {
         setHistory(response.data.history || []);
       }
@@ -514,17 +662,24 @@ const SupplierDetailModal = ({ supplier, onClose, hasRole }) => {
             <div className="text-center py-4 text-gray-500">Chưa có lịch sử</div>
           ) : (
             <div className="space-y-2 max-h-60 overflow-y-auto">
-              {history.slice(0, 10).map((item, index) => (
-                <div key={index} className="flex items-center justify-between p-2 bg-gray-50 rounded">
-                  <div className="flex-1">
-                    <div className="text-sm font-medium">{item.reason}</div>
-                    <div className="text-xs text-gray-500">{new Date(item.changedAt).toLocaleString('vi-VN')}</div>
+              {history.slice(0, 10).map((item, index) => {
+                // Tạo unique key từ timestamp và index
+                const uniqueKey = item.changedAt 
+                  ? `history-${new Date(item.changedAt).getTime()}-${index}`
+                  : `history-${index}-${item.reason || 'unknown'}`;
+                
+                return (
+                  <div key={uniqueKey} className="flex items-center justify-between p-2 bg-gray-50 rounded">
+                    <div className="flex-1">
+                      <div className="text-sm font-medium">{item.reason}</div>
+                      <div className="text-xs text-gray-500">{new Date(item.changedAt).toLocaleString('vi-VN')}</div>
+                    </div>
+                    <div className={`text-sm font-bold ${item.change >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      {item.change >= 0 ? '+' : ''}{item.change}
+                    </div>
                   </div>
-                  <div className={`text-sm font-bold ${item.change >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    {item.change >= 0 ? '+' : ''}{item.change}
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

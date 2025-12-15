@@ -12,9 +12,11 @@ Hệ thống được phát triển để giải quyết vấn đề nghiêm tr�
 - 📋 **[DOCUMENTATION_INDEX.md](./DOCUMENTATION_INDEX.md)** - Mục lục tất cả tài liệu
 
 ### 📖 Tài Liệu Khác
+- 📋 **[TONG_HOP_DU_AN_DA_LAM.md](./TONG_HOP_DU_AN_DA_LAM.md)** - Tổng hợp tất cả các phần đã làm của dự án ⭐ NEW
 - 📘 **Hướng dẫn sử dụng chi tiết giao diện hệ thống**: xem file `HUONG_DAN_SU_DUNG.md`
 - ⚙️ **Hướng dẫn nhanh triển khai & deploy smart contract**: xem file `QUICK_START_BLOCKCHAIN.md`
 - 🧠 **Mô tả kiến trúc & nghiệp vụ hệ thống**: xem file `MO_TA_HE_THONG.md`
+- 📥 **[IMPORT_GUIDE.md](./IMPORT_GUIDE.md)** - Hướng dẫn import dữ liệu từ PDF/CSV/Excel
 
 ## Tính năng chính
 

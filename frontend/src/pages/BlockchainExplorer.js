@@ -11,7 +11,8 @@ import {
   Filter,
   ChevronLeft,
   ChevronRight,
-  Loader2
+  Loader2,
+  Shield
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -38,6 +39,7 @@ const BlockchainExplorer = () => {
   // Filters
   const [filters, setFilters] = useState({
     search: '',
+    drugId: '',
     status: '',
     network: ''
   });
@@ -50,7 +52,7 @@ const BlockchainExplorer = () => {
         page,
         limit: pagination.limit,
         ...Object.fromEntries(
-          Object.entries(filters).filter(([_, value]) => value !== '')
+          Object.entries(filters).filter(([_, value]) => value !== '' && value !== null)
         )
       };
 
@@ -192,6 +194,35 @@ const BlockchainExplorer = () => {
     
     return realNetworks[network];
   };
+
+  // Get contract address explorer URL
+  const getContractExplorerUrl = (contractAddress, network = 'development') => {
+    if (!contractAddress) return null;
+    
+    const contractUrls = {
+      'sepolia': `https://sepolia.etherscan.io/address/${contractAddress}`,
+      'mainnet': `https://etherscan.io/address/${contractAddress}`,
+      'polygon_mumbai': `https://mumbai.polygonscan.com/address/${contractAddress}`,
+      'polygon_mainnet': `https://polygonscan.com/address/${contractAddress}`,
+      'bsc_testnet': `https://testnet.bscscan.com/address/${contractAddress}`,
+      'bsc_mainnet': `https://bscscan.com/address/${contractAddress}`,
+      'arbitrum_sepolia': `https://sepolia.arbiscan.io/address/${contractAddress}`,
+      'arbitrum_one': `https://arbiscan.io/address/${contractAddress}`,
+      'optimism_sepolia': `https://sepolia-optimism.etherscan.io/address/${contractAddress}`,
+      'optimism_mainnet': `https://optimistic.etherscan.io/address/${contractAddress}`
+    };
+    
+    if (network === 'development' || network === 'mock' || !contractUrls[network]) {
+      return null;
+    }
+    
+    return contractUrls[network];
+  };
+
+  // Contract address - có thể lấy từ env hoặc hardcode
+  const CONTRACT_ADDRESS = '0x9E34F4cdeA152c6f10e0b08BfB48264c9fc7fd86';
+  const CURRENT_NETWORK = 'sepolia'; // Có thể lấy từ API hoặc config
+  const contractExplorerUrl = getContractExplorerUrl(CONTRACT_ADDRESS, CURRENT_NETWORK);
   
   // Check if transaction is on real blockchain
   const isRealBlockchainTransaction = (network) => {
@@ -271,22 +302,71 @@ const BlockchainExplorer = () => {
   };
 
   const handleResetFilters = () => {
-    setFilters({ search: '', status: '', network: '' });
+    setFilters({ search: '', drugId: '', status: '', network: '' });
     setTimeout(() => {
       loadTransactions(1);
     }, 100);
+  };
+
+  // Helper function để tạo unique key - luôn đảm bảo trả về string và unique
+  const getUniqueKey = (item, idx) => {
+    let idPart = '';
+    
+    if (item._id) {
+      if (typeof item._id === 'string' && item._id.trim() !== '' && item._id !== '[object Object]') {
+        idPart = item._id;
+      } else if (typeof item._id === 'object' && item._id !== null) {
+        const nestedId = item._id._id || item._id.id;
+        if (nestedId && typeof nestedId === 'string' && nestedId !== '[object Object]') {
+          idPart = nestedId;
+        }
+      }
+    }
+    
+    if (!idPart || idPart === '[object Object]') {
+      const transactionHash = String(item.transactionHash || '');
+      const timestamp = item.timestamp ? String(new Date(item.timestamp).getTime()) : String(Date.now());
+      idPart = `${transactionHash}-${timestamp}`;
+    }
+    
+    return `blockchain-tx-${idx}-${idPart}`;
   };
 
   return (
     <div className="p-6">
       {/* Header */}
       <div className="mb-6">
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">Blockchain Explorer</h1>
-        <p className="text-gray-600">Xem và xác minh các transactions trên blockchain</p>
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900 mb-2">Blockchain Explorer</h1>
+            <p className="text-gray-600">
+              Xem và quản lý các transactions trên blockchain với business context
+            </p>
+          </div>
+        </div>
+        
+        {/* Info Banner */}
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+          <div className="flex items-start gap-3">
+            <div className="flex-shrink-0 mt-0.5">
+              <ExternalLink className="w-5 h-5 text-blue-600" />
+            </div>
+            <div className="flex-1">
+              <h3 className="text-sm font-semibold text-blue-900 mb-1">
+                Blockchain Explorer vs Etherscan
+              </h3>
+              <p className="text-sm text-blue-800">
+                <strong>Blockchain Explorer</strong> hiển thị transactions với business context (lô thuốc, chuỗi cung ứng, chữ ký số). 
+                <strong> Etherscan</strong> hiển thị raw blockchain data. 
+                Click vào icon <ExternalLink className="w-4 h-4 inline mx-1" /> để xem chi tiết kỹ thuật trên Etherscan.
+              </p>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
         <div className="bg-white rounded-lg shadow p-6">
           <div className="flex items-center justify-between">
             <div>
@@ -307,6 +387,44 @@ const BlockchainExplorer = () => {
             </div>
             <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
               <CheckCircle2 className="w-6 h-6 text-green-600" />
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-lg shadow p-6">
+          <div className="flex items-center justify-between">
+            <div className="flex-1 min-w-0">
+              <p className="text-sm text-gray-600 mb-2">Smart Contract</p>
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <code className="text-xs font-mono text-gray-900 break-all" title={CONTRACT_ADDRESS}>
+                    {CONTRACT_ADDRESS}
+                  </code>
+                  <button
+                    onClick={() => copyToClipboard(CONTRACT_ADDRESS)}
+                    className="text-gray-400 hover:text-gray-600 transition flex-shrink-0"
+                    title="Sao chép"
+                  >
+                    <Copy className="w-3 h-3" />
+                  </button>
+                  {contractExplorerUrl && (
+                    <a
+                      href={contractExplorerUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-600 hover:text-blue-800 transition flex-shrink-0 inline-flex items-center gap-1"
+                      title="Xem contract trên Etherscan"
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                      <span className="text-xs">Etherscan</span>
+                    </a>
+                  )}
+                </div>
+                <p className="text-xs text-gray-500">Network: <span className="font-medium capitalize">{CURRENT_NETWORK}</span></p>
+              </div>
+            </div>
+            <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center flex-shrink-0 ml-3">
+              <Shield className="w-6 h-6 text-purple-600" />
             </div>
           </div>
         </div>
@@ -335,16 +453,28 @@ const BlockchainExplorer = () => {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Tìm kiếm (Tx Hash)
+              Tìm kiếm (Tx Hash / Lô thuốc)
             </label>
             <input
               type="text"
               value={filters.search}
               onChange={(e) => handleFilterChange('search', e.target.value)}
-              placeholder="Nhập transaction hash..."
+              placeholder="Nhập hash hoặc tên lô thuốc..."
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Lô thuốc (Drug ID)
+            </label>
+            <input
+              type="text"
+              value={filters.drugId || ''}
+              onChange={(e) => handleFilterChange('drugId', e.target.value)}
+              placeholder="Nhập ID lô thuốc..."
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
           </div>
@@ -422,7 +552,10 @@ const BlockchainExplorer = () => {
                       Transaction Hash
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Lô thuốc
+                      Lô thuốc / Đối tượng
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Loại
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Block
@@ -439,8 +572,8 @@ const BlockchainExplorer = () => {
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {transactions.map((tx) => (
-                    <tr key={tx._id || tx.transactionHash} className="hover:bg-gray-50">
+                  {transactions.map((tx, idx) => (
+                    <tr key={getUniqueKey(tx, idx)} className="hover:bg-gray-50">
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                         {formatTimestamp(tx.timestamp)}
                       </td>
@@ -491,6 +624,18 @@ const BlockchainExplorer = () => {
                         )}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {tx.transactionType ? (
+                          <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-purple-100 text-purple-800">
+                            {tx.transactionType === 'recordDrug' ? 'Ghi lô thuốc' :
+                             tx.transactionType === 'updateSupplyChain' ? 'Cập nhật chuỗi' :
+                             tx.transactionType === 'recordDigitalSignature' ? 'Ghi chữ ký số' :
+                             tx.transactionType}
+                          </span>
+                        ) : (
+                          <span className="text-gray-400 text-xs">-</span>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                         {tx.blockNumber?.toLocaleString('vi-VN') || 'N/A'}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
@@ -500,12 +645,35 @@ const BlockchainExplorer = () => {
                         {getStatusBadge(tx.status)}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                        <button
-                          onClick={() => handleVerify(tx)}
-                          className="text-blue-600 hover:text-blue-900 hover:underline"
-                        >
-                          Verify on Chain
-                        </button>
+                        <div className="flex items-center gap-3">
+                          <button
+                            onClick={() => handleVerify(tx)}
+                            className="text-blue-600 hover:text-blue-900 hover:underline"
+                            title="Xác minh transaction trên blockchain"
+                          >
+                            Verify
+                          </button>
+                          {(() => {
+                            const explorerUrl = getExplorerUrl(tx.transactionHash, tx.network);
+                            const isReal = isRealBlockchainTransaction(tx.network);
+                            
+                            if (explorerUrl && isReal) {
+                              return (
+                                <a
+                                  href={explorerUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-blue-600 hover:text-blue-900 inline-flex items-center gap-1"
+                                  title={`Xem trên ${tx.network} Explorer`}
+                                >
+                                  <ExternalLink className="w-4 h-4" />
+                                  <span className="text-xs">Etherscan</span>
+                                </a>
+                              );
+                            }
+                            return null;
+                          })()}
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -566,19 +734,71 @@ const BlockchainExplorer = () => {
             <div className="p-6">
               {/* Transaction Info */}
               {selectedTx && (
-                <div className="mb-6 p-4 bg-gray-50 rounded-lg">
-                  <h3 className="text-sm font-semibold text-gray-700 mb-2">Transaction Hash</h3>
-                  <div className="flex items-center gap-2">
-                    <code className="text-sm font-mono text-gray-900 break-all">
-                      {selectedTx.transactionHash}
-                    </code>
-                    <button
-                      onClick={() => copyToClipboard(selectedTx.transactionHash)}
-                      className="text-gray-400 hover:text-gray-600 transition"
-                    >
-                      <Copy className="w-4 h-4" />
-                    </button>
+                <div className="mb-6 space-y-4">
+                  <div className="p-4 bg-gray-50 rounded-lg">
+                    <h3 className="text-sm font-semibold text-gray-700 mb-2">Transaction Hash</h3>
+                    <div className="flex items-center gap-2">
+                      <code className="text-sm font-mono text-gray-900 break-all">
+                        {selectedTx.transactionHash}
+                      </code>
+                      <button
+                        onClick={() => copyToClipboard(selectedTx.transactionHash)}
+                        className="text-gray-400 hover:text-gray-600 transition"
+                        title="Sao chép"
+                      >
+                        <Copy className="w-4 h-4" />
+                      </button>
+                      {(() => {
+                        const explorerUrl = getExplorerUrl(selectedTx.transactionHash, selectedTx.network);
+                        const isReal = isRealBlockchainTransaction(selectedTx.network);
+                        if (explorerUrl && isReal) {
+                          return (
+                            <a
+                              href={explorerUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-blue-600 hover:text-blue-800 inline-flex items-center gap-1"
+                              title="Xem trên Etherscan"
+                            >
+                              <ExternalLink className="w-4 h-4" />
+                              <span className="text-xs">Etherscan</span>
+                            </a>
+                          );
+                        }
+                        return null;
+                      })()}
+                    </div>
                   </div>
+                  
+                  {/* Business Context */}
+                  {selectedTx.drugId && (
+                    <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
+                      <h3 className="text-sm font-semibold text-blue-900 mb-2">Business Context</h3>
+                      <div className="space-y-1 text-sm">
+                        <div>
+                          <span className="text-blue-700 font-medium">Lô thuốc:</span>{' '}
+                          <span className="text-blue-900">{selectedTx.drugId.name || selectedTx.drugId.drugId}</span>
+                        </div>
+                        {selectedTx.drugId.batchNumber && (
+                          <div>
+                            <span className="text-blue-700 font-medium">Số lô:</span>{' '}
+                            <span className="text-blue-900">{selectedTx.drugId.batchNumber}</span>
+                          </div>
+                        )}
+                        {selectedTx.transactionType && (
+                          <div>
+                            <span className="text-blue-700 font-medium">Loại transaction:</span>{' '}
+                            <span className="text-blue-900">
+                              {selectedTx.transactionType === 'recordDrug' ? 'Ghi lô thuốc' :
+                               selectedTx.transactionType === 'updateSupplyChain' ? 'Cập nhật chuỗi cung ứng' :
+                               selectedTx.transactionType === 'recordDigitalSignature' ? 'Ghi chữ ký số' :
+                               selectedTx.transactionType}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 

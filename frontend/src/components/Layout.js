@@ -25,7 +25,9 @@ import {
   Award,
   ShoppingCart,
   ExternalLink,
-  Search as SearchIcon
+  Search as SearchIcon,
+  Store,
+  Gavel
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -71,6 +73,18 @@ const Layout = ({ children }) => {
       name: 'Quản lý Đơn hàng',
       href: '/orders',
       icon: ShoppingCart,
+      roles: ['admin', 'manufacturer', 'distributor', 'hospital']
+    },
+    {
+      name: 'B2B Marketplace',
+      href: '/marketplace',
+      icon: Store,
+      roles: ['admin', 'manufacturer', 'distributor', 'hospital']
+    },
+    {
+      name: 'Quản lý Đấu thầu',
+      href: '/bids',
+      icon: Gavel,
       roles: ['admin', 'manufacturer', 'distributor', 'hospital']
     },
     {

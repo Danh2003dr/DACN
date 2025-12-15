@@ -215,6 +215,31 @@ const Suppliers = () => {
     return stars;
   };
 
+  // Helper function để tạo unique key - luôn đảm bảo trả về string và unique
+  const getUniqueKey = (item, idx) => {
+    let idPart = '';
+    
+    if (item._id) {
+      if (typeof item._id === 'string' && item._id.trim() !== '' && item._id !== '[object Object]') {
+        idPart = item._id;
+      } else if (typeof item._id === 'object' && item._id !== null) {
+        const nestedId = item._id._id || item._id.id;
+        if (nestedId && typeof nestedId === 'string' && nestedId !== '[object Object]') {
+          idPart = nestedId;
+        }
+      }
+    }
+    
+    if (!idPart || idPart === '[object Object]') {
+      const supplierCode = String(item.supplierCode || '');
+      const name = String(item.name || '');
+      const createdAt = item.createdAt ? String(new Date(item.createdAt).getTime()) : String(Date.now());
+      idPart = `${supplierCode}-${name}-${createdAt}`;
+    }
+    
+    return `supplier-${idx}-${idPart}`;
+  };
+
   return (
     <div className="p-6">
       <div className="mb-6 flex justify-between items-center">
@@ -303,8 +328,8 @@ const Suppliers = () => {
                   </td>
                 </tr>
               ) : (
-                suppliers.map((supplier) => (
-                  <tr key={supplier._id} className="hover:bg-gray-50">
+                suppliers.map((supplier, idx) => (
+                  <tr key={getUniqueKey(supplier, idx)} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                       {supplier.supplierCode}
                     </td>

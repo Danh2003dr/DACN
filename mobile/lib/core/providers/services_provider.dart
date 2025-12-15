@@ -3,6 +3,10 @@ import '../../core/api/dio_client.dart';
 import '../../core/services/connectivity_service.dart';
 import '../../core/services/sync_service.dart';
 
+final dioClientProvider = Provider<DioClient>((ref) {
+  return DioClient();
+});
+
 final connectivityServiceProvider = Provider<ConnectivityService>((ref) {
   return ConnectivityService();
 });

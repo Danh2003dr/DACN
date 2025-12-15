@@ -82,8 +82,9 @@ const createReview = async (req, res) => {
       language: 'vi'
     };
 
-    // Nếu không phải đánh giá ẩn danh và có user đăng nhập
-    if (!isAnonymous && req.user) {
+    // Luôn set reviewer nếu có user đăng nhập (để user có thể xem đánh giá của mình)
+    // isAnonymous chỉ ảnh hưởng đến việc hiển thị tên, không ảnh hưởng đến việc lưu reviewer
+    if (req.user) {
       reviewData.reviewer = req.user._id;
       reviewData.reviewerInfo.role = req.user.role;
     }
@@ -450,7 +451,8 @@ const getReviewsForAdmin = async (req, res) => {
       targetType,
       minRating,
       maxRating,
-      search
+      search,
+      reviewer // Thêm filter theo reviewer (user ID)
     } = req.query;
 
     const skip = (page - 1) * limit;
@@ -470,6 +472,11 @@ const getReviewsForAdmin = async (req, res) => {
       filter.overallRating = {};
       if (minRating) filter.overallRating.$gte = parseInt(minRating);
       if (maxRating) filter.overallRating.$lte = parseInt(maxRating);
+    }
+    
+    // Filter theo reviewer (user ID) - cho phép user xem reviews của chính họ
+    if (reviewer) {
+      filter.reviewer = reviewer;
     }
     
     if (search) {

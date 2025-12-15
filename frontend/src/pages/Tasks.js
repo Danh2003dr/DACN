@@ -29,7 +29,7 @@ import {
   Heart
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { taskAPI } from '../utils/api';
+import { taskAPI, userAPI } from '../utils/api';
 import toast from 'react-hot-toast';
 
 const Tasks = () => {
@@ -56,6 +56,72 @@ const Tasks = () => {
   });
 
   const { register, handleSubmit, reset, formState: { errors } } = useForm();
+
+  // Helper function để so sánh ID - normalize cả hai phía trước khi so sánh
+  const compareIds = (id1, id2) => {
+    if (!id1 || !id2) return false;
+    const norm1 = normalizeId(id1);
+    const norm2 = normalizeId(id2);
+    if (!norm1 || !norm2) return false;
+    return norm1 === norm2;
+  };
+
+  // Helper function để chuẩn hóa ID - đảm bảo luôn trả về string ObjectId hợp lệ
+  const normalizeId = (id, fallback = null) => {
+    if (!id) return fallback;
+    
+    // Nếu đã là string, kiểm tra xem có phải ObjectId hợp lệ không
+    if (typeof id === 'string') {
+      // ObjectId MongoDB có 24 ký tự hex
+      if (/^[0-9a-fA-F]{24}$/.test(id)) {
+        return id;
+      }
+      // Nếu không phải ObjectId hợp lệ, trả về null thay vì fallback
+      return null;
+    }
+    
+    // Nếu là object, thử lấy _id hoặc id
+    if (typeof id === 'object' && id !== null) {
+      // Nếu có _id, đệ quy normalize nó
+      if (id._id) {
+        const normalized = normalizeId(id._id);
+        if (normalized) return normalized;
+      }
+      // Nếu có id
+      if (id.id) {
+        const normalized = normalizeId(id.id);
+        if (normalized) return normalized;
+      }
+      
+      // Thử toString() nếu có
+      if (id.toString && typeof id.toString === 'function') {
+        const str = id.toString();
+        if (str !== '[object Object]' && /^[0-9a-fA-F]{24}$/.test(str)) {
+          return str;
+        }
+      }
+      
+      // Nếu là object với các keys như '0', '1', '2'... (char array)
+      const keys = Object.keys(id);
+      if (keys.length > 0 && keys.every(key => /^\d+$/.test(key))) {
+        const normalized = keys
+          .sort((a, b) => parseInt(a) - parseInt(b))
+          .map(key => id[key])
+          .join('');
+        if (/^[0-9a-fA-F]{24}$/.test(normalized)) {
+          return normalized;
+        }
+      }
+    }
+    
+    // Cuối cùng, thử convert sang string
+    const str = String(id);
+    if (/^[0-9a-fA-F]{24}$/.test(str)) {
+      return str;
+    }
+    
+    return null;
+  };
 
   // Load tasks
   const loadTasks = useCallback(async () => {
@@ -102,6 +168,20 @@ const Tasks = () => {
   const onCreateTask = async (data) => {
     try {
       setLoading(true);
+      
+      // Normalize assignedTo để đảm bảo là string ID, không phải object
+      if (data.assignedTo) {
+        if (typeof data.assignedTo === 'object' && data.assignedTo !== null) {
+          // Nếu là object, lấy _id hoặc id
+          data.assignedTo = data.assignedTo._id?.toString() || data.assignedTo.id?.toString() || String(data.assignedTo);
+        } else {
+          // Nếu đã là string, giữ nguyên nhưng đảm bảo là string
+          data.assignedTo = String(data.assignedTo);
+        }
+      }
+      
+      console.log('📤 Creating task with data:', { ...data, assignedTo: data.assignedTo });
+      
       const response = await taskAPI.createTask(data);
       
       if (response.success) {
@@ -122,7 +202,12 @@ const Tasks = () => {
   const onAddUpdate = async (data) => {
     try {
       setLoading(true);
-      const response = await taskAPI.addUpdate(selectedTask._id, data);
+      const taskId = normalizeId(selectedTask?._id);
+      if (!taskId) {
+        toast.error('Không thể xác định ID nhiệm vụ');
+        return;
+      }
+      const response = await taskAPI.addUpdate(taskId, data);
       
       if (response.success) {
         toast.success('Cập nhật tiến độ thành công');
@@ -142,7 +227,12 @@ const Tasks = () => {
   const onRateTask = async (data) => {
     try {
       setLoading(true);
-      const response = await taskAPI.rateTask(selectedTask._id, data);
+      const taskId = normalizeId(selectedTask?._id);
+      if (!taskId) {
+        toast.error('Không thể xác định ID nhiệm vụ');
+        return;
+      }
+      const response = await taskAPI.rateTask(taskId, data);
       
       if (response.success) {
         toast.success('Đánh giá chất lượng thành công');
@@ -162,7 +252,12 @@ const Tasks = () => {
     if (!window.confirm('Bạn chắc chắn muốn xóa nhiệm vụ này?')) return;
     try {
       setLoading(true);
-      const response = await taskAPI.deleteTask(id);
+      const normalizedId = normalizeId(id);
+      if (!normalizedId) {
+        toast.error('ID nhiệm vụ không hợp lệ');
+        return;
+      }
+      const response = await taskAPI.deleteTask(normalizedId);
       if (response.success) {
         toast.success('Đã xóa nhiệm vụ');
         loadTasks();
@@ -178,13 +273,35 @@ const Tasks = () => {
   // Get task details
   const getTaskDetails = async (id) => {
     try {
-      const response = await taskAPI.getTask(id);
+      const normalizedId = normalizeId(id);
+      if (!normalizedId) {
+        toast.error('ID nhiệm vụ không hợp lệ');
+        return;
+      }
+      const response = await taskAPI.getTask(normalizedId);
       
       if (response.success) {
-        setSelectedTask(response.data.task);
+        const task = response.data.task;
+        // Log để debug
+        console.log('🔍 Task details loaded:', {
+          taskId: task._id,
+          title: task.title,
+          updatesCount: task.updates?.length || 0,
+          updates: task.updates?.map(u => ({
+            status: u.status,
+            progress: u.progress,
+            updateText: u.updateText?.substring(0, 50),
+            updatedBy: u.updatedBy?.fullName || u.updatedBy?._id || u.updatedBy,
+            updatedAt: u.updatedAt
+          })) || [],
+          assignedTo: task.assignedTo?.fullName,
+          assignedBy: task.assignedBy?.fullName
+        });
+        setSelectedTask(task);
         setShowDetailModal(true);
       }
     } catch (error) {
+      console.error('Get task details error:', error);
       toast.error('Lỗi khi lấy thông tin nhiệm vụ');
     }
   };
@@ -442,12 +559,15 @@ const Tasks = () => {
                   </td>
                 </tr>
               ) : (
-                tasks.map((task) => {
+                tasks.map((task, index) => {
                   const StatusIcon = getStatusIcon(task.status);
                   const TypeIcon = getTypeIcon(task.type);
+                  // Đảm bảo key luôn là string hợp lệ
+                  const taskId = normalizeId(task._id);
+                  const uniqueKey = taskId || `task-${index}-${Date.now()}`;
                   
                   return (
-                    <tr key={task._id} className="hover:bg-gray-50">
+                    <tr key={uniqueKey} className="hover:bg-gray-50">
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center">
                           <div className="flex-shrink-0">
@@ -510,14 +630,47 @@ const Tasks = () => {
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                         <div className="flex items-center justify-end space-x-2">
                           <button
-                            onClick={() => getTaskDetails(task._id)}
+                            onClick={() => {
+                              const id = normalizeId(task._id);
+                              if (id) {
+                                getTaskDetails(id);
+                              } else {
+                                toast.error('Không thể xác định ID nhiệm vụ');
+                              }
+                            }}
                             className="text-blue-600 hover:text-blue-900"
                             title="Xem chi tiết"
                           >
                             <Eye className="h-4 w-4" />
                           </button>
                           
-                          {task.status === 'completed' && task.assignedBy?._id === user.id && !task.qualityRating?.rating && (
+                          {(() => {
+                            // Normalize IDs để so sánh
+                            const taskAssignedById = task.assignedBy?._id || task.assignedBy?.id || task.assignedBy;
+                            const userId = user?._id || user?.id || user;
+                            
+                            const normalizeIdForCompare = (id) => {
+                              if (!id) return null;
+                              if (typeof id === 'string') return id;
+                              if (typeof id === 'object' && id) {
+                                if (id._id) return typeof id._id === 'string' ? id._id : String(id._id);
+                                if (id.toString && typeof id.toString === 'function') {
+                                  const str = id.toString();
+                                  if (str && str !== '[object Object]' && /^[0-9a-fA-F]{24}$/.test(str)) return str;
+                                }
+                              }
+                              return String(id);
+                            };
+                            
+                            const normAssignedById = normalizeIdForCompare(taskAssignedById);
+                            const normUserId = normalizeIdForCompare(userId);
+                            
+                            const canRate = task.status === 'completed' && 
+                                           normAssignedById && normUserId && 
+                                           normAssignedById === normUserId && 
+                                           !task.qualityRating?.rating;
+                            
+                            return canRate ? (
                             <button
                               onClick={() => {
                                 setSelectedTask(task);
@@ -528,11 +681,19 @@ const Tasks = () => {
                             >
                               <Star className="h-4 w-4" />
                             </button>
-                          )}
+                            ) : null;
+                          })()}
 
                           {hasRole('admin') && (
                             <button
-                              onClick={() => deleteTask(task._id)}
+                              onClick={() => {
+                                const id = normalizeId(task._id);
+                                if (id) {
+                                  deleteTask(id);
+                                } else {
+                                  toast.error('Không thể xác định ID nhiệm vụ');
+                                }
+                              }}
                               className="text-red-600 hover:text-red-800"
                               title="Xóa nhiệm vụ"
                             >
@@ -632,6 +793,154 @@ const Tasks = () => {
 // Create Task Modal Component
 const CreateTaskModal = ({ onSubmit, onClose, loading }) => {
   const { register, handleSubmit, formState: { errors } } = useForm();
+  const [users, setUsers] = useState([]);
+  const [loadingUsers, setLoadingUsers] = useState(false);
+
+  // Helper function để normalize user ID - xử lý các trường hợp ObjectId từ API
+  const normalizeUserId = (id) => {
+    if (!id) return null;
+    
+    // Nếu đã là string hợp lệ
+    if (typeof id === 'string') {
+      if (/^[0-9a-fA-F]{24}$/.test(id.trim())) {
+        return id.trim();
+      }
+      return null;
+    }
+    
+    // Nếu là object (Mongoose ObjectId hoặc object phức tạp)
+    if (typeof id === 'object' && id !== null) {
+      // Kiểm tra xem có phải là object với keys như '0', '1', '2'... (char array representation)
+      const keys = Object.keys(id);
+      if (keys.length > 0 && keys.every(key => /^\d+$/.test(key))) {
+        // Đây là object dạng { '0': '6', '1': '9', ... }
+        const normalized = keys
+          .sort((a, b) => parseInt(a) - parseInt(b))
+          .map(key => String(id[key]))
+          .join('');
+        if (/^[0-9a-fA-F]{24}$/.test(normalized)) {
+          return normalized;
+        }
+      }
+      
+      // Thử các property phổ biến của ObjectId
+      if (id.$oid) return id.$oid; // MongoDB extended JSON format
+      if (id.oid) return id.oid; // Alternative format
+      
+      // Thử lấy _id hoặc id nếu là nested object
+      if (id._id && id._id !== id) {
+        const normalized = normalizeUserId(id._id);
+        if (normalized) return normalized;
+      }
+      if (id.id && id.id !== id) {
+        const normalized = normalizeUserId(id.id);
+        if (normalized) return normalized;
+      }
+      
+      // Thử toString() - ObjectId có method này, nhưng cần kiểm tra kỹ
+      if (id.toString && typeof id.toString === 'function') {
+        try {
+          const str = id.toString();
+          // Kiểm tra xem toString có trả về ObjectId string hợp lệ không
+          if (str && str !== '[object Object]' && /^[0-9a-fA-F]{24}$/.test(str)) {
+            return str;
+          }
+        } catch (e) {
+          // Bỏ qua nếu toString() fail
+        }
+      }
+      
+      // Thử dùng JSON.stringify và parse lại nếu là object đặc biệt
+      try {
+        const jsonStr = JSON.stringify(id);
+        const parsed = JSON.parse(jsonStr);
+        if (typeof parsed === 'string' && /^[0-9a-fA-F]{24}$/.test(parsed)) {
+          return parsed;
+        }
+        if (parsed.$oid && /^[0-9a-fA-F]{24}$/.test(parsed.$oid)) {
+          return parsed.$oid;
+        }
+      } catch (e) {
+        // Bỏ qua nếu JSON.stringify fail
+      }
+    }
+    
+    // Cuối cùng, thử convert sang string (nhưng kiểm tra kỹ)
+    try {
+      const str = String(id);
+      if (str && str !== '[object Object]' && str !== '[object Object]' && /^[0-9a-fA-F]{24}$/.test(str)) {
+        return str;
+      }
+    } catch (e) {
+      // Bỏ qua
+    }
+    
+    return null;
+  };
+
+  // Load danh sách users khi modal mở
+  useEffect(() => {
+    const loadUsers = async () => {
+      try {
+        setLoadingUsers(true);
+        let allUsers = [];
+        let page = 1;
+        const limit = 100; // Limit tối đa của backend là 100
+        let hasMore = true;
+
+        // Load tất cả users bằng cách load nhiều pages
+        while (hasMore) {
+          const response = await userAPI.getUsers({ limit, page });
+          
+          if (response.success && response.data?.users) {
+            allUsers = [...allUsers, ...response.data.users];
+            
+            // Kiểm tra xem còn page nào nữa không
+            const total = response.data.pagination?.total || 0;
+            const currentPage = response.data.pagination?.current || page;
+            const totalPages = response.data.pagination?.pages || 1;
+            
+            if (currentPage >= totalPages || allUsers.length >= total) {
+              hasMore = false;
+            } else {
+              page++;
+            }
+          } else {
+            hasMore = false;
+          }
+        }
+
+        if (allUsers.length > 0) {
+          // Log để debug user IDs - chi tiết hơn
+          console.log(`✅ Đã tải ${allUsers.length} người dùng`);
+          const sampleUsers = allUsers.slice(0, 3).map(u => {
+            const normalized = normalizeUserId(u._id || u.id);
+            return {
+              _id: u._id,
+              _idType: typeof u._id,
+              _idKeys: typeof u._id === 'object' ? Object.keys(u._id || {}) : null,
+              _idToString: u._id?.toString ? u._id.toString() : null,
+              normalized: normalized,
+              fullName: u.fullName,
+              email: u.email
+            };
+          });
+          console.log('🔍 Sample users với normalized IDs:', sampleUsers);
+          setUsers(allUsers);
+        } else {
+          console.warn('⚠️ Không có người dùng nào được tải');
+        }
+      } catch (error) {
+        console.error('Error loading users:', error);
+        const errorMessage = error.response?.data?.message || error.message || 'Không thể tải danh sách người dùng';
+        toast.error(errorMessage);
+      } finally {
+        setLoadingUsers(false);
+      }
+    };
+
+    loadUsers();
+  }, []);
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -731,12 +1040,48 @@ const CreateTaskModal = ({ onSubmit, onClose, loading }) => {
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Người thực hiện *
               </label>
-              <input
-                type="text"
+              {loadingUsers ? (
+                <div className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 flex items-center">
+                  <span className="text-gray-500 text-sm">Đang tải danh sách người dùng...</span>
+                </div>
+              ) : (
+                <select
                 {...register('assignedTo', { required: 'Người thực hiện là bắt buộc' })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                placeholder="ID người dùng"
-              />
+                >
+                  <option value="">Chọn người thực hiện</option>
+                  {users
+                    .map((user) => {
+                      // Sử dụng normalizeUserId helper để normalize user ID
+                      const userId = normalizeUserId(user._id || user.id);
+                      
+                      // Đảm bảo userId không rỗng và là ObjectId hợp lệ
+                      if (!userId) {
+                        console.warn('⚠️ Invalid user ID, skipping:', { 
+                          user: { 
+                            _id: user._id, 
+                            id: user.id, 
+                            _idType: typeof user._id,
+                            idType: typeof user.id,
+                            fullName: user.fullName,
+                            email: user.email
+                          }
+                        });
+                        return null;
+                      }
+                      
+                      return { user, userId };
+                    })
+                    .filter(item => item !== null) // Loại bỏ users có ID không hợp lệ
+                    .map(({ user, userId }) => (
+                      <option key={userId} value={userId}>
+                        {user.fullName || user.email} 
+                        {user.role ? ` (${user.role})` : ''}
+                        {user.organizationInfo?.name ? ` - ${user.organizationInfo.name}` : ''}
+                      </option>
+                    ))}
+                </select>
+              )}
               {errors.assignedTo && (
                 <p className="text-red-500 text-sm mt-1">{errors.assignedTo.message}</p>
               )}
@@ -844,9 +1189,11 @@ const TaskDetailModal = ({ task, onClose, onAddUpdate, onRate, currentUser }) =>
         <div>
           <h4 className="font-medium text-gray-900 mb-4">Lịch sử cập nhật</h4>
           <div className="space-y-4">
-            {task.updates && task.updates.length > 0 ? (
-              task.updates.map((update, index) => (
-                <div key={index} className="flex items-start space-x-4">
+            {task.updates && Array.isArray(task.updates) && task.updates.length > 0 ? (
+              task.updates
+                .filter(update => update && update.updateText) // Filter out invalid updates
+                .map((update, index) => (
+                  <div key={update._id || index} className="flex items-start space-x-4">
                   <div className="flex-shrink-0">
                     <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
                       <span className="text-blue-600 text-sm font-medium">{index + 1}</span>
@@ -854,40 +1201,92 @@ const TaskDetailModal = ({ task, onClose, onAddUpdate, onRate, currentUser }) =>
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center space-x-2 mb-1">
-                      <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(update.status)}`}>
-                        {update.status}
+                        <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(update.status || 'pending')}`}>
+                          {update.status || 'pending'}
                       </span>
                       <span className="text-sm text-gray-500">
-                        {new Date(update.updatedAt).toLocaleString('vi-VN')}
+                          {update.updatedAt ? new Date(update.updatedAt).toLocaleString('vi-VN') : 'Chưa có thời gian'}
                       </span>
                     </div>
                     <div className="text-sm text-gray-900">
-                      <p>{update.updateText}</p>
+                        <p>{update.updateText || 'Không có nội dung'}</p>
                       <p className="text-gray-500 mt-1">
-                        Bởi: {update.updatedBy?.fullName} • Tiến độ: {update.progress}%
+                          Bởi: {update.updatedBy?.fullName || update.updatedBy || 'Không xác định'} • Tiến độ: {update.progress || 0}%
                       </p>
                     </div>
                   </div>
                 </div>
               ))
             ) : (
-              <p className="text-gray-500 text-sm">Chưa có cập nhật nào</p>
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                <p className="text-gray-500 text-sm mb-2">Chưa có cập nhật nào</p>
+                <p className="text-gray-400 text-xs">Các cập nhật về tiến độ nhiệm vụ sẽ hiển thị tại đây</p>
+              </div>
             )}
           </div>
         </div>
         
         {/* Actions */}
         <div className="flex justify-end space-x-3 mt-6">
-          {(task.assignedTo?._id === currentUser.id || task.assignedBy?._id === currentUser.id) && (
+          {(() => {
+            // Normalize IDs để so sánh đúng
+            const taskAssignedToId = task.assignedTo?._id || task.assignedTo?.id || task.assignedTo;
+            const taskAssignedById = task.assignedBy?._id || task.assignedBy?.id || task.assignedBy;
+            const currentUserId = currentUser?._id || currentUser?.id || currentUser;
+            
+            // Helper để normalize ID
+            const normalizeIdForCompare = (id) => {
+              if (!id) return null;
+              if (typeof id === 'string') return id;
+              if (typeof id === 'object' && id) {
+                if (id._id) return typeof id._id === 'string' ? id._id : String(id._id);
+                if (id.toString && typeof id.toString === 'function') {
+                  const str = id.toString();
+                  if (str && str !== '[object Object]' && /^[0-9a-fA-F]{24}$/.test(str)) return str;
+                }
+              }
+              return String(id);
+            };
+            
+            const normAssignedToId = normalizeIdForCompare(taskAssignedToId);
+            const normAssignedById = normalizeIdForCompare(taskAssignedById);
+            const normCurrentUserId = normalizeIdForCompare(currentUserId);
+            
+            // Log để debug
+            console.log('🔍 Permission check for task:', {
+              taskId: task._id,
+              taskTitle: task.title,
+              taskStatus: task.status,
+              taskAssignedToId: taskAssignedToId,
+              taskAssignedById: taskAssignedById,
+              currentUserId: currentUserId,
+              normAssignedToId,
+              normAssignedById,
+              normCurrentUserId,
+              isAssignedToMe: normAssignedToId === normCurrentUserId,
+              isAssignedByMe: normAssignedById === normCurrentUserId
+            });
+            
+            const canUpdate = (normAssignedToId && normCurrentUserId && normAssignedToId === normCurrentUserId) ||
+                             (normAssignedById && normCurrentUserId && normAssignedById === normCurrentUserId);
+            
+            const canRate = task.status === 'completed' && 
+                           normAssignedById && normCurrentUserId && 
+                           normAssignedById === normCurrentUserId && 
+                           !task.qualityRating?.rating;
+            
+            return (
+              <>
+                {canUpdate && (
             <button
               onClick={onAddUpdate}
               className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
             >
-              Cập nhật tiến độ
+                    {task.status === 'completed' ? 'Xem lại / Cập nhật' : 'Cập nhật tiến độ'}
             </button>
           )}
           
-          {task.status === 'completed' && task.assignedBy?._id === currentUser.id && !task.qualityRating?.rating && (
+                {canRate && (
             <button
               onClick={onRate}
               className="px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700"
@@ -895,6 +1294,9 @@ const TaskDetailModal = ({ task, onClose, onAddUpdate, onRate, currentUser }) =>
               Đánh giá chất lượng
             </button>
           )}
+              </>
+            );
+          })()}
           
           <button
             onClick={onClose}

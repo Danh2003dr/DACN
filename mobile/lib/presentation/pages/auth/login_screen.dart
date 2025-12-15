@@ -289,18 +289,27 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       },
                     ),
                     const SizedBox(height: 16),
-                    // Remember Me
+                    // Remember Me & Forgot Password
                     Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Checkbox(
-                          value: _rememberMe,
-                          onChanged: (value) {
-                            setState(() {
-                              _rememberMe = value ?? false;
-                            });
-                          },
+                        Row(
+                          children: [
+                            Checkbox(
+                              value: _rememberMe,
+                              onChanged: (value) {
+                                setState(() {
+                                  _rememberMe = value ?? false;
+                                });
+                              },
+                            ),
+                            const Text('Ghi nhớ đăng nhập'),
+                          ],
                         ),
-                        const Text('Ghi nhớ đăng nhập'),
+                        TextButton(
+                          onPressed: () => context.push('/forgot-password'),
+                          child: const Text('Quên mật khẩu?'),
+                        ),
                       ],
                     ),
                     const SizedBox(height: 24),

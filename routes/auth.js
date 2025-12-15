@@ -63,9 +63,9 @@ router.post('/register',
 // @route   PUT /api/auth/change-password
 // @desc    Đổi mật khẩu
 // @access  Private
+// Note: Không dùng requirePasswordChange vì route này dùng để đổi mật khẩu
 router.put('/change-password',
   authenticate,
-  requirePasswordChange,
   validate(changePasswordSchema),
   changePassword
 );

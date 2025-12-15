@@ -3,6 +3,7 @@ import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/api/dio_client.dart';
+import '../../core/api/api_endpoints.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/errors/failures.dart';
 import '../../core/services/biometric_service.dart';
@@ -22,7 +23,7 @@ class AuthRepositoryImpl implements AuthRepository {
   ) async {
     try {
       final response = await dioClient.post(
-        AppConstants.authLogin,
+        ApiEndpoints.login,
         data: {
           'identifier': identifier,
           'password': password,
@@ -30,21 +31,109 @@ class AuthRepositoryImpl implements AuthRepository {
       );
 
       if (response.statusCode == 200 && response.data['success'] == true) {
-        final data = response.data['data'];
-        final token = data['token'] as String;
-        final userData = data['user'] as Map<String, dynamic>;
+        final responseData = response.data;
+
+        // Kiểm tra và lấy data object
+        if (responseData['data'] == null) {
+          return const Left(ServerFailure('Dữ liệu phản hồi không hợp lệ'));
+        }
+
+        final data = responseData['data'] as Map<String, dynamic>;
+
+        // Lấy token - xử lý an toàn
+        String? token;
+        if (data['token'] != null) {
+          if (data['token'] is String) {
+            token = data['token'] as String;
+          } else {
+            // Nếu token là object, thử lấy string từ nó
+            token = data['token'].toString();
+          }
+        }
+
+        if (token == null || token.isEmpty) {
+          return const Left(ServerFailure('Không nhận được token từ server'));
+        }
+
+        // Lấy user data - xử lý an toàn
+        Map<String, dynamic>? userData;
+        if (data['user'] != null) {
+          if (data['user'] is Map<String, dynamic>) {
+            userData = data['user'] as Map<String, dynamic>;
+          } else if (data['user'] is Map) {
+            userData = Map<String, dynamic>.from(data['user'] as Map);
+          } else {
+            return const Left(ServerFailure('Dữ liệu user không hợp lệ'));
+          }
+        }
+
+        if (userData == null) {
+          return const Left(
+              ServerFailure('Không nhận được thông tin user từ server'));
+        }
 
         // Save token
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString(AppConstants.tokenKey, token);
 
-        // Parse user
-        final userModel = UserModel.fromJson(userData);
+        // Save user data as JSON string
+        try {
+          final userJson = userData.toString(); // Temporary, sẽ parse sau
+          await prefs.setString(AppConstants.userKey, userJson);
+        } catch (e) {
+          // Ignore error saving user data
+          print('Warning: Could not save user data: $e');
+        }
 
-        return Right({
-          'token': token,
-          'user': userModel,
-        });
+        // Parse user - Map backend fields to UserModel fields
+        try {
+          // Backend trả về: id, username, email, fullName, role, organizationId, patientId, organizationInfo, mustChangePassword, lastLogin
+          // UserModel cần: id, email, name, phone, role, avatar, isActive, createdAt, updatedAt
+          final mappedUserData = <String, dynamic>{
+            'id':
+                userData['id']?.toString() ?? userData['_id']?.toString() ?? '',
+            'email': userData['email']?.toString() ?? '',
+            'name': userData['fullName']?.toString() ??
+                userData['name']?.toString(),
+            'phone': userData['phone']?.toString(),
+            'role': userData['role']?.toString() ?? 'user',
+            'avatar': userData['avatar']?.toString(),
+            'isActive': userData['isActive'] ?? true,
+            'createdAt': userData['createdAt']?.toString(),
+            'updatedAt': userData['updatedAt']?.toString(),
+          };
+
+          // Validate required fields
+          if (mappedUserData['id'] == null || mappedUserData['id']!.isEmpty) {
+            return const Left(ServerFailure('Thông tin user thiếu ID'));
+          }
+          if (mappedUserData['email'] == null ||
+              mappedUserData['email']!.isEmpty) {
+            return const Left(ServerFailure('Thông tin user thiếu email'));
+          }
+
+          final userModel = UserModel.fromJson(mappedUserData);
+
+          // Save user data as JSON string for later use
+          try {
+            final prefs = await SharedPreferences.getInstance();
+            await prefs.setString(
+                AppConstants.userKey, userModel.toJson().toString());
+          } catch (e) {
+            // Ignore error saving user data
+            print('Warning: Could not save user data: $e');
+          }
+
+          return Right({
+            'token': token,
+            'user': userModel,
+          });
+        } catch (e) {
+          print('Error parsing user data: $e');
+          print('User data received: $userData');
+          return Left(
+              UnknownFailure('Lỗi khi parse user data: ${e.toString()}'));
+        }
       } else {
         final message = response.data['message'] ?? 'Đăng nhập thất bại';
         return Left(ServerFailure(message));
@@ -179,6 +268,69 @@ class AuthRepositoryImpl implements AuthRepository {
       return const Right(null);
     } catch (e) {
       return Left(UnknownFailure('Lỗi khi xóa thông tin: ${e.toString()}'));
+    }
+  }
+
+  @override
+  Future<Either<Failure, void>> changePassword(
+    String currentPassword,
+    String newPassword,
+    String confirmPassword,
+  ) async {
+    try {
+      final response = await dioClient.put(
+        ApiEndpoints.changePassword,
+        data: {
+          'currentPassword': currentPassword,
+          'newPassword': newPassword,
+          'confirmPassword': confirmPassword,
+        },
+      );
+
+      if (response.statusCode == 200 && response.data['success'] == true) {
+        return const Right(null);
+      } else {
+        final message = response.data['message'] ?? 'Đổi mật khẩu thất bại';
+        return Left(ServerFailure(message));
+      }
+    } on DioException catch (e) {
+      if (e.response != null) {
+        final statusCode = e.response?.statusCode;
+        final responseData = e.response?.data;
+
+        // Xử lý lỗi 403 - Forbidden (có thể do token không hợp lệ)
+        if (statusCode == 403) {
+          final message = responseData?['message'] ??
+              'Bạn không có quyền thực hiện thao tác này. Vui lòng đăng nhập lại.';
+          return Left(ServerFailure(message));
+        }
+
+        // Xử lý lỗi 401 - Unauthorized (token hết hạn hoặc không hợp lệ)
+        if (statusCode == 401) {
+          final message = responseData?['message'] ??
+              'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.';
+          return Left(ServerFailure(message));
+        }
+
+        final message = responseData?['message'] ??
+            responseData?['error'] ??
+            'Đổi mật khẩu thất bại';
+        return Left(ServerFailure(message));
+      } else {
+        String errorMessage = 'Không thể kết nối đến server';
+        if (e.type == DioExceptionType.connectionTimeout) {
+          errorMessage =
+              'Kết nối đến server bị timeout. Vui lòng kiểm tra backend có đang chạy không.';
+        } else if (e.type == DioExceptionType.connectionError) {
+          errorMessage = 'Không thể kết nối đến server. Vui lòng kiểm tra:\n'
+              '1. Backend server có đang chạy không\n'
+              '2. API URL có đúng không\n'
+              '3. Firewall có block port không';
+        }
+        return Left(NetworkFailure(errorMessage));
+      }
+    } catch (e) {
+      return Left(UnknownFailure('Lỗi không xác định: ${e.toString()}'));
     }
   }
 }

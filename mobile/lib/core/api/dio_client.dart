@@ -47,6 +47,11 @@ class DioClient {
           }
 
           AppLogger.d('Request: ${options.method} ${options.path}');
+          if (token != null) {
+            AppLogger.d('Token: ${token.substring(0, 20)}... (length: ${token.length})');
+          } else {
+            AppLogger.w('⚠️ No token found in SharedPreferences');
+          }
           if (options.data != null) {
             AppLogger.d('Request Data: ${options.data}');
           }

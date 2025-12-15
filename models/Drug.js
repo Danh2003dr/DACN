@@ -232,6 +232,52 @@ const drugSchema = new mongoose.Schema({
     }]
   },
   
+  // Giá bán (B2B Marketplace)
+  // Giá cơ bản (giá cho số lượng tối thiểu)
+  basePrice: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
+  
+  // Giá bán buôn (giá tham khảo, có thể override bằng priceTiers)
+  wholesalePrice: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
+  
+  // Số lượng đặt hàng tối thiểu (MOQ)
+  minOrderQuantity: {
+    type: Number,
+    default: 1,
+    min: 1
+  },
+  
+  // Bảng giá theo khối lượng (Volume Discounts / Tiered Pricing)
+  priceTiers: [{
+    minQty: {
+      type: Number,
+      required: true,
+      min: 1
+    },
+    price: {
+      type: Number,
+      required: true,
+      min: 0
+    },
+    discount: {
+      type: Number,
+      default: 0,
+      min: 0,
+      max: 100
+    },
+    description: {
+      type: String,
+      trim: true
+    }
+  }],
+  
   // Thông tin đóng gói
   packaging: {
     specifications: {
@@ -244,6 +290,11 @@ const drugSchema = new mongoose.Schema({
     },
     shelfLife: {
       type: String,
+      trim: true
+    },
+    unit: {
+      type: String,
+      default: 'đơn vị',
       trim: true
     }
   },
@@ -405,6 +456,44 @@ drugSchema.methods.recall = function(reason, recalledBy) {
   });
   
   return this.save();
+};
+
+// Method để tính giá dựa trên số lượng (tiered pricing)
+drugSchema.methods.getPriceForQuantity = function(quantity) {
+  // Nếu không có priceTiers, trả về basePrice hoặc wholesalePrice
+  if (!this.priceTiers || this.priceTiers.length === 0) {
+    return this.wholesalePrice || this.basePrice || 0;
+  }
+  
+  // Sắp xếp priceTiers theo minQty giảm dần (tier cao nhất trước)
+  const sortedTiers = [...this.priceTiers].sort((a, b) => b.minQty - a.minQty);
+  
+  // Tìm tier phù hợp với quantity
+  for (const tier of sortedTiers) {
+    if (quantity >= tier.minQty) {
+      return tier.price;
+    }
+  }
+  
+  // Nếu quantity nhỏ hơn tất cả tiers, dùng basePrice hoặc wholesalePrice
+  return this.wholesalePrice || this.basePrice || 0;
+};
+
+// Method để lấy tier discount hiện tại cho quantity
+drugSchema.methods.getTierDiscount = function(quantity) {
+  if (!this.priceTiers || this.priceTiers.length === 0) {
+    return 0;
+  }
+  
+  const sortedTiers = [...this.priceTiers].sort((a, b) => b.minQty - a.minQty);
+  
+  for (const tier of sortedTiers) {
+    if (quantity >= tier.minQty) {
+      return tier.discount || 0;
+    }
+  }
+  
+  return 0;
 };
 
 // Method để tạo QR code data

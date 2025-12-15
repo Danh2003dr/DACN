@@ -23,6 +23,12 @@ router.get('/', getSuppliers);
 // @access  Private
 router.post('/', createSupplier);
 
+// @route   GET /api/suppliers/contracts
+// @desc    Lấy danh sách hợp đồng
+// @access  Private
+// QUAN TRỌNG: Route này phải đặt TRƯỚC route /:id để tránh conflict
+router.get('/contracts', getContracts);
+
 // @route   GET /api/suppliers/:id
 // @desc    Lấy nhà cung ứng theo ID
 // @access  Private
@@ -37,11 +43,6 @@ router.post('/:id/rating', updateSupplierRating);
 // @desc    Tạo hợp đồng với nhà cung ứng
 // @access  Private
 router.post('/:id/contracts', createContract);
-
-// @route   GET /api/contracts
-// @desc    Lấy danh sách hợp đồng
-// @access  Private
-router.get('/contracts', getContracts);
 
 module.exports = router;
 

@@ -28,7 +28,8 @@ const backupSchema = new mongoose.Schema({
   // Đường dẫn file backup
   filePath: {
     type: String,
-    required: true
+    default: '', // Set default là empty string để tránh validation error
+    required: false // Không required khi tạo, sẽ được set sau khi backup hoàn thành
   },
   
   // Kích thước file (bytes)
@@ -109,7 +110,19 @@ const backupSchema = new mongoose.Schema({
 }, {
   timestamps: true,
   toJSON: { virtuals: true },
-  toObject: { virtuals: true }
+  toObject: { virtuals: true },
+  validateBeforeSave: true // Mặc định là true, nhưng có thể override trong save()
+});
+
+// Pre-save hook để đảm bảo filePath được set
+backupSchema.pre('save', function(next) {
+  // Nếu filePath chưa được set và status không phải completed, set thành empty string
+  if (this.filePath === undefined || this.filePath === null) {
+    if (this.status !== 'completed') {
+      this.filePath = '';
+    }
+  }
+  next();
 });
 
 // Virtual cho thời gian backup (seconds)

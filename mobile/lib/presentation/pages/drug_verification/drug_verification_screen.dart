@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/api/dio_client.dart';
 import '../../../core/providers/services_provider.dart';
+import '../../../core/services/verification_history_service.dart';
 import '../../../data/repositories_impl/drug_repository_impl.dart';
 import '../../../domain/repositories_interfaces/drug_repository.dart';
 import '../../../domain/usecases/verify_drug_usecase.dart';
+import '../../../domain/entities/verification_history_entity.dart';
 import '../../../data/models/drug_model.dart';
 import '../../../data/models/supply_chain_model.dart';
 import '../../../data/models/blockchain_transaction_model.dart';
@@ -133,13 +136,29 @@ class _DrugVerificationScreenState
               }
 
               // Convert createdBy from object to string if needed
-              if (cleanedDrugData['createdBy'] is Map) {
-                final createdByObj =
-                    cleanedDrugData['createdBy'] as Map<String, dynamic>;
-                cleanedDrugData['createdBy'] =
-                    createdByObj['_id']?.toString() ??
-                        createdByObj['id']?.toString() ??
-                        createdByObj.toString();
+              if (cleanedDrugData['createdBy'] != null) {
+                if (cleanedDrugData['createdBy'] is Map) {
+                  final createdByObj =
+                      cleanedDrugData['createdBy'] as Map<String, dynamic>;
+                  // Ưu tiên lấy tên người dùng
+                  final name = createdByObj['name'] ??
+                      createdByObj['fullName'] ??
+                      createdByObj['username'] ??
+                      createdByObj['email'];
+                  if (name != null) {
+                    cleanedDrugData['createdBy'] = name.toString();
+                  } else {
+                    // Nếu không có tên, lấy ID
+                    cleanedDrugData['createdBy'] =
+                        createdByObj['_id']?.toString() ??
+                            createdByObj['id']?.toString() ??
+                            'Unknown';
+                  }
+                } else if (cleanedDrugData['createdBy'] is! String) {
+                  // Nếu không phải Map và không phải String, convert sang string
+                  cleanedDrugData['createdBy'] =
+                      cleanedDrugData['createdBy'].toString();
+                }
               }
 
               // Convert batchNumber from object to string if needed
@@ -254,6 +273,55 @@ class _DrugVerificationScreenState
                   .map((e) => BlockchainTransactionModel.fromEntity(e))
                   .toList(),
             );
+
+            // Save to verification history
+            try {
+              final historyService = VerificationHistoryService();
+              await historyService.init();
+
+              // Determine status from alertType and drug state
+              String status = 'valid';
+              if (alertType == 'error' || alertType == 'danger') {
+                status = 'invalid';
+              } else if (alertType == 'warning') {
+                status = 'warning';
+              } else if (data['isValid'] == false) {
+                status = 'invalid';
+              }
+
+              // Check if expired or recalled from drug data
+              if (drug.expiryDate != null &&
+                  drug.expiryDate!.isBefore(DateTime.now())) {
+                status = 'expired';
+              }
+              // Check recalled from metadata if available
+              if (drug.metadata != null &&
+                  drug.metadata!['isRecalled'] == true) {
+                status = 'recalled';
+              }
+
+              final verificationEntity = VerificationHistoryEntity(
+                id: '${drug.id}_${DateTime.now().millisecondsSinceEpoch}',
+                drugId: drug.id,
+                drugName: drug.name,
+                batchNumber: drug.batchNumber,
+                qrCode: widget.qrData,
+                verifiedAt: DateTime.now(),
+                status: status,
+                message: data['message']?.toString() ?? warning,
+                isBlockchainVerified: blockchainInfoMap != null &&
+                    (blockchainInfoMap['isOnBlockchain'] == true ||
+                        blockchainInfoMap['blockchainId'] != null),
+                blockchainTransactionHash:
+                    blockchainInfoMap?['transactionHash']?.toString(),
+                drugData: drug.toJson(),
+              );
+
+              await historyService.saveVerification(verificationEntity);
+            } catch (historyError) {
+              // Log error but don't fail the verification
+              print('Warning: Could not save to history: $historyError');
+            }
 
             if (mounted) {
               setState(() {
@@ -461,8 +529,36 @@ class _DrugVerificationScreenState
           if (_blockchainInfo!['transactionHash'] != null)
             IconButton(
               icon: const Icon(Icons.open_in_new, size: 20),
-              onPressed: () {
-                // TODO: Open blockchain explorer
+              onPressed: () async {
+                final transactionHash =
+                    _blockchainInfo!['transactionHash'].toString();
+                final network =
+                    _blockchainInfo!['network']?.toString() ?? 'ethereum';
+
+                // Determine blockchain explorer URL based on network
+                String explorerUrl;
+                if (network.toLowerCase().contains('bsc') ||
+                    network.toLowerCase().contains('binance')) {
+                  explorerUrl = 'https://bscscan.com/tx/$transactionHash';
+                } else if (network.toLowerCase().contains('polygon')) {
+                  explorerUrl = 'https://polygonscan.com/tx/$transactionHash';
+                } else {
+                  // Default to Ethereum
+                  explorerUrl = 'https://etherscan.io/tx/$transactionHash';
+                }
+
+                final uri = Uri.parse(explorerUrl);
+                if (await canLaunchUrl(uri)) {
+                  await launchUrl(uri, mode: LaunchMode.externalApplication);
+                } else {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Không thể mở blockchain explorer'),
+                      ),
+                    );
+                  }
+                }
               },
               tooltip: 'Xem trên Blockchain Explorer',
             ),
@@ -701,7 +797,10 @@ class _DrugVerificationScreenState
                               _formatDateTime(drug.updatedAt!),
                             ),
                           if (drug.createdBy != null)
-                            _buildDetailRow('Người tạo', drug.createdBy!),
+                            _buildDetailRow(
+                              'Người tạo',
+                              _formatCreatedBy(drug.createdBy!),
+                            ),
                         ],
                       ),
                     ],
@@ -770,17 +869,60 @@ class _DrugVerificationScreenState
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'Chuỗi cung ứng',
-          style: Theme.of(context).textTheme.titleLarge,
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              'Chuỗi cung ứng',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            if (_supplyChains.isNotEmpty)
+              TextButton.icon(
+                onPressed: () {
+                  // Mở màn hình timeline chi tiết
+                  final firstChain = _supplyChains.first;
+                  context.pushNamed(
+                    'supply-chain-timeline',
+                    extra: {
+                      'supplyChain': firstChain,
+                      'drugId': _drug?.id,
+                    },
+                  );
+                },
+                icon: const Icon(Icons.timeline, size: 18),
+                label: const Text('Xem chi tiết'),
+              ),
+          ],
         ),
         const SizedBox(height: 12),
         if (_supplyChains.isNotEmpty)
           ..._supplyChains.map((chain) => CustomCard(
                 margin: const EdgeInsets.only(bottom: 12),
                 padding: const EdgeInsets.all(16),
-                child: SupplyChainTimeline(
-                  supplyChain: chain,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SupplyChainTimeline(
+                      supplyChain: chain,
+                    ),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: () {
+                          context.pushNamed(
+                            'supply-chain-timeline',
+                            extra: {
+                              'supplyChain': chain,
+                              'drugId': _drug?.id,
+                            },
+                          );
+                        },
+                        icon: const Icon(Icons.arrow_forward, size: 18),
+                        label: const Text('Xem hành trình đầy đủ'),
+                      ),
+                    ),
+                  ],
                 ),
               )),
       ],
@@ -829,6 +971,51 @@ class _DrugVerificationScreenState
 
   String _formatDate(DateTime date) {
     return '${date.day}/${date.month}/${date.year}';
+  }
+
+  String _formatCreatedBy(dynamic createdBy) {
+    if (createdBy == null) return 'N/A';
+
+    // Nếu là string, trả về trực tiếp
+    if (createdBy is String) {
+      // Nếu là ObjectId (24 ký tự hex), chỉ hiển thị 8 ký tự đầu
+      if (createdBy.length == 24 &&
+          RegExp(r'^[0-9a-fA-F]+$').hasMatch(createdBy)) {
+        return 'ID: ${createdBy.substring(0, 8)}...';
+      }
+      return createdBy;
+    }
+
+    // Nếu là Map/Object, tìm tên người dùng
+    if (createdBy is Map) {
+      final createdByMap = createdBy as Map<String, dynamic>;
+
+      // Ưu tiên tìm tên người dùng
+      final name = createdByMap['name'] ??
+          createdByMap['fullName'] ??
+          createdByMap['username'] ??
+          createdByMap['email'];
+
+      if (name != null && name is String) {
+        return name;
+      }
+
+      // Nếu không có tên, lấy ID
+      final id = createdByMap['_id'] ?? createdByMap['id'];
+      if (id != null) {
+        final idStr = id.toString();
+        if (idStr.length == 24 && RegExp(r'^[0-9a-fA-F]+$').hasMatch(idStr)) {
+          return 'ID: ${idStr.substring(0, 8)}...';
+        }
+        return idStr;
+      }
+
+      // Fallback: hiển thị số lượng keys
+      return 'User (${createdByMap.length} fields)';
+    }
+
+    // Fallback cuối cùng
+    return createdBy.toString();
   }
 
   String _formatDateTime(DateTime date) {

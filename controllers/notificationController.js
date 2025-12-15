@@ -1,5 +1,6 @@
 const Notification = require('../models/Notification');
 const User = require('../models/User');
+const mongoose = require('mongoose');
 
 // @desc    Tạo thông báo mới
 // @route   POST /api/notifications
@@ -150,11 +151,72 @@ const getNotification = async (req, res) => {
     }
 
     // Kiểm tra quyền xem
-    const canView = notification.recipients.some(
-      recipient => recipient.user._id.toString() === req.user._id.toString()
-    );
+    // Cho phép xem nếu: là người nhận HOẶC là người gửi HOẶC là admin
+    const userId = req.user._id;
+    
+    // Helper để so sánh ObjectId - sử dụng string comparison để đảm bảo chính xác
+    const compareIds = (id1, id2) => {
+      if (!id1 || !id2) return false;
+      
+      try {
+        // Extract ID string từ nhiều định dạng
+        const getStringId = (id) => {
+          if (!id) return null;
+          
+          // Nếu là object đã populate (có _id)
+          if (id._id) {
+            return id._id.toString();
+          }
+          
+          // Nếu là ObjectId
+          if (mongoose.Types.ObjectId.isValid(id)) {
+            return id.toString();
+          }
+          
+          // Nếu đã là string
+          if (typeof id === 'string') {
+            return id;
+          }
+          
+          return null;
+        };
+        
+        const str1 = getStringId(id1);
+        const str2 = getStringId(id2);
+        
+        // So sánh string (loại bỏ whitespace và chuyển thành lowercase để đảm bảo)
+        return str1 && str2 && str1.trim().toLowerCase() === str2.trim().toLowerCase();
+      } catch (e) {
+        console.error('Error comparing IDs:', e, id1, id2);
+        return false;
+      }
+    };
+    
+    // Kiểm tra xem user có phải là recipient không
+    const isRecipient = notification.recipients && notification.recipients.length > 0 
+      ? notification.recipients.some(recipient => {
+          if (!recipient || !recipient.user) return false;
+          return compareIds(recipient.user, userId);
+        })
+      : false;
+    
+    // Kiểm tra xem user có phải là sender không
+    // Xử lý cả trường hợp sender đã populate (có _id) và chưa populate (là ObjectId)
+    let isSender = false;
+    if (notification.sender) {
+      // Nếu sender đã populate (là object User có _id)
+      if (notification.sender._id) {
+        isSender = notification.sender._id.toString() === userId.toString();
+      } else {
+        // Nếu sender chưa populate (là ObjectId)
+        isSender = notification.sender.toString() === userId.toString();
+      }
+    }
+    
+    const isAdmin = req.user.role === 'admin';
 
-    if (!canView) {
+    // Kiểm tra quyền: là recipient HOẶC là sender HOẶC là admin
+    if (!isRecipient && !isSender && !isAdmin) {
       return res.status(403).json({
         success: false,
         message: 'Không có quyền xem thông báo này'

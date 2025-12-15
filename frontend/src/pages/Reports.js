@@ -486,12 +486,29 @@ const Reports = () => {
       <div className="bg-white rounded-lg shadow-soft p-6">
         <h4 className="text-base font-semibold text-gray-900 mb-4">{title}</h4>
         <div className="space-y-2">
-          {items.map((item, idx) => (
-            <div key={idx} className="flex items-center justify-between rounded-md border border-gray-100 px-3 py-2">
-              <span className="text-sm text-gray-700 font-medium">{formatter(item)}</span>
-              <span className="text-sm text-gray-500">{typeof valueFormatter(item) === 'number' ? formatNumber(valueFormatter(item)) : valueFormatter(item)}</span>
-            </div>
-          ))}
+          {items.map((item, idx) => {
+            // Tạo key unique - đảm bảo là string
+            const getItemKey = () => {
+              if (item._id) {
+                const id = typeof item._id === 'string' ? item._id : 
+                          (typeof item._id === 'object' && item._id.toString) ? item._id.toString() : 
+                          String(item._id);
+                return id || `item-${idx}`;
+              }
+              const formatted = formatter(item);
+              if (formatted && typeof formatted === 'string') {
+                return formatted;
+              }
+              return `item-${idx}`;
+            };
+            
+            return (
+              <div key={getItemKey()} className="flex items-center justify-between rounded-md border border-gray-100 px-3 py-2">
+                <span className="text-sm text-gray-700 font-medium">{formatter(item)}</span>
+                <span className="text-sm text-gray-500">{typeof valueFormatter(item) === 'number' ? formatNumber(valueFormatter(item)) : valueFormatter(item)}</span>
+              </div>
+            );
+          })}
         </div>
       </div>
     );
@@ -718,7 +735,7 @@ const Reports = () => {
         {/* KPI Summary Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
           {kpiData.drug && (
-            <div className="bg-white rounded-lg shadow p-4">
+            <div key="kpi-drug" className="bg-white rounded-lg shadow p-4">
               <div className="text-sm text-gray-600 mb-1">Thuốc</div>
               <div className={`text-2xl font-bold mb-1 ${getGradeColor(kpiData.drug.status?.grade).split(' ')[0]}`}>
                 {kpiData.drug.validityRate?.toFixed(1)}%
@@ -729,7 +746,7 @@ const Reports = () => {
             </div>
           )}
           {kpiData.supplyChain && (
-            <div className="bg-white rounded-lg shadow p-4">
+            <div key="kpi-supply-chain" className="bg-white rounded-lg shadow p-4">
               <div className="text-sm text-gray-600 mb-1">Chuỗi cung ứng</div>
               <div className={`text-2xl font-bold mb-1 ${getGradeColor(kpiData.supplyChain.status?.grade).split(' ')[0]}`}>
                 {kpiData.supplyChain.completionRate?.toFixed(1)}%
@@ -740,7 +757,7 @@ const Reports = () => {
             </div>
           )}
           {kpiData.quality && (
-            <div className="bg-white rounded-lg shadow p-4">
+            <div key="kpi-quality" className="bg-white rounded-lg shadow p-4">
               <div className="text-sm text-gray-600 mb-1">Chất lượng</div>
               <div className={`text-2xl font-bold mb-1 ${getGradeColor(kpiData.quality.status?.grade).split(' ')[0]}`}>
                 {kpiData.quality.avgRating?.toFixed(1)}/5
@@ -751,7 +768,7 @@ const Reports = () => {
             </div>
           )}
           {kpiData.efficiency && (
-            <div className="bg-white rounded-lg shadow p-4">
+            <div key="kpi-efficiency" className="bg-white rounded-lg shadow p-4">
               <div className="text-sm text-gray-600 mb-1">Hiệu quả</div>
               <div className={`text-2xl font-bold mb-1 ${getGradeColor(kpiData.efficiency.status?.grade).split(' ')[0]}`}>
                 {kpiData.efficiency.completionRate?.toFixed(1)}%
@@ -762,7 +779,7 @@ const Reports = () => {
             </div>
           )}
           {kpiData.compliance && (
-            <div className="bg-white rounded-lg shadow p-4">
+            <div key="kpi-compliance" className="bg-white rounded-lg shadow p-4">
               <div className="text-sm text-gray-600 mb-1">Tuân thủ</div>
               <div className={`text-2xl font-bold mb-1 ${getGradeColor(kpiData.compliance.status?.grade).split(' ')[0]}`}>
                 {kpiData.compliance.signatureValidityRate?.toFixed(1)}%
@@ -777,7 +794,7 @@ const Reports = () => {
         {/* Detailed KPI Cards */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {kpiData.drug && (
-            <div className="bg-white rounded-lg shadow p-6">
+            <div key="detailed-kpi-drug" className="bg-white rounded-lg shadow p-6">
               <h3 className="text-lg font-semibold mb-4">KPI Thuốc</h3>
               <div className="space-y-3">
                 <div className="flex justify-between">
@@ -870,7 +887,7 @@ const Reports = () => {
             )}
           </div>
           {kpiData.quality && (
-            <div className="bg-white rounded-lg shadow p-6">
+            <div key="detailed-kpi-quality" className="bg-white rounded-lg shadow p-6">
               <h3 className="text-lg font-semibold mb-4">KPI Chất lượng</h3>
               <div className="space-y-3">
                 <div className="flex justify-between">
@@ -943,9 +960,20 @@ const Reports = () => {
                       const trustScore = supplier.trustScore || 0;
                       const trustLevel = supplier.trustLevel || 'N/A';
                       
+                      // Tạo key unique - đảm bảo là string
+                      const getSupplierId = () => {
+                        if (supplier._id) {
+                          return typeof supplier._id === 'string' ? supplier._id : String(supplier._id);
+                        }
+                        if (supplier.supplier?._id) {
+                          return typeof supplier.supplier._id === 'string' ? supplier.supplier._id : String(supplier.supplier._id);
+                        }
+                        return `supplier-${index}`;
+                      };
+                      
                       return (
                         <div
-                          key={supplier._id || supplier.supplier?._id || index}
+                          key={getSupplierId()}
                           className="flex items-center justify-between rounded-md border border-gray-100 px-3 py-2 bg-gray-50"
                         >
                           <div className="flex items-center gap-3">
@@ -1237,8 +1265,10 @@ const Reports = () => {
                         const dateStr = `${day._id.day.toString().padStart(2, '0')}/${day._id.month.toString().padStart(2, '0')}/${day._id.year}`;
                         const maxTotal = Math.max(...qrScanStats.byDay.map(d => d.total || 0), 1);
                         const successPercent = day.total > 0 ? (day.success / day.total) * 100 : 0;
+                        // Tạo key unique từ date
+                        const dayKey = day._id ? `${day._id.year}-${day._id.month}-${day._id.day}` : `day-${index}`;
                         return (
-                          <div key={index} className="space-y-1">
+                          <div key={dayKey} className="space-y-1">
                             <div className="flex justify-between items-center text-xs">
                               <span className="font-medium text-gray-700">{dateStr}</span>
                               <span className="text-gray-500">
@@ -1264,11 +1294,16 @@ const Reports = () => {
                   <div>
                     <p className="text-sm font-semibold text-gray-800 mb-2">Lần quét gần đây</p>
                     <div className="space-y-2 max-h-64 overflow-y-auto">
-                      {qrScanStats.recent.map((scan) => (
-                        <div
-                          key={scan._id}
-                          className="flex items-center justify-between rounded-md border border-gray-100 px-3 py-2 bg-gray-50 hover:bg-gray-100 transition-colors"
-                        >
+                      {qrScanStats.recent.map((scan, scanIndex) => {
+                        // Tạo key unique - đảm bảo là string
+                        const scanKey = scan._id ? 
+                          (typeof scan._id === 'string' ? scan._id : String(scan._id)) : 
+                          `scan-${scanIndex}`;
+                        return (
+                          <div
+                            key={scanKey}
+                            className="flex items-center justify-between rounded-md border border-gray-100 px-3 py-2 bg-gray-50 hover:bg-gray-100 transition-colors"
+                          >
                           <div className="flex items-center gap-3 flex-1">
                             <span
                               className={`inline-flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold flex-shrink-0 ${
@@ -1305,7 +1340,8 @@ const Reports = () => {
                             </p>
                           )}
                         </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 )}

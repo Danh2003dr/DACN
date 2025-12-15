@@ -23,15 +23,21 @@ import {
   FileText,
   Shield,
   Bell,
-  X
+  X,
+  Map,
+  Trash2,
+  FileDown,
+  CheckSquare,
+  Square
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { supplyChainAPI } from '../utils/api';
+import { supplyChainAPI, drugAPI } from '../utils/api';
 import toast from 'react-hot-toast';
 import DrugTimeline from '../components/DrugTimeline';
+import SupplyChainMap from '../components/SupplyChainMap';
 
 const SupplyChain = () => {
-  const { user, hasRole } = useAuth();
+  const { user, hasRole, hasAnyRole } = useAuth();
   const [loading, setLoading] = useState(false);
   const [supplyChains, setSupplyChains] = useState([]);
   const [selectedSupplyChain, setSelectedSupplyChain] = useState(null);
@@ -40,6 +46,12 @@ const SupplyChain = () => {
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [showQRModal, setShowQRModal] = useState(false);
   const [selectedQRData, setSelectedQRData] = useState(null);
+  const [showMapView, setShowMapView] = useState(false);
+  const [mapData, setMapData] = useState([]);
+  const [focusAddress, setFocusAddress] = useState(null); // Địa chỉ cần focus trên bản đồ
+  const [selectedItems, setSelectedItems] = useState([]);
+  const [isSelectMode, setIsSelectMode] = useState(false);
+  const [sseConnected, setSseConnected] = useState(false);
   const [pagination, setPagination] = useState({
     current: 1,
     pages: 1,
@@ -53,24 +65,155 @@ const SupplyChain = () => {
 
   const { register, handleSubmit, reset, formState: { errors } } = useForm();
 
+  // Helper function để chuyển đổi ID thành string an toàn
+  const normalizeId = (id) => {
+    if (!id && id !== 0) return '';
+    if (typeof id === 'string') {
+      if (id === '[object Object]' || id.trim() === '[object Object]') return '';
+      const trimmed = id.trim();
+      if (trimmed === '') return '';
+      return trimmed;
+    }
+    if (typeof id === 'number') return String(id);
+    if (typeof id === 'object' && id !== null) {
+      // Kiểm tra xem có phải là MongoDB ObjectId không (có thuộc tính toString và valueOf)
+      // MongoDB ObjectId thường có toString() trả về 24 ký tự hex
+      if (typeof id.toString === 'function') {
+        try {
+          const str = id.toString();
+          // Kiểm tra xem có phải là MongoDB ObjectId format không (24 ký tự hex)
+          if (str && /^[0-9a-fA-F]{24}$/.test(str)) {
+            return str;
+          }
+          // Nếu toString trả về hợp lệ và không phải [object Object]
+          if (str && str !== '[object Object]' && str.trim() !== '[object Object]' && str.length > 0) {
+            return str.trim();
+          }
+        } catch (e) {
+          // Ignore toString error, try other methods
+        }
+      }
+      
+      // Nếu là object có numeric keys (array-like), thử ghép lại thành string
+      if (Object.keys(id).every(key => !isNaN(parseInt(key)))) {
+        const keys = Object.keys(id).sort((a, b) => parseInt(a) - parseInt(b));
+        const reconstructed = keys.map(key => id[key]).join('');
+        if (reconstructed && /^[0-9a-fA-F]{24}$/.test(reconstructed)) {
+          return reconstructed;
+        }
+      }
+      
+      // Nếu là object có thuộc tính _id hoặc id, đệ quy normalize
+      if (id._id !== undefined && id._id !== null) {
+        const normalized = normalizeId(id._id);
+        if (normalized && normalized !== '[object Object]' && normalized.length > 0) return normalized;
+      }
+      if (id.id !== undefined && id.id !== null) {
+        const normalized = normalizeId(id.id);
+        if (normalized && normalized !== '[object Object]' && normalized.length > 0) return normalized;
+      }
+      
+      // Thử valueOf
+      if (typeof id.valueOf === 'function') {
+        try {
+          const val = id.valueOf();
+          if (val && val !== id) {
+            const normalized = normalizeId(val);
+            if (normalized && normalized !== '[object Object]' && normalized.length > 0) return normalized;
+          }
+        } catch (e) {
+          // Ignore valueOf error
+        }
+      }
+      
+      // Fallback: thử lấy từ các thuộc tính phổ biến
+      if (id.str && typeof id.str === 'string') return id.str;
+      if (id.value) {
+        const normalized = normalizeId(id.value);
+        if (normalized && normalized !== '[object Object]' && normalized.length > 0) return normalized;
+      }
+      
+      // Nếu là object rỗng {}, không log warning
+      if (Object.keys(id).length === 0) {
+        return '';
+      }
+      
+      console.warn('Unable to normalize ID, object without valid toString:', id);
+      return '';
+    }
+    return String(id);
+  };
+
   // Load supply chains
   const loadSupplyChains = useCallback(async () => {
     try {
       setLoading(true);
+      // Chỉ truyền các giá trị primitive, filter ra empty và object
+      const cleanFilters = Object.fromEntries(
+        Object.entries(filters).filter(([_, value]) => 
+          value !== '' && value !== null && value !== undefined && typeof value !== 'object'
+        )
+      );
       const params = new URLSearchParams({
-        page: pagination.current,
-        limit: 10,
-        ...filters
+        page: pagination.current.toString(),
+        limit: '10',
+        ...cleanFilters
       });
 
       const response = await supplyChainAPI.getSupplyChains(params.toString());
       
       if (response.success) {
-        setSupplyChains(response.data.supplyChains);
-        setPagination(response.data.pagination);
+        // Normalize _id thành string để tránh lỗi [object Object]
+        const normalizedSupplyChains = (response.data.supplyChains || []).map(supplyChain => {
+          // Ưu tiên sử dụng id (thường đã là string hợp lệ từ backend)
+          let validId = '';
+          if (supplyChain.id && typeof supplyChain.id === 'string' && supplyChain.id !== '[object Object]' && supplyChain.id.length >= 20) {
+            validId = supplyChain.id;
+          } else if (supplyChain._id) {
+            validId = normalizeId(supplyChain._id);
+            // Log nếu ID bị cắt ngắn
+            if (validId && validId.length < 20) {
+              console.warn('Normalized ID is too short:', validId, 'from:', supplyChain._id);
+            }
+          } else {
+            validId = normalizeId(supplyChain.id || supplyChain._id);
+          }
+          
+          // Đảm bảo validId không rỗng và không phải [object Object] và có độ dài hợp lệ
+          if (!validId || validId === '' || validId === '[object Object]' || validId.length < 20) {
+            console.warn('Unable to normalize supply chain ID:', {
+              originalId: supplyChain._id,
+              originalIdType: typeof supplyChain._id,
+              originalIdValue: supplyChain._id,
+              normalizedId: validId,
+              supplyChain: supplyChain
+            });
+            // Fallback: tạo ID tạm từ các field khác
+            validId = supplyChain.drugId || supplyChain.batchNumber || `temp-${Date.now()}-${Math.random()}`;
+          }
+          
+          // Đảm bảo drugId được populate đúng
+          if (supplyChain.drugId && typeof supplyChain.drugId === 'object' && !supplyChain.drugId.name) {
+            console.warn('Drug data not properly populated for supply chain:', validId);
+          }
+          
+          return {
+            ...supplyChain,
+            _id: validId,
+            id: validId
+          };
+        });
+        setSupplyChains(normalizedSupplyChains);
+        setPagination(response.data.pagination || pagination);
+      } else {
+        toast.error(response.message || 'Không thể tải danh sách hành trình');
       }
     } catch (error) {
-      toast.error('Lỗi khi tải danh sách hành trình');
+      const errorMessage = error.response?.data?.message || 
+                          error.response?.status === 401 ? 'Phiên đăng nhập đã hết hạn' :
+                          error.response?.status === 403 ? 'Bạn không có quyền xem danh sách hành trình' :
+                          'Lỗi khi tải danh sách hành trình';
+      toast.error(errorMessage);
       console.error('Load supply chains error:', error);
     } finally {
       setLoading(false);
@@ -81,10 +224,225 @@ const SupplyChain = () => {
     loadSupplyChains();
   }, [loadSupplyChains]);
 
+  // Load map data
+  const loadMapData = useCallback(async () => {
+    try {
+      setLoading(true);
+      const cleanFilters = Object.fromEntries(
+        Object.entries(filters).filter(([_, value]) => 
+          value !== '' && value !== null && value !== undefined && typeof value !== 'object'
+        )
+      );
+      const params = new URLSearchParams(cleanFilters);
+      const response = await supplyChainAPI.getMapData(params.toString());
+      if (response && response.success) {
+        console.log('🗺️ Map data received:', response.data);
+        console.log('🗺️ Number of chains:', response.data?.length || 0);
+        // Log coordinates for debugging
+        response.data?.forEach((chain, idx) => {
+          const currentLoc = chain.currentLocation;
+          console.log(`  Chain ${idx + 1} (${chain.batchNumber}):`, {
+            hasPath: !!chain.path,
+            pathLength: chain.path?.length || 0,
+            pathDetails: chain.path?.map(p => ({
+              action: p.action,
+              hasCoords: !!p.coordinates,
+              coords: p.coordinates,
+              address: p.address
+            })),
+            hasCurrentLocation: !!currentLoc,
+            currentLocationCoords: currentLoc?.coordinates,
+            currentLocationCoordsType: typeof currentLoc?.coordinates,
+            currentLocationCoordsIsArray: Array.isArray(currentLoc?.coordinates),
+            currentLocationAddress: currentLoc?.address,
+            currentLocationKeys: currentLoc ? Object.keys(currentLoc) : null
+          });
+        });
+        setMapData(response.data || []);
+      } else {
+        console.warn('Load map data: No data received');
+        setMapData([]);
+      }
+    } catch (error) {
+      console.error('Load map data error:', error);
+      toast.error('Không thể tải dữ liệu bản đồ');
+      setMapData([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [filters]);
+
+  useEffect(() => {
+    if (showMapView) {
+      loadMapData();
+    }
+  }, [showMapView, loadMapData]);
+
+  // Export data
+  const handleExport = async (format = 'csv') => {
+    try {
+      setLoading(true);
+      const cleanFilters = Object.fromEntries(
+        Object.entries(filters).filter(([_, value]) => 
+          value !== '' && value !== null && value !== undefined && typeof value !== 'object'
+        )
+      );
+      const params = new URLSearchParams({
+        limit: pagination.total.toString() || '10000',
+        format: format === 'xlsx' ? 'xlsx' : 'csv',
+        ...cleanFilters
+      });
+      
+      const blob = await supplyChainAPI.export(params.toString(), format);
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      const fileExtension = format === 'xlsx' ? 'xlsx' : 'csv';
+      link.download = `supply-chains-${new Date().toISOString().split('T')[0]}.${fileExtension}`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      toast.success(`Đã xuất file ${format.toUpperCase()}`);
+    } catch (error) {
+      const errorMessage = error.response?.data?.message || 'Lỗi khi xuất file';
+      toast.error(errorMessage);
+      console.error('Export error:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Bulk delete
+  const handleBulkDelete = async () => {
+    if (selectedItems.length === 0) {
+      toast.error('Vui lòng chọn ít nhất một hành trình');
+      return;
+    }
+    
+    if (!window.confirm(`Bạn có chắc chắn muốn xóa ${selectedItems.length} hành trình?`)) {
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const ids = selectedItems.map(item => normalizeId(item._id || item.id)).filter(id => id);
+      const response = await supplyChainAPI.bulkDelete(ids);
+      
+      if (response.success) {
+        toast.success(`Đã xóa ${selectedItems.length} hành trình`);
+        setSelectedItems([]);
+        setIsSelectMode(false);
+        loadSupplyChains();
+      }
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Lỗi khi xóa hành trình');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Toggle select item
+  const toggleSelectItem = (item) => {
+    const id = normalizeId(item._id || item.id);
+    setSelectedItems(prev => {
+      if (prev.some(i => normalizeId(i._id || i.id) === id)) {
+        return prev.filter(i => normalizeId(i._id || i.id) !== id);
+      } else {
+        return [...prev, item];
+      }
+    });
+  };
+
+  // Toggle select all
+  const toggleSelectAll = () => {
+    if (selectedItems.length === supplyChains.length) {
+      setSelectedItems([]);
+    } else {
+      setSelectedItems([...supplyChains]);
+    }
+  };
+
+  // SSE Connection
+  useEffect(() => {
+    if (!sseConnected) return;
+
+    const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+    const token = localStorage.getItem('token');
+    const eventSource = new EventSource(`${apiUrl}/supply-chain/events?token=${token}`);
+    
+    eventSource.onopen = () => {
+      console.log('SSE connected');
+      setSseConnected(true);
+    };
+
+    eventSource.onmessage = (event) => {
+      try {
+        // Bỏ qua heartbeat messages
+        if (event.data.trim() === ': heartbeat' || !event.data.trim()) {
+          return;
+        }
+        
+        const data = JSON.parse(event.data);
+        
+        // Kiểm tra nếu là error message
+        if (data.error) {
+          console.error('SSE error message:', data.message || data.error);
+          toast.error(data.message || 'Lỗi kết nối SSE');
+          setSseConnected(false);
+          eventSource.close();
+          return;
+        }
+        
+        if (data.type === 'supplyChain:created' || data.type === 'supplyChain:step_added') {
+          toast.success('Có cập nhật mới về chuỗi cung ứng');
+          loadSupplyChains();
+          if (showMapView) {
+            loadMapData();
+          }
+        }
+      } catch (error) {
+        console.error('SSE message parse error:', error);
+      }
+    };
+
+    eventSource.onerror = (error) => {
+      console.error('SSE connection error:', error);
+      // Chỉ đóng connection nếu thực sự có lỗi (không phải do reconnect)
+      if (eventSource.readyState === EventSource.CLOSED) {
+        setSseConnected(false);
+        toast.error('Mất kết nối với server. Vui lòng thử lại.');
+        eventSource.close();
+      }
+    };
+
+    return () => {
+      eventSource.close();
+    };
+  }, [sseConnected, loadSupplyChains, loadMapData, showMapView]);
+
   // Create new supply chain
   const onCreateSupplyChain = async (data) => {
     try {
       setLoading(true);
+      
+      // Normalize drugId để đảm bảo là string ID, không phải object
+      if (data.drugId) {
+        if (typeof data.drugId === 'object' && data.drugId !== null) {
+          data.drugId = data.drugId._id?.toString() || data.drugId.id?.toString() || String(data.drugId);
+        } else {
+          data.drugId = String(data.drugId);
+        }
+      }
+      
+      // Validate required fields
+      if (!data.drugId || !data.drugBatchNumber) {
+        toast.error('Vui lòng điền đầy đủ thông tin bắt buộc');
+        return;
+      }
+      
+      console.log('📤 Creating supply chain with data:', { ...data, drugId: data.drugId });
+      
       const response = await supplyChainAPI.createSupplyChain(data);
       
       if (response.success) {
@@ -92,9 +450,15 @@ const SupplyChain = () => {
         setShowCreateModal(false);
         reset();
         loadSupplyChains();
+      } else {
+        toast.error(response.message || 'Lỗi khi tạo hành trình');
       }
     } catch (error) {
-      toast.error(error.response?.data?.message || 'Lỗi khi tạo hành trình');
+      const errorMessage = error.response?.data?.message || 
+                          error.response?.data?.errors?.join(', ') || 
+                          'Lỗi khi tạo hành trình';
+      toast.error(errorMessage);
+      console.error('Create supply chain error:', error);
     } finally {
       setLoading(false);
     }
@@ -104,16 +468,129 @@ const SupplyChain = () => {
   const onAddStep = async (data) => {
     try {
       setLoading(true);
-      const response = await supplyChainAPI.addStep(selectedSupplyChain._id, data);
+      const id = normalizeId(selectedSupplyChain?._id || selectedSupplyChain?.id);
+      if (!id || id === '[object Object]') {
+        toast.error('ID hành trình không hợp lệ');
+        return;
+      }
+      
+      // Validate required fields
+      if (!data.action) {
+        toast.error('Vui lòng chọn hành động');
+        return;
+      }
+      
+      // Format data - loại bỏ các trường rỗng
+      console.log('📝 Raw form data:', data);
+      
+      const formattedData = {};
+      
+      // Action là bắt buộc
+      if (!data.action) {
+        toast.error('Vui lòng chọn hành động');
+        return;
+      }
+      formattedData.action = data.action;
+      
+      // Location - đảm bảo format đúng
+      if (data.location?.address && data.location.address.trim() !== '') {
+        formattedData.location = {
+          address: data.location.address.trim()
+        };
+      } else if (data['location.address']) {
+        // Fallback nếu react-hook-form trả về nested key khác
+        formattedData.location = {
+          address: String(data['location.address']).trim()
+        };
+      }
+      
+      // Conditions - chỉ gửi nếu có ít nhất một giá trị
+      const conditions = {};
+      if (data.conditions?.temperature !== undefined && data.conditions.temperature !== null && data.conditions.temperature !== '') {
+        conditions.temperature = Number(data.conditions.temperature);
+      }
+      if (data.conditions?.humidity !== undefined && data.conditions.humidity !== null && data.conditions.humidity !== '') {
+        conditions.humidity = Number(data.conditions.humidity);
+      }
+      if (data.conditions?.light && data.conditions.light !== '') {
+        conditions.light = data.conditions.light;
+      }
+      if (data.conditions?.notes && data.conditions.notes.trim() !== '') {
+        conditions.notes = data.conditions.notes.trim();
+      }
+      if (Object.keys(conditions).length > 0) {
+        formattedData.conditions = conditions;
+      }
+      
+      // Metadata - chỉ gửi các trường có giá trị
+      const metadata = {};
+      if (data.metadata?.quantity !== undefined && data.metadata.quantity !== null && data.metadata.quantity !== '') {
+        metadata.quantity = Number(data.metadata.quantity);
+      }
+      if (data.metadata?.unit && data.metadata.unit !== '') {
+        metadata.unit = data.metadata.unit;
+      }
+      if (data.metadata?.transportation && data.metadata.transportation.trim() !== '') {
+        metadata.transportation = data.metadata.transportation.trim();
+      }
+      if (data.metadata?.receiver && data.metadata.receiver.trim() !== '') {
+        metadata.receiver = data.metadata.receiver.trim();
+      }
+      if (data.metadata?.notes && data.metadata.notes.trim() !== '') {
+        metadata.notes = data.metadata.notes.trim();
+      }
+      if (Object.keys(metadata).length > 0) {
+        formattedData.metadata = metadata;
+      }
+
+      console.log('📤 Adding step with formatted data:', JSON.stringify(formattedData, null, 2));
+      
+      const response = await supplyChainAPI.addStep(id, formattedData);
       
       if (response.success) {
         toast.success('Thêm bước thành công');
         setShowStepModal(false);
         reset();
-        loadSupplyChains();
+        
+        // Reload supply chains để cập nhật danh sách
+        await loadSupplyChains();
+        
+        // Reload chi tiết nếu modal đang mở (sử dụng id đã normalize)
+        const currentId = normalizeId(selectedSupplyChain?._id || selectedSupplyChain?.id);
+        if (currentId && currentId === id) {
+          await getSupplyChainDetails(id);
+        }
+      } else {
+        toast.error(response.message || 'Lỗi khi thêm bước');
       }
     } catch (error) {
-      toast.error(error.response?.data?.message || 'Lỗi khi thêm bước');
+      console.error('Add step error:', error);
+      console.error('Error response:', error.response?.data);
+      console.error('Error status:', error.response?.status);
+      
+      let errorMessage = 'Lỗi khi thêm bước';
+      
+      if (error.response?.data) {
+        const errorData = error.response.data;
+        
+        // Nếu có message
+        if (errorData.message) {
+          errorMessage = errorData.message;
+        }
+        
+        // Nếu có errors array
+        if (errorData.errors && Array.isArray(errorData.errors)) {
+          errorMessage = errorData.errors.join(', ');
+        }
+        
+        // Nếu có details từ Joi validation
+        if (errorData.details && Array.isArray(errorData.details)) {
+          const details = errorData.details.map(d => `${d.message || d.path?.join('.')}: ${d.message}`).join(', ');
+          errorMessage = details || errorMessage;
+        }
+      }
+      
+      toast.error(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -122,14 +599,39 @@ const SupplyChain = () => {
   // Get supply chain details
   const getSupplyChainDetails = async (id) => {
     try {
-      const response = await supplyChainAPI.getSupplyChain(id);
+      const normalizedId = normalizeId(id);
+      if (!normalizedId || normalizedId === '[object Object]') {
+        console.error('Invalid supply chain ID:', id);
+        toast.error('ID hành trình không hợp lệ');
+        return;
+      }
+      
+      setLoading(true);
+      const response = await supplyChainAPI.getSupplyChain(normalizedId);
       
       if (response.success) {
-        setSelectedSupplyChain(response.data.supplyChain);
+        // Ensure drugId is populated
+        if (response.data.supplyChain.drugId && typeof response.data.supplyChain.drugId === 'object') {
+          setSelectedSupplyChain(response.data.supplyChain);
+        } else {
+          // If drugId is not populated, try to reload
+          console.warn('Drug data not populated, reloading...');
+          loadSupplyChains();
+          toast.error('Dữ liệu thuốc chưa được tải. Vui lòng thử lại.');
+          return;
+        }
         setShowDetailModal(true);
+      } else {
+        toast.error(response.message || 'Không thể lấy thông tin hành trình');
       }
     } catch (error) {
-      toast.error('Lỗi khi lấy thông tin hành trình');
+      console.error('Error getting supply chain details:', error);
+      const errorMessage = error.response?.data?.message || 
+                          error.response?.status === 404 ? 'Hành trình không tồn tại' :
+                          'Lỗi khi lấy thông tin hành trình';
+      toast.error(errorMessage);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -171,6 +673,42 @@ const SupplyChain = () => {
     return colors[status] || 'bg-gray-100 text-gray-800';
   };
 
+  // Helper function để tạo unique key - luôn đảm bảo trả về string và unique
+  const getUniqueKey = (item, idx) => {
+    // Luôn bao gồm index để đảm bảo uniqueness
+    let idPart = '';
+    
+    // Thử lấy ID từ nhiều nguồn
+    if (item._id) {
+      if (typeof item._id === 'string' && item._id.trim() !== '') {
+        idPart = item._id;
+      } else if (typeof item._id === 'object' && item._id !== null) {
+        // Nếu _id là object, lấy nested _id hoặc id
+        const nestedId = item._id._id || item._id.id;
+        if (nestedId && typeof nestedId === 'string') {
+          idPart = nestedId;
+        } else if (nestedId && typeof nestedId === 'object' && nestedId.toString) {
+          idPart = nestedId.toString();
+        }
+      } else if (item._id && item._id.toString && typeof item._id.toString === 'function') {
+        idPart = item._id.toString();
+      }
+    }
+    
+    // Nếu không có ID hợp lệ, tạo từ các giá trị khác
+    if (!idPart || idPart === '[object Object]') {
+      const batchNumber = String(item.drugBatchNumber || '');
+      const drugIdValue = typeof item.drugId === 'object' && item.drugId 
+        ? String(item.drugId._id || item.drugId.id || '') 
+        : String(item.drugId || '');
+      const createdAt = item.createdAt ? String(new Date(item.createdAt).getTime()) : '';
+      idPart = `sc-${batchNumber}-${drugIdValue}-${createdAt}`;
+    }
+    
+    // Luôn kết hợp với index để đảm bảo unique ngay cả khi có duplicate ID
+    return `supplychain-${idx}-${idPart}`;
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -180,7 +718,7 @@ const SupplyChain = () => {
           <p className="text-gray-600">Quản lý hành trình thuốc từ sản xuất đến người dùng</p>
         </div>
         
-        {hasRole(['admin', 'manufacturer']) && (
+        {hasAnyRole && hasAnyRole(['admin', 'manufacturer']) && (
           <button
             onClick={() => setShowCreateModal(true)}
             className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-2"
@@ -257,16 +795,128 @@ const SupplyChain = () => {
         </div>
       </div>
 
-      {/* Supply Chains List */}
-      <div className="bg-white rounded-lg shadow">
-        <div className="px-6 py-4 border-b border-gray-200">
-          <h3 className="text-lg font-medium text-gray-900">Danh sách hành trình</h3>
+      {/* Action Buttons */}
+      <div className="bg-white p-4 rounded-lg shadow flex items-center justify-between">
+        <div className="flex items-center space-x-2">
+          <button
+            onClick={() => setShowMapView(!showMapView)}
+            className={`px-4 py-2 rounded-lg flex items-center space-x-2 ${
+              showMapView 
+                ? 'bg-blue-600 text-white hover:bg-blue-700' 
+                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+            }`}
+          >
+            <Map className="h-4 w-4" />
+            <span>{showMapView ? 'Xem danh sách' : 'Xem bản đồ'}</span>
+          </button>
+          
+          <button
+            onClick={() => handleExport('csv')}
+            disabled={loading}
+            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 flex items-center space-x-2"
+          >
+            <FileDown className="h-4 w-4" />
+            <span>Xuất CSV</span>
+          </button>
+          
+          <button
+            onClick={() => handleExport('xlsx')}
+            disabled={loading}
+            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 flex items-center space-x-2"
+          >
+            <FileDown className="h-4 w-4" />
+            <span>Xuất Excel</span>
+          </button>
+
+          {hasRole && hasRole('admin') && (
+            <>
+              <button
+                onClick={() => setIsSelectMode(!isSelectMode)}
+                className={`px-4 py-2 rounded-lg flex items-center space-x-2 ${
+                  isSelectMode 
+                    ? 'bg-orange-600 text-white hover:bg-orange-700' 
+                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                }`}
+              >
+                <CheckSquare className="h-4 w-4" />
+                <span>{isSelectMode ? 'Hủy chọn' : 'Chọn nhiều'}</span>
+              </button>
+              
+              {isSelectMode && selectedItems.length > 0 && (
+                <button
+                  onClick={handleBulkDelete}
+                  disabled={loading}
+                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 flex items-center space-x-2"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  <span>Xóa ({selectedItems.length})</span>
+                </button>
+              )}
+            </>
+          )}
+
+          <button
+            onClick={() => setSseConnected(!sseConnected)}
+            className={`px-4 py-2 rounded-lg flex items-center space-x-2 ${
+              sseConnected 
+                ? 'bg-green-600 text-white hover:bg-green-700' 
+                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+            }`}
+            title="Bật/tắt cập nhật real-time"
+          >
+            <Bell className="h-4 w-4" />
+            <span>{sseConnected ? 'Đang theo dõi' : 'Theo dõi'}</span>
+          </button>
         </div>
+      </div>
+
+      {/* Map View */}
+      {showMapView && (
+        <div className="bg-white rounded-lg shadow p-4">
+          <h3 className="text-lg font-medium text-gray-900 mb-4">Bản đồ chuỗi cung ứng</h3>
+          <SupplyChainMap 
+            supplyChains={mapData} 
+            height="600px" 
+            focusAddress={focusAddress}
+            onFocusComplete={() => setFocusAddress(null)} // Reset sau khi focus xong
+          />
+        </div>
+      )}
+
+      {/* Supply Chains List */}
+      {!showMapView && (
+        <div className="bg-white rounded-lg shadow">
+          <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+            <h3 className="text-lg font-medium text-gray-900">Danh sách hành trình</h3>
+            {isSelectMode && (
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={toggleSelectAll}
+                  className="text-sm text-blue-600 hover:text-blue-700"
+                >
+                  {selectedItems.length === supplyChains.length ? 'Bỏ chọn tất cả' : 'Chọn tất cả'}
+                </button>
+                <span className="text-sm text-gray-600">
+                  Đã chọn: {selectedItems.length}
+                </span>
+              </div>
+            )}
+          </div>
         
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
+                {isSelectMode && (
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <input
+                      type="checkbox"
+                      checked={selectedItems.length === supplyChains.length && supplyChains.length > 0}
+                      onChange={toggleSelectAll}
+                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    />
+                  </th>
+                )}
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Lô thuốc
                 </th>
@@ -302,17 +952,30 @@ const SupplyChain = () => {
                 </tr>
               ) : supplyChains.length === 0 ? (
                 <tr>
-                  <td colSpan="7" className="px-6 py-4 text-center text-gray-500">
+                  <td colSpan={isSelectMode ? 8 : 7} className="px-6 py-4 text-center text-gray-500">
                     Không có hành trình nào
                   </td>
                 </tr>
               ) : (
-                supplyChains.map((supplyChain) => {
+                supplyChains.map((supplyChain, idx) => {
                   const currentStep = supplyChain.steps[supplyChain.steps.length - 1];
                   const RoleIcon = getRoleIcon(currentStep?.actorRole);
                   
+                  const chainId = normalizeId(supplyChain._id || supplyChain.id);
+                  const isSelected = selectedItems.some(i => normalizeId(i._id || i.id) === chainId);
+                  
                   return (
-                    <tr key={supplyChain._id} className="hover:bg-gray-50">
+                    <tr key={getUniqueKey(supplyChain, idx)} className={`hover:bg-gray-50 ${isSelected ? 'bg-blue-50' : ''}`}>
+                      {isSelectMode && (
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleSelectItem(supplyChain)}
+                            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          />
+                        </td>
+                      )}
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center">
                           <Package className="h-5 w-5 text-gray-400 mr-2" />
@@ -378,7 +1041,18 @@ const SupplyChain = () => {
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                         <div className="flex items-center justify-end space-x-2">
                           <button
-                            onClick={() => getSupplyChainDetails(supplyChain._id)}
+                            onClick={() => {
+                              // Ưu tiên sử dụng supplyChain.id (thường đã là string hợp lệ)
+                              const id = supplyChain.id && supplyChain.id !== '[object Object]' && typeof supplyChain.id === 'string'
+                                ? supplyChain.id
+                                : normalizeId(supplyChain._id || supplyChain.id);
+                              if (!id || id === '[object Object]') {
+                                console.error('Invalid supply chain ID in button click:', supplyChain);
+                                toast.error('ID hành trình không hợp lệ');
+                                return;
+                              }
+                              getSupplyChainDetails(id);
+                            }}
                             className="text-blue-600 hover:text-blue-900"
                             title="Xem chi tiết"
                           >
@@ -439,7 +1113,8 @@ const SupplyChain = () => {
             </div>
           </div>
         )}
-      </div>
+        </div>
+      )}
 
       {/* Create Supply Chain Modal */}
       {showCreateModal && (
@@ -469,6 +1144,11 @@ const SupplyChain = () => {
             setShowDetailModal(false);
             setShowStepModal(true);
           }}
+          onAddressClick={(address) => {
+            setFocusAddress(address);
+            setShowDetailModal(false);
+            setShowMapView(true);
+          }}
         />
       )}
 
@@ -488,24 +1168,139 @@ const SupplyChain = () => {
 
 // Create Supply Chain Modal Component
 const CreateSupplyChainModal = ({ onSubmit, onClose, loading }) => {
-  const { register, handleSubmit, formState: { errors } } = useForm();
+  const { register, handleSubmit, formState: { errors }, watch, setValue } = useForm();
+  const [drugs, setDrugs] = useState([]);
+  const [loadingDrugs, setLoadingDrugs] = useState(false);
+  const selectedDrugId = watch('drugId');
+
+  // Load danh sách drugs khi modal mở
+  useEffect(() => {
+    const loadDrugs = async () => {
+      try {
+        setLoadingDrugs(true);
+        let allDrugs = [];
+        let page = 1;
+        const limit = 100;
+        let hasMore = true;
+
+        // Load tất cả drugs bằng cách load nhiều pages
+        while (hasMore) {
+          const response = await drugAPI.getDrugs({ limit, page });
+          
+          if (response.success && response.data?.drugs) {
+            allDrugs = [...allDrugs, ...response.data.drugs];
+            
+            const total = response.data.pagination?.total || 0;
+            const currentPage = response.data.pagination?.current || page;
+            const totalPages = response.data.pagination?.pages || 1;
+            
+            if (currentPage >= totalPages || allDrugs.length >= total) {
+              hasMore = false;
+            } else {
+              page++;
+            }
+          } else {
+            hasMore = false;
+          }
+        }
+
+        if (allDrugs.length > 0) {
+          setDrugs(allDrugs);
+          console.log(`✅ Đã tải ${allDrugs.length} thuốc cho supply chain`);
+        }
+      } catch (error) {
+        console.error('Error loading drugs:', error);
+        toast.error('Không thể tải danh sách thuốc');
+      } finally {
+        setLoadingDrugs(false);
+      }
+    };
+
+    loadDrugs();
+  }, []);
+
+  // Normalize drug ID helper
+  const normalizeDrugId = (id) => {
+    if (!id) return null;
+    if (typeof id === 'string') {
+      if (/^[0-9a-fA-F]{24}$/.test(id.trim())) {
+        return id.trim();
+      }
+      return null;
+    }
+    if (typeof id === 'object' && id !== null) {
+      const keys = Object.keys(id);
+      if (keys.length > 0 && keys.every(key => /^\d+$/.test(key))) {
+        const normalized = keys
+          .sort((a, b) => parseInt(a) - parseInt(b))
+          .map(key => String(id[key]))
+          .join('');
+        if (/^[0-9a-fA-F]{24}$/.test(normalized)) {
+          return normalized;
+        }
+      }
+      if (id._id) return normalizeDrugId(id._id);
+      if (id.id) return normalizeDrugId(id.id);
+      if (id.toString && typeof id.toString === 'function') {
+        const str = id.toString();
+        if (str && str !== '[object Object]' && /^[0-9a-fA-F]{24}$/.test(str)) {
+          return str;
+        }
+      }
+    }
+    return null;
+  };
+
+  // Khi chọn drug, tự động fill batchNumber
+  useEffect(() => {
+    if (selectedDrugId) {
+      const selectedDrug = drugs.find(d => {
+        const drugId = normalizeDrugId(d._id || d.id);
+        return drugId === selectedDrugId;
+      });
+      
+      if (selectedDrug && selectedDrug.batchNumber) {
+        setValue('drugBatchNumber', selectedDrug.batchNumber);
+      }
+    }
+  }, [selectedDrugId, drugs, setValue]);
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg p-6 max-w-2xl w-full mx-4">
+      <div className="bg-white rounded-lg p-6 max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
         <h3 className="text-lg font-semibold mb-4">Tạo hành trình mới</h3>
         
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              ID Thuốc *
+              Chọn thuốc *
             </label>
-            <input
-              type="text"
-              {...register('drugId', { required: 'ID thuốc là bắt buộc' })}
+            {loadingDrugs ? (
+              <div className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 flex items-center">
+                <span className="text-gray-500 text-sm">Đang tải danh sách thuốc...</span>
+              </div>
+            ) : (
+              <select
+                {...register('drugId', { required: 'Vui lòng chọn thuốc' })}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-              placeholder="Nhập ID thuốc"
-            />
+              >
+                <option value="">Chọn thuốc</option>
+                {drugs
+                  .map((drug) => {
+                    const drugId = normalizeDrugId(drug._id || drug.id);
+                    if (!drugId) return null;
+                    return { drug, drugId };
+                  })
+                  .filter(item => item !== null)
+                  .map(({ drug, drugId }) => (
+                    <option key={drugId} value={drugId}>
+                      {drug.name || drug.drugId || 'N/A'}
+                      {drug.batchNumber ? ` - Lô: ${drug.batchNumber}` : ''}
+                      {drug.activeIngredient ? ` (${drug.activeIngredient})` : ''}
+                    </option>
+                  ))}
+              </select>
+            )}
             {errors.drugId && (
               <p className="text-red-500 text-sm mt-1">{errors.drugId.message}</p>
             )}
@@ -579,11 +1374,15 @@ const CreateSupplyChainModal = ({ onSubmit, onClose, loading }) => {
 
 // Add Step Modal Component
 const AddStepModal = ({ supplyChain, onSubmit, onClose, loading }) => {
-  const { register, handleSubmit, formState: { errors } } = useForm();
+  const { register, handleSubmit, formState: { errors }, watch } = useForm();
+  const selectedAction = watch('action');
+
+  // Các hành động cần theo dõi nhiệt độ và điều kiện bảo quản
+  const requiresTemperature = ['shipped', 'received', 'stored', 'quality_check'];
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg p-6 max-w-2xl w-full mx-4">
+      <div className="bg-white rounded-lg p-6 max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
         <h3 className="text-lg font-semibold mb-4">Thêm bước mới</h3>
         
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
@@ -596,11 +1395,11 @@ const AddStepModal = ({ supplyChain, onSubmit, onClose, loading }) => {
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
             >
               <option value="">Chọn hành động</option>
-              <option value="shipped">Gửi hàng</option>
-              <option value="received">Nhận hàng</option>
-              <option value="stored">Lưu kho</option>
-              <option value="dispensed">Cấp phát</option>
-              <option value="quality_check">Kiểm tra chất lượng</option>
+              <option value="shipped">🚚 Vận chuyển / Gửi hàng</option>
+              <option value="received">📦 Nhận hàng</option>
+              <option value="stored">📦 Lưu kho</option>
+              <option value="dispensed">💊 Cấp phát</option>
+              <option value="quality_check">✅ Kiểm tra chất lượng</option>
             </select>
             {errors.action && (
               <p className="text-red-500 text-sm mt-1">{errors.action.message}</p>
@@ -609,15 +1408,138 @@ const AddStepModal = ({ supplyChain, onSubmit, onClose, loading }) => {
           
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Địa điểm
+              Địa điểm *
             </label>
             <input
               type="text"
-              {...register('location.address')}
+              {...register('location.address', { required: 'Địa điểm là bắt buộc' })}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-              placeholder="Địa điểm thực hiện"
+              placeholder="Nhập địa chỉ vận chuyển/nhận hàng"
             />
+            {errors['location.address'] && (
+              <p className="text-red-500 text-sm mt-1">{errors['location.address'].message}</p>
+            )}
           </div>
+
+          {/* Điều kiện bảo quản - chỉ hiển thị khi cần */}
+          {selectedAction && requiresTemperature.includes(selectedAction) && (
+            <div className="bg-blue-50 p-4 rounded-lg space-y-4 border border-blue-200">
+              <h4 className="font-medium text-gray-900 text-sm">🌡️ Điều kiện bảo quản</h4>
+              
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Nhiệt độ (°C) *
+                  </label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    {...register('conditions.temperature', { 
+                      required: requiresTemperature.includes(selectedAction) ? 'Nhiệt độ là bắt buộc' : false,
+                      valueAsNumber: true 
+                    })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    placeholder="Ví dụ: 25"
+                  />
+                  {errors['conditions.temperature'] && (
+                    <p className="text-red-500 text-sm mt-1">{errors['conditions.temperature'].message}</p>
+                  )}
+                  <p className="text-xs text-gray-500 mt-1">Nhiệt độ khi vận chuyển/lưu kho</p>
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Độ ẩm (%)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    {...register('conditions.humidity', { valueAsNumber: true })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    placeholder="Ví dụ: 60"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Điều kiện ánh sáng
+                </label>
+                <select
+                  {...register('conditions.light')}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">Chọn điều kiện</option>
+                  <option value="dark">Tối (Dark)</option>
+                  <option value="low">Ánh sáng yếu (Low)</option>
+                  <option value="normal">Bình thường (Normal)</option>
+                  <option value="bright">Sáng (Bright)</option>
+                </select>
+              </div>
+            </div>
+          )}
+
+          {/* Thông tin vận chuyển - chỉ hiển thị khi shipped */}
+          {selectedAction === 'shipped' && (
+            <div className="bg-green-50 p-4 rounded-lg space-y-4 border border-green-200">
+              <h4 className="font-medium text-gray-900 text-sm">📦 Thông tin vận chuyển</h4>
+              
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Số lượng
+                  </label>
+                  <input
+                    type="number"
+                    {...register('metadata.quantity', { valueAsNumber: true })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    placeholder="Số lượng vận chuyển"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Đơn vị
+                  </label>
+                  <select
+                    {...register('metadata.unit')}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">Chọn đơn vị</option>
+                    <option value="unit">Đơn vị</option>
+                    <option value="box">Hộp</option>
+                    <option value="bottle">Chai</option>
+                    <option value="tablet">Viên</option>
+                    <option value="vial">Lọ</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Phương tiện vận chuyển
+                </label>
+                <input
+                  type="text"
+                  {...register('metadata.transportation')}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  placeholder="Ví dụ: Xe tải, Máy bay, Tàu..."
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Người nhận dự kiến
+                </label>
+                <input
+                  type="text"
+                  {...register('metadata.receiver')}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  placeholder="Tên người/nơi nhận hàng"
+                />
+              </div>
+            </div>
+          )}
           
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -627,7 +1549,7 @@ const AddStepModal = ({ supplyChain, onSubmit, onClose, loading }) => {
               {...register('metadata.notes')}
               rows={3}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-              placeholder="Ghi chú về bước này"
+              placeholder="Ghi chú về bước này (tùy chọn)"
             />
           </div>
           
@@ -654,7 +1576,7 @@ const AddStepModal = ({ supplyChain, onSubmit, onClose, loading }) => {
 };
 
 // Supply Chain Detail Modal Component
-const SupplyChainDetailModal = ({ supplyChain, onClose, onAddStep }) => {
+const SupplyChainDetailModal = ({ supplyChain, onClose, onAddStep, onAddressClick }) => {
   // Convert supply chain steps to DrugTimeline events format
   const convertStepsToTimelineEvents = (steps, supplyChain) => {
     const events = [];
@@ -735,6 +1657,13 @@ const SupplyChainDetailModal = ({ supplyChain, onClose, onAddStep }) => {
   };
 
   const timelineEvents = convertStepsToTimelineEvents(supplyChain.steps, supplyChain);
+  
+  // Handler để click vào địa chỉ trong timeline
+  const handleAddressClick = (address) => {
+    if (address && onAddressClick) {
+      onAddressClick(address);
+    }
+  };
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -766,7 +1695,24 @@ const SupplyChainDetailModal = ({ supplyChain, onClose, onAddStep }) => {
             <div className="space-y-2 text-sm">
               <p><span className="font-medium">Tại:</span> {supplyChain.currentLocation?.actorName}</p>
               <p><span className="font-medium">Vai trò:</span> {supplyChain.currentLocation?.actorRole}</p>
-              <p><span className="font-medium">Địa chỉ:</span> {supplyChain.currentLocation?.address}</p>
+              <p>
+                <span className="font-medium">Địa chỉ:</span>{' '}
+                {supplyChain.currentLocation?.address ? (
+                  onAddressClick ? (
+                    <button
+                      onClick={() => onAddressClick(supplyChain.currentLocation.address)}
+                      className="text-blue-600 hover:text-blue-800 hover:underline cursor-pointer"
+                      title="Click để xem trên bản đồ"
+                    >
+                      {supplyChain.currentLocation.address}
+                    </button>
+                  ) : (
+                    supplyChain.currentLocation.address
+                  )
+                ) : (
+                  'N/A'
+                )}
+              </p>
               <p><span className="font-medium">Cập nhật:</span> {new Date(supplyChain.currentLocation?.lastUpdated).toLocaleString('vi-VN')}</p>
             </div>
           </div>
@@ -777,7 +1723,7 @@ const SupplyChainDetailModal = ({ supplyChain, onClose, onAddStep }) => {
           <h4 className="font-medium text-gray-900 mb-4">Hành trình chi tiết</h4>
           {timelineEvents.length > 0 ? (
             <div className="bg-gray-50 rounded-lg p-4">
-              <DrugTimeline events={timelineEvents} />
+              <DrugTimeline events={timelineEvents} onAddressClick={handleAddressClick} />
             </div>
           ) : (
             <div className="bg-gray-50 rounded-lg p-8 text-center">

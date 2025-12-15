@@ -136,9 +136,73 @@ const AuditLogs = () => {
           Object.entries(filters).filter(([_, value]) => value !== '')
         )
       };
-      await auditLogAPI.exportAuditLogs(params);
+      
+      toast.loading('Đang chuẩn bị file Excel...', { id: 'audit-export' });
+      
+      const response = await auditLogAPI.exportAuditLogs(params);
+      
+      // Kiểm tra nếu response là error (JSON error trong blob)
+      // Khi axios nhận error với responseType: 'blob', error response cũng là blob
+      if (response.headers && response.headers['content-type'] && response.headers['content-type'].includes('application/json')) {
+        // Đây là JSON error được trả về dưới dạng blob
+        const text = await response.data.text();
+        const errorData = JSON.parse(text);
+        throw new Error(errorData.message || 'Không thể xuất file');
+      }
+      
+      // Tạo blob từ response data (API trả về blob với responseType: 'blob')
+      const blob = new Blob([response.data], { 
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+      });
+      
+      // Tạo URL từ blob
+      const url = window.URL.createObjectURL(blob);
+      
+      // Tạo link download
+      const link = document.createElement('a');
+      link.href = url;
+      
+      // Lấy tên file từ Content-Disposition header hoặc tạo mới
+      const contentDisposition = response.headers['content-disposition'];
+      let filename = `audit-logs-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}.xlsx`;
+      if (contentDisposition) {
+        const filenameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+        if (filenameMatch && filenameMatch[1]) {
+          filename = filenameMatch[1].replace(/['"]/g, '');
+        }
+      }
+      link.download = filename;
+      
+      // Trigger download
+      document.body.appendChild(link);
+      link.click();
+      
+      // Cleanup
+      setTimeout(() => {
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(url);
+      }, 100);
+      
+      toast.success('Đã xuất file thành công!', { id: 'audit-export' });
     } catch (error) {
       console.error('Error exporting logs:', error);
+      
+      // Xử lý lỗi từ blob response (JSON error)
+      if (error.response?.data && error.response.data instanceof Blob) {
+        try {
+          const text = await error.response.data.text();
+          const errorData = JSON.parse(text);
+          toast.error(errorData.message || 'Không thể xuất file', { id: 'audit-export' });
+          return;
+        } catch (parseError) {
+          // Nếu không parse được, có thể là file thực sự - nhưng đây là error nên không xử lý
+        }
+      }
+      
+      toast.error(
+        error.response?.data?.message || error.message || 'Không thể xuất file. Vui lòng thử lại.',
+        { id: 'audit-export' }
+      );
     }
   };
 
@@ -174,6 +238,32 @@ const AuditLogs = () => {
       hour: '2-digit',
       minute: '2-digit'
     });
+  };
+
+  // Helper function để tạo unique key - luôn đảm bảo trả về string và unique
+  const getUniqueKey = (item, idx) => {
+    let idPart = '';
+    
+    if (item._id) {
+      if (typeof item._id === 'string' && item._id.trim() !== '' && item._id !== '[object Object]') {
+        idPart = item._id;
+      } else if (typeof item._id === 'object' && item._id !== null) {
+        const nestedId = item._id._id || item._id.id;
+        if (nestedId && typeof nestedId === 'string' && nestedId !== '[object Object]') {
+          idPart = nestedId;
+        }
+      }
+    }
+    
+    if (!idPart || idPart === '[object Object]') {
+      const timestamp = item.timestamp ? String(new Date(item.timestamp).getTime()) : '';
+      const username = String(item.username || '');
+      const action = String(item.action || '');
+      const module = String(item.module || '');
+      idPart = `${timestamp}-${username}-${action}-${module}`;
+    }
+    
+    return `auditlog-${idx}-${idPart}`;
   };
 
   // Available options for filters
@@ -445,8 +535,8 @@ const AuditLogs = () => {
                   </td>
                 </tr>
               ) : (
-                logs.map((log) => (
-                  <tr key={log._id} className="hover:bg-gray-50">
+                logs.map((log, idx) => (
+                  <tr key={getUniqueKey(log, idx)} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                       {formatDate(log.timestamp)}
                     </td>

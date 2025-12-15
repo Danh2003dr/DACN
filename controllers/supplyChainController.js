@@ -3,7 +3,9 @@ const SupplyChain = require('../models/SupplyChain');
 const Drug = require('../models/Drug');
 const User = require('../models/User');
 const blockchainService = require('../services/blockchainService');
+const geocodeService = require('../services/geocodeService');
 const getServerUrl = require('../utils/getServerUrl');
+const mongoose = require('mongoose');
 
 const supplyChainEvents = new EventEmitter();
 const emitSupplyChainEvent = (type, payload) => {
@@ -26,6 +28,22 @@ const createSupplyChain = async (req, res) => {
       return res.status(403).json({
         success: false,
         message: 'Không có quyền tạo hành trình chuỗi cung ứng'
+      });
+    }
+    
+    // Validate input
+    if (!drugId || !drugBatchNumber) {
+      return res.status(400).json({
+        success: false,
+        message: 'Vui lòng cung cấp đầy đủ thông tin: drugId và drugBatchNumber'
+      });
+    }
+    
+    // Validate MongoDB ObjectId
+    if (!mongoose.Types.ObjectId.isValid(drugId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'ID thuốc không hợp lệ'
       });
     }
     
@@ -150,11 +168,29 @@ const createSupplyChain = async (req, res) => {
       actors: supplyChain.actors
     });
     
+    // Populate before sending response
+    const populatedSupplyChain = await SupplyChain.findById(supplyChain._id)
+      .populate({
+        path: 'drugId',
+        select: 'name genericName manufacturer dosageForm activeIngredient',
+        options: { lean: false }
+      })
+      .populate({
+        path: 'createdBy',
+        select: 'fullName role',
+        options: { lean: false }
+      })
+      .populate({
+        path: 'steps.actorId',
+        select: 'fullName role organizationInfo',
+        options: { lean: false }
+      });
+    
     res.status(201).json({
       success: true,
       message: 'Tạo hành trình chuỗi cung ứng thành công',
       data: {
-        supplyChain
+        supplyChain: populatedSupplyChain
       }
     });
     
@@ -174,6 +210,22 @@ const addSupplyChainStep = async (req, res) => {
   try {
     const { id } = req.params;
     const { action, location, conditions, metadata, qualityChecks, handover } = req.body;
+    
+    // Validate input
+    if (!action) {
+      return res.status(400).json({
+        success: false,
+        message: 'Hành động là bắt buộc'
+      });
+    }
+    
+    // Validate MongoDB ObjectId
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'ID hành trình không hợp lệ'
+      });
+    }
     
     const supplyChain = await SupplyChain.findById(id);
     if (!supplyChain) {
@@ -203,6 +255,25 @@ const addSupplyChainStep = async (req, res) => {
       }
     }
     
+    // Geocode địa chỉ nếu có address nhưng chưa có coordinates
+    let processedLocation = location || req.user.location || null;
+    
+    if (processedLocation && processedLocation.address && !processedLocation.coordinates) {
+      console.log(`📍 Geocoding address: "${processedLocation.address}"`);
+      const coordinates = await geocodeService.geocodeToCoordinates(processedLocation.address);
+      
+      if (coordinates && coordinates.length === 2) {
+        processedLocation = {
+          ...processedLocation,
+          coordinates: coordinates,
+          type: 'Point' // MongoDB GeoJSON type
+        };
+        console.log(`✅ Geocoded to coordinates: [${coordinates[1]}, ${coordinates[0]}]`); // Log lat, lng để dễ đọc
+      } else {
+        console.warn(`⚠️ Không thể geocode địa chỉ: "${processedLocation.address}"`);
+      }
+    }
+    
     // Tạo bước mới
     const newStep = {
       stepType: getStepType(req.user.role),
@@ -211,7 +282,7 @@ const addSupplyChainStep = async (req, res) => {
       actorRole: req.user.role,
       action,
       timestamp: new Date(),
-      location: location || req.user.location || null,
+      location: processedLocation,
       conditions: conditions || null,
       metadata: metadata || {},
       verificationMethod: 'manual'
@@ -237,14 +308,24 @@ const addSupplyChainStep = async (req, res) => {
     }
     
     supplyChain.steps.push(newStep);
+    
+    // Cập nhật currentLocation với coordinates đã geocode (nếu có)
+    const finalCoordinates = processedLocation?.coordinates || req.user.location?.coordinates;
     supplyChain.currentLocation = {
       actorId: req.user._id,
       actorName: req.user.fullName,
       actorRole: req.user.role,
-      address: (location && location.address) || req.user.location?.address,
-      coordinates: location?.coordinates || req.user.location?.coordinates,
+      address: processedLocation?.address || req.user.location?.address,
+      coordinates: finalCoordinates,
       lastUpdated: new Date()
     };
+    
+    // Log để debug
+    if (finalCoordinates && finalCoordinates.length === 2) {
+      console.log(`✅ Updated currentLocation with coordinates: [${finalCoordinates[1]}, ${finalCoordinates[0]}] (lat, lng)`);
+    } else {
+      console.warn(`⚠️ No coordinates for currentLocation. Address: "${supplyChain.currentLocation.address}"`);
+    }
     
     if (qualityChecks && qualityChecks.length > 0) {
       supplyChain.qualityChecks = supplyChain.qualityChecks || [];
@@ -296,12 +377,30 @@ const addSupplyChainStep = async (req, res) => {
       status: supplyChain.status
     });
     
+    // Populate before sending response
+    const populatedSupplyChain = await SupplyChain.findById(supplyChain._id)
+      .populate({
+        path: 'drugId',
+        select: 'name genericName manufacturer dosageForm',
+        options: { lean: false }
+      })
+      .populate({
+        path: 'steps.actorId',
+        select: 'fullName role organizationInfo',
+        options: { lean: false }
+      })
+      .populate({
+        path: 'currentLocation.actorId',
+        select: 'fullName role organizationInfo',
+        options: { lean: false }
+      });
+    
     res.status(200).json({
       success: true,
       message: 'Thêm bước thành công',
       data: {
         step: newStep,
-        supplyChain
+        supplyChain: populatedSupplyChain
       }
     });
     
@@ -321,11 +420,45 @@ const getSupplyChain = async (req, res) => {
   try {
     const { id } = req.params;
     
+    // Validate MongoDB ObjectId
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'ID hành trình không hợp lệ'
+      });
+    }
+    
     const supplyChain = await SupplyChain.findById(id)
-      .populate('drugId', 'name genericName manufacturer dosageForm')
-      .populate('steps.actorId', 'fullName role organizationInfo')
-      .populate('qualityChecks.checkedBy', 'fullName')
-      .populate('accessLog.accessedBy', 'fullName role');
+      .populate({
+        path: 'drugId',
+        select: 'name genericName manufacturer dosageForm activeIngredient batchNumber drugId description',
+        options: { lean: false }
+      })
+      .populate({
+        path: 'steps.actorId',
+        select: 'fullName role organizationInfo phone email',
+        options: { lean: false }
+      })
+      .populate({
+        path: 'qualityChecks.checkedBy',
+        select: 'fullName role',
+        options: { lean: false }
+      })
+      .populate({
+        path: 'accessLog.accessedBy',
+        select: 'fullName role',
+        options: { lean: false }
+      })
+      .populate({
+        path: 'currentLocation.actorId',
+        select: 'fullName role organizationInfo',
+        options: { lean: false }
+      })
+      .populate({
+        path: 'createdBy',
+        select: 'fullName role',
+        options: { lean: false }
+      });
     
     if (!supplyChain) {
       return res.status(404).json({
@@ -375,9 +508,26 @@ const getSupplyChainByQR = async (req, res) => {
     const { batchNumber } = req.params;
     
     const supplyChain = await SupplyChain.findOne({ drugBatchNumber: batchNumber })
-      .populate('drugId', 'name genericName manufacturer dosageForm description')
-      .populate('steps.actorId', 'fullName role organizationInfo')
-      .populate('qualityChecks.checkedBy', 'fullName');
+      .populate({
+        path: 'drugId',
+        select: 'name genericName manufacturer dosageForm description activeIngredient batchNumber',
+        options: { lean: false }
+      })
+      .populate({
+        path: 'steps.actorId',
+        select: 'fullName role organizationInfo',
+        options: { lean: false }
+      })
+      .populate({
+        path: 'qualityChecks.checkedBy',
+        select: 'fullName role',
+        options: { lean: false }
+      })
+      .populate({
+        path: 'currentLocation.actorId',
+        select: 'fullName role organizationInfo',
+        options: { lean: false }
+      });
     
     if (!supplyChain) {
       return res.status(404).json({
@@ -454,9 +604,26 @@ const getSupplyChains = async (req, res) => {
     // Admin và Patient xem tất cả (không filter)
     
     const supplyChains = await SupplyChain.find(filter)
-      .populate('drugId', 'name genericName manufacturer activeIngredient dosage form batchNumber')
-      .populate('steps.actorId', 'fullName role organizationInfo')
-      .populate('currentLocation.actorId', 'fullName role')
+      .populate({
+        path: 'drugId',
+        select: 'name genericName manufacturer activeIngredient dosageForm batchNumber drugId',
+        options: { lean: false }
+      })
+      .populate({
+        path: 'steps.actorId',
+        select: 'fullName role organizationInfo',
+        options: { lean: false }
+      })
+      .populate({
+        path: 'currentLocation.actorId',
+        select: 'fullName role organizationInfo',
+        options: { lean: false }
+      })
+      .populate({
+        path: 'createdBy',
+        select: 'fullName role',
+        options: { lean: false }
+      })
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parseInt(limit));
@@ -497,6 +664,22 @@ const recallSupplyChain = async (req, res) => {
       return res.status(403).json({
         success: false,
         message: 'Không có quyền thu hồi thuốc'
+      });
+    }
+    
+    // Validate input
+    if (!reason || reason.trim().length < 10) {
+      return res.status(400).json({
+        success: false,
+        message: 'Lý do thu hồi phải có ít nhất 10 ký tự'
+      });
+    }
+    
+    // Validate MongoDB ObjectId
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'ID hành trình không hợp lệ'
       });
     }
     
@@ -647,6 +830,10 @@ const buildActorProfile = async (participant = {}) => {
 };
 
 const getSupplyChainMapData = async (req, res) => {
+  console.log('🗺️ ========== getSupplyChainMapData CALLED ==========');
+  console.log('🗺️ Request query:', req.query);
+  console.log('🗺️ Request method:', req.method);
+  console.log('🗺️ Request URL:', req.originalUrl);
   try {
     const { status, role } = req.query;
     const filter = {};
@@ -657,11 +844,189 @@ const getSupplyChainMapData = async (req, res) => {
       filter['currentLocation.actorRole'] = role;
     }
     
+    console.log('[getSupplyChainMapData] Filter:', filter);
+    
     const supplyChains = await SupplyChain.find(filter)
       .select('drugBatchNumber status currentLocation steps drugId actors')
-      .populate('drugId', 'name');
+      .populate({
+        path: 'drugId',
+        select: 'name genericName',
+        options: { lean: false }
+      })
+      .populate({
+        path: 'currentLocation.actorId',
+        select: 'fullName role organizationInfo',
+        options: { lean: false }
+      });
     
-    const data = supplyChains.map(chain => ({
+    console.log('[getSupplyChainMapData] Found supply chains:', supplyChains.length);
+    
+    // Process supply chains và geocode các address chưa có coordinates
+    const dataPromises = supplyChains.map(async (chain) => {
+      // Geocode currentLocation nếu có address nhưng chưa có coordinates
+      let currentLocation = chain.currentLocation;
+      
+      // Handle currentLocation có thể là object hoặc null
+      if (currentLocation) {
+        // Convert to object nếu cần
+        if (currentLocation.toObject) {
+          currentLocation = currentLocation.toObject();
+        }
+        
+        console.log(`🔍 Checking currentLocation for ${chain.drugBatchNumber}:`, {
+          hasAddress: !!currentLocation.address,
+          address: currentLocation.address,
+          hasCoordinates: !!currentLocation.coordinates,
+          coordinates: currentLocation.coordinates,
+          coordinatesType: typeof currentLocation.coordinates,
+          isArray: Array.isArray(currentLocation.coordinates)
+        });
+        
+        // Kiểm tra nếu có address nhưng chưa có coordinates hợp lệ
+        // coordinates có thể là: null, undefined, [], hoặc [lng, lat]
+        const hasValidCoordinates = currentLocation.coordinates && 
+                                   Array.isArray(currentLocation.coordinates) && 
+                                   currentLocation.coordinates.length === 2 &&
+                                   !isNaN(currentLocation.coordinates[0]) &&
+                                   !isNaN(currentLocation.coordinates[1]) &&
+                                   currentLocation.coordinates[0] !== null &&
+                                   currentLocation.coordinates[1] !== null;
+        
+        console.log(`🔍 Validation for ${chain.drugBatchNumber}:`, {
+          hasAddress: !!currentLocation.address,
+          address: currentLocation.address,
+          hasCoordinates: !!currentLocation.coordinates,
+          coordinatesType: Array.isArray(currentLocation.coordinates) ? 'array' : typeof currentLocation.coordinates,
+          coordinatesLength: Array.isArray(currentLocation.coordinates) ? currentLocation.coordinates.length : 'N/A',
+          coordinatesValue: currentLocation.coordinates,
+          hasValidCoordinates: hasValidCoordinates,
+          shouldGeocode: !!(currentLocation.address && !hasValidCoordinates)
+        });
+        
+        if (currentLocation.address && !hasValidCoordinates) {
+          console.log(`📍 Geocoding currentLocation for batch ${chain.drugBatchNumber}: "${currentLocation.address}"`);
+          try {
+            const coordinates = await geocodeService.geocodeToCoordinates(currentLocation.address);
+            if (coordinates && coordinates.length === 2) {
+              currentLocation = {
+                ...currentLocation,
+                coordinates: coordinates
+              };
+              console.log(`✅ Geocoded currentLocation: [${coordinates[1]}, ${coordinates[0]}] (lat, lng)`);
+            } else {
+              console.warn(`⚠️ Không thể geocode currentLocation: "${currentLocation.address}" - geocodeService returned:`, coordinates);
+            }
+          } catch (error) {
+            console.error(`❌ Geocoding error for "${currentLocation.address}":`, error.message);
+          }
+        } else if (!currentLocation.address) {
+          console.warn(`⚠️ currentLocation for ${chain.drugBatchNumber} không có address`);
+        } else if (hasValidCoordinates) {
+          console.log(`✅ currentLocation đã có coordinates hợp lệ: [${currentLocation.coordinates[1]}, ${currentLocation.coordinates[0]}]`);
+        }
+      } else {
+        console.warn(`⚠️ Chain ${chain.drugBatchNumber} không có currentLocation`);
+      }
+      
+      // Process steps và geocode nếu cần
+      console.log(`🔍 Processing ${chain.steps?.length || 0} steps for ${chain.drugBatchNumber}`);
+      const pathPromises = (chain.steps || []).map(async (step, stepIndex) => {
+        let stepLocation = step.location;
+        let address = null;
+        
+        console.log(`  Step ${stepIndex + 1} (${step.action}):`, {
+          hasLocation: !!stepLocation,
+          locationType: typeof stepLocation,
+          locationIsArray: Array.isArray(stepLocation),
+          location: stepLocation
+        });
+        
+        // Handle location có thể là object hoặc string
+        if (!stepLocation) {
+          console.warn(`  ⚠️ Step ${stepIndex + 1} không có location`);
+          return null;
+        }
+        
+        // Convert toObject nếu là Mongoose document
+        if (stepLocation.toObject && typeof stepLocation.toObject === 'function') {
+          stepLocation = stepLocation.toObject();
+        }
+        
+        // Nếu location là string (địa chỉ đơn giản)
+        if (typeof stepLocation === 'string') {
+          address = stepLocation;
+          stepLocation = { address: address };
+          console.log(`  ✅ Converted location string to object: "${address}"`);
+        } else if (stepLocation.address) {
+          address = stepLocation.address;
+        } else {
+          console.warn(`  ⚠️ Step ${stepIndex + 1} location không có address property:`, Object.keys(stepLocation));
+        }
+        
+        // Nếu có coordinates hợp lệ, dùng luôn
+        const hasValidStepCoordinates = stepLocation?.coordinates && 
+                                       Array.isArray(stepLocation.coordinates) && 
+                                       stepLocation.coordinates.length === 2 &&
+                                       !isNaN(stepLocation.coordinates[0]) &&
+                                       !isNaN(stepLocation.coordinates[1]);
+        
+        if (hasValidStepCoordinates) {
+          return {
+            coordinates: stepLocation.coordinates,
+            address: address || stepLocation.address || null,
+            action: step.action,
+            actorRole: step.actorRole,
+            timestamp: step.timestamp
+          };
+        }
+        
+        // Nếu có address nhưng chưa có coordinates hợp lệ, geocode
+        if (address) {
+          console.log(`📍 Geocoding step "${step.action}" for batch ${chain.drugBatchNumber}: "${address}"`);
+          try {
+            const coordinates = await geocodeService.geocodeToCoordinates(address);
+            if (coordinates && coordinates.length === 2) {
+              console.log(`✅ Geocoded step "${step.action}": [${coordinates[1]}, ${coordinates[0]}] (lat, lng)`);
+              return {
+                coordinates: coordinates,
+                address: address,
+                action: step.action,
+                actorRole: step.actorRole,
+                timestamp: step.timestamp
+              };
+            } else {
+              console.warn(`⚠️ Không thể geocode địa chỉ cho step "${step.action}": "${address}" - geocodeService returned:`, coordinates);
+            }
+          } catch (error) {
+            console.error(`❌ Geocoding error for step "${step.action}":`, error.message);
+          }
+        }
+        
+        // Không có đủ thông tin, return null để filter
+        console.warn(`  ⚠️ Step ${stepIndex + 1} không có đủ thông tin để hiển thị trên bản đồ`);
+        return null;
+      });
+      
+      const path = (await Promise.all(pathPromises)).filter(item => item !== null);
+      console.log(`✅ Processed path for ${chain.drugBatchNumber}: ${path.length} points`);
+      
+      // Clean up currentLocation: Nếu coordinates là mảng rỗng, set thành undefined
+      if (currentLocation) {
+        if (Array.isArray(currentLocation.coordinates) && currentLocation.coordinates.length === 0) {
+          console.log(`🧹 Cleaning empty coordinates array for ${chain.drugBatchNumber}`);
+          delete currentLocation.coordinates;
+        }
+        
+        // Log final currentLocation state
+        console.log(`📤 Final currentLocation for ${chain.drugBatchNumber}:`, {
+          hasAddress: !!currentLocation.address,
+          address: currentLocation.address,
+          hasCoordinates: !!currentLocation.coordinates,
+          coordinates: currentLocation.coordinates
+        });
+      }
+      
+      return {
       id: chain._id,
       batchNumber: chain.drugBatchNumber,
       status: chain.status,
@@ -669,18 +1034,22 @@ const getSupplyChainMapData = async (req, res) => {
         id: chain.drugId._id,
         name: chain.drugId.name
       } : null,
-      currentLocation: chain.currentLocation,
+        currentLocation: currentLocation,
       actors: chain.actors,
-      path: (chain.steps || [])
-        .filter(step => step.location?.coordinates?.length === 2)
-        .map(step => ({
-          coordinates: step.location.coordinates,
-          address: step.location.address,
-          action: step.action,
-          actorRole: step.actorRole,
-          timestamp: step.timestamp
-        }))
-    }));
+        path: path
+      };
+    });
+    
+    const data = await Promise.all(dataPromises);
+    
+    // Log summary
+    const totalPoints = data.reduce((sum, chain) => {
+      return sum + (chain.path?.length || 0) + (chain.currentLocation?.coordinates ? 1 : 0);
+    }, 0);
+    console.log(`🗺️ Map data summary: ${data.length} chains, ${totalPoints} total points`);
+    data.forEach((chain, idx) => {
+      console.log(`  Chain ${idx + 1} (${chain.batchNumber}): ${chain.path?.length || 0} path points, ${chain.currentLocation?.coordinates ? '1' : '0'} currentLocation`);
+    });
     
     res.status(200).json({
       success: true,
@@ -722,6 +1091,100 @@ const subscribeSupplyChainEvents = (req, res) => {
   });
 };
 
+// @route   POST /api/supply-chain/bulk-delete
+// @desc    Xóa nhiều chuỗi cung ứng
+// @access  Private (Admin)
+const bulkDeleteSupplyChains = async (req, res) => {
+  try {
+    const { ids } = req.body;
+    
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Vui lòng cung cấp danh sách ID để xóa'
+      });
+    }
+
+    const result = await SupplyChain.deleteMany({ _id: { $in: ids } });
+    
+    res.status(200).json({
+      success: true,
+      message: `Đã xóa ${result.deletedCount} hành trình`,
+      deletedCount: result.deletedCount
+    });
+  } catch (error) {
+    console.error('Bulk delete supply chains error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Lỗi server khi xóa hành trình'
+    });
+  }
+};
+
+// @route   GET /api/supply-chain/export
+// @desc    Export chuỗi cung ứng ra CSV/Excel
+// @access  Private
+const exportSupplyChains = async (req, res) => {
+  try {
+    const { format = 'csv', ...queryParams } = req.query;
+    const importExportService = require('../services/importExportService');
+    
+    // Build filter từ query params
+    const filter = {};
+    if (queryParams.status) filter.status = queryParams.status;
+    if (queryParams.role) filter['currentLocation.actorRole'] = queryParams.role;
+    if (queryParams.search) {
+      filter.$or = [
+        { drugBatchNumber: { $regex: queryParams.search, $options: 'i' } },
+        { 'drugId.name': { $regex: queryParams.search, $options: 'i' } }
+      ];
+    }
+
+    const supplyChains = await SupplyChain.find(filter)
+      .populate({
+        path: 'drugId',
+        select: 'name activeIngredient genericName',
+        options: { lean: false }
+      })
+      .populate({
+        path: 'createdBy',
+        select: 'fullName role',
+        options: { lean: false }
+      })
+      .populate({
+        path: 'steps.actorId',
+        select: 'fullName role',
+        options: { lean: false }
+      })
+      .lean() // Convert to plain objects for export
+      .limit(parseInt(queryParams.limit) || 10000);
+
+    if (format === 'csv') {
+      const csv = await importExportService.exportSupplyChainsToCSV(supplyChains);
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename=supply-chains-${Date.now()}.csv`);
+      res.send(Buffer.from('\ufeff' + csv, 'utf-8'));
+    } else if (format === 'xlsx' || format === 'xls') {
+      const workbook = await importExportService.exportSupplyChainsToExcel(supplyChains);
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', `attachment; filename=supply-chains-${Date.now()}.xlsx`);
+      await workbook.xlsx.write(res);
+      res.end();
+    } else {
+      return res.status(400).json({
+        success: false,
+        message: 'Định dạng không hợp lệ. Chỉ hỗ trợ CSV hoặc XLSX'
+      });
+    }
+  } catch (error) {
+    console.error('Export supply chains error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Lỗi server khi xuất file'
+    });
+  }
+};
+
 module.exports = {
   createSupplyChain,
   addSupplyChainStep,
@@ -730,5 +1193,7 @@ module.exports = {
   getSupplyChains,
   recallSupplyChain,
   getSupplyChainMapData,
-  subscribeSupplyChainEvents
+  subscribeSupplyChainEvents,
+  bulkDeleteSupplyChains,
+  exportSupplyChains
 };

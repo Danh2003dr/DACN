@@ -2,6 +2,66 @@ const Task = require('../models/Task');
 const User = require('../models/User');
 const SupplyChain = require('../models/SupplyChain');
 const Drug = require('../models/Drug');
+const mongoose = require('mongoose');
+
+/**
+ * Helper function để chuẩn hóa ObjectId từ request body hoặc params
+ * Xử lý trường hợp ObjectId là object thay vì string
+ */
+function normalizeObjectId(id) {
+  if (!id) {
+    return null;
+  }
+  
+  // Nếu đã là string hợp lệ, trả về ngay
+  if (typeof id === 'string' && mongoose.Types.ObjectId.isValid(id)) {
+    return id;
+  }
+  
+  // Nếu đã là ObjectId instance, chuyển về string
+  if (mongoose.Types.ObjectId.isValid(id)) {
+    return String(id);
+  }
+  
+  // Nếu là object với các keys như '0', '1', '2'... (char array)
+  if (typeof id === 'object' && id !== null) {
+    if (Object.keys(id).every(key => /^\d+$/.test(key))) {
+      // Object có dạng { '0': '6', '1': '9', ... }
+      const normalized = Object.keys(id)
+        .sort((a, b) => parseInt(a) - parseInt(b))
+        .map(key => id[key])
+        .join('');
+      
+      if (mongoose.Types.ObjectId.isValid(normalized)) {
+        return normalized;
+      }
+    }
+    
+    // Thử lấy _id, id, hoặc giá trị đầu tiên
+    if (id._id) {
+      return normalizeObjectId(id._id);
+    }
+    if (id.id) {
+      return normalizeObjectId(id.id);
+    }
+    
+    // Thử toString() nếu có
+    if (id.toString && typeof id.toString === 'function') {
+      const str = id.toString();
+      if (mongoose.Types.ObjectId.isValid(str)) {
+        return str;
+      }
+    }
+  }
+  
+  // Cuối cùng, thử convert sang string
+  const str = String(id);
+  if (mongoose.Types.ObjectId.isValid(str)) {
+    return str;
+  }
+  
+  return null;
+}
 
 // @desc    Tạo nhiệm vụ mới
 // @route   POST /api/tasks
@@ -25,8 +85,33 @@ const createTask = async (req, res) => {
       cost
     } = req.body;
 
+    // Normalize assignedTo để đảm bảo là string ID hợp lệ
+    let normalizedAssignedTo = assignedTo;
+    if (assignedTo) {
+      if (typeof assignedTo === 'object' && assignedTo !== null) {
+        normalizedAssignedTo = assignedTo._id?.toString() || assignedTo.id?.toString() || String(assignedTo);
+      } else {
+        normalizedAssignedTo = String(assignedTo);
+      }
+      
+      // Validate ObjectId format
+      if (!mongoose.Types.ObjectId.isValid(normalizedAssignedTo)) {
+        console.error('Invalid assignedTo ID:', { original: assignedTo, normalized: normalizedAssignedTo });
+        return res.status(400).json({
+          success: false,
+          message: 'ID người được giao nhiệm vụ không hợp lệ'
+        });
+      }
+    }
+
+    console.log('📥 Creating task:', { 
+      title, 
+      assignedTo: normalizedAssignedTo, 
+      assignedToType: typeof normalizedAssignedTo 
+    });
+
     // Kiểm tra người được giao nhiệm vụ
-    const assignedUser = await User.findById(assignedTo);
+    const assignedUser = await User.findById(normalizedAssignedTo);
     if (!assignedUser) {
       return res.status(404).json({
         success: false,
@@ -35,7 +120,7 @@ const createTask = async (req, res) => {
     }
 
     // Kiểm tra quyền giao nhiệm vụ
-    if (!['admin', 'manufacturer', 'distributor'].includes(req.user.role) && req.user._id.toString() !== assignedTo) {
+    if (!['admin', 'manufacturer', 'distributor'].includes(req.user.role) && req.user._id.toString() !== normalizedAssignedTo) {
       return res.status(403).json({
         success: false,
         message: 'Không có quyền giao nhiệm vụ cho người này'
@@ -49,7 +134,7 @@ const createTask = async (req, res) => {
       type,
       priority,
       dueDate: new Date(dueDate),
-      assignedTo,
+      assignedTo: normalizedAssignedTo,
       assignedBy: req.user._id,
       relatedSupplyChain,
       relatedDrug,
@@ -64,11 +149,20 @@ const createTask = async (req, res) => {
     const task = new Task(taskData);
     await task.save();
 
+    // Thêm update đầu tiên vào lịch sử khi tạo task
+    await task.addUpdate({
+      status: task.status,
+      progress: task.progress,
+      updateText: `Nhiệm vụ đã được tạo và giao cho ${assignedUser.fullName}`,
+      updatedBy: req.user._id,
+      isPublic: true
+    });
+
     // Thêm thông báo cho người được giao nhiệm vụ
     await task.addNotification({
       type: 'assignment',
       message: `Bạn đã được giao nhiệm vụ mới: ${title}`,
-      sentTo: assignedTo
+      sentTo: normalizedAssignedTo
     });
 
     // Populate để trả về thông tin đầy đủ
@@ -76,7 +170,8 @@ const createTask = async (req, res) => {
       { path: 'assignedTo', select: 'fullName email role' },
       { path: 'assignedBy', select: 'fullName email role' },
       { path: 'relatedSupplyChain', select: 'drugBatchNumber' },
-      { path: 'relatedDrug', select: 'name batchNumber' }
+      { path: 'relatedDrug', select: 'name batchNumber' },
+      { path: 'updates.updatedBy', select: 'fullName email role' }
     ]);
 
     res.status(201).json({
@@ -207,7 +302,17 @@ const getTasks = async (req, res) => {
 // @access  Private
 const getTask = async (req, res) => {
   try {
-    const { id } = req.params;
+    let { id } = req.params;
+    
+    // Chuẩn hóa ID
+    id = normalizeObjectId(id);
+    
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        message: 'ID nhiệm vụ không hợp lệ'
+      });
+    }
 
     const task = await Task.findById(id)
       .populate('assignedTo', 'fullName email role avatar organizationInfo')
@@ -230,16 +335,41 @@ const getTask = async (req, res) => {
     // Kiểm tra quyền xem
     const canView = checkTaskViewPermission(req.user, task);
     if (!canView) {
+      console.log('Permission check failed:', {
+        userId: req.user._id,
+        userRole: req.user.role,
+        taskAssignedTo: task.assignedTo?._id || task.assignedTo,
+        taskAssignedBy: task.assignedBy?._id || task.assignedBy,
+        taskId: task._id
+      });
       return res.status(403).json({
         success: false,
         message: 'Không có quyền xem nhiệm vụ này'
       });
     }
 
+    // Log để debug updates
+    console.log('🔍 Task updates:', {
+      taskId: task._id,
+      updatesCount: task.updates?.length || 0,
+      updates: task.updates?.map(u => ({
+        status: u.status,
+        progress: u.progress,
+        updateText: u.updateText?.substring(0, 50),
+        updatedBy: u.updatedBy?._id || u.updatedBy,
+        updatedByPopulated: u.updatedBy?.fullName,
+        updatedAt: u.updatedAt,
+        isPublic: u.isPublic
+      })) || []
+    });
+
+    // Đảm bảo task được serialize đúng cách (convert to plain object)
+    const taskObj = task.toObject ? task.toObject() : task;
+
     res.status(200).json({
       success: true,
       data: {
-        task
+        task: taskObj
       }
     });
 
@@ -257,7 +387,18 @@ const getTask = async (req, res) => {
 // @access  Private
 const updateTask = async (req, res) => {
   try {
-    const { id } = req.params;
+    let { id } = req.params;
+    
+    // Chuẩn hóa ID
+    id = normalizeObjectId(id);
+    
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        message: 'ID nhiệm vụ không hợp lệ'
+      });
+    }
+    
     const updateData = req.body;
 
     const task = await Task.findById(id);
@@ -277,21 +418,67 @@ const updateTask = async (req, res) => {
       });
     }
 
+    // Lưu trạng thái cũ để so sánh
+    const oldStatus = task.status;
+    const oldProgress = task.progress;
+    
     // Cập nhật nhiệm vụ
-    const updatedTask = await Task.findByIdAndUpdate(
-      id,
-      updateData,
-      { new: true, runValidators: true }
-    ).populate([
+    Object.keys(updateData).forEach(key => {
+      if (updateData[key] !== undefined) {
+        task[key] = updateData[key];
+      }
+    });
+    
+    await task.save();
+
+    // Tự động ghi lại lịch sử nếu có thay đổi status hoặc progress
+    const statusChanged = updateData.status && updateData.status !== oldStatus;
+    const progressChanged = updateData.progress !== undefined && updateData.progress !== oldProgress;
+    
+    if (statusChanged || progressChanged) {
+      const updateText = [];
+      if (statusChanged) {
+        updateText.push(`Trạng thái thay đổi từ "${oldStatus}" sang "${updateData.status}"`);
+      }
+      if (progressChanged) {
+        updateText.push(`Tiến độ thay đổi từ ${oldProgress}% sang ${updateData.progress}%`);
+      }
+      
+      // Tạo update history entry
+      const historyUpdate = {
+        status: updateData.status || task.status,
+        progress: updateData.progress !== undefined ? updateData.progress : task.progress,
+        updateText: updateText.join('. ') || 'Cập nhật nhiệm vụ',
+        updatedBy: req.user._id,
+        isPublic: true
+      };
+      
+      await task.addUpdate(historyUpdate);
+      
+      // Thông báo cho người giao nhiệm vụ (nếu khác người cập nhật)
+      const assignedById = normalizeObjectId(task.assignedBy?._id || task.assignedBy);
+      const userId = normalizeObjectId(req.user._id);
+      if (assignedById && userId && assignedById !== userId) {
+        await task.addNotification({
+          type: 'update',
+          message: `Nhiệm vụ "${task.title}" đã được cập nhật bởi ${req.user.fullName}`,
+          sentTo: task.assignedBy
+        });
+      }
+    }
+
+    // Populate để trả về thông tin đầy đủ
+    await task.populate([
       { path: 'assignedTo', select: 'fullName email role' },
-      { path: 'assignedBy', select: 'fullName email role' }
+      { path: 'assignedBy', select: 'fullName email role' },
+      { path: 'updates.updatedBy', select: 'fullName email role' }
     ]);
 
     res.status(200).json({
       success: true,
       message: 'Cập nhật nhiệm vụ thành công',
       data: {
-        task: updatedTask
+        task
       }
     });
 
@@ -309,7 +496,18 @@ const updateTask = async (req, res) => {
 // @access  Private
 const addTaskUpdate = async (req, res) => {
   try {
-    const { id } = req.params;
+    let { id } = req.params;
+    
+    // Chuẩn hóa ID
+    id = normalizeObjectId(id);
+    
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        message: 'ID nhiệm vụ không hợp lệ'
+      });
+    }
+    
     const { status, progress, updateText, attachments = [], isPublic = true } = req.body;
 
     const task = await Task.findById(id);
@@ -379,7 +577,18 @@ const addTaskUpdate = async (req, res) => {
 // @access  Private
 const rateTask = async (req, res) => {
   try {
-    const { id } = req.params;
+    let { id } = req.params;
+    
+    // Chuẩn hóa ID
+    id = normalizeObjectId(id);
+    
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        message: 'ID nhiệm vụ không hợp lệ'
+      });
+    }
+    
     const { rating, comment } = req.body;
 
     const task = await Task.findById(id);
@@ -391,7 +600,9 @@ const rateTask = async (req, res) => {
     }
 
     // Kiểm tra quyền đánh giá (người giao nhiệm vụ hoặc admin)
-    const canRate = task.assignedBy.toString() === req.user._id.toString() || req.user.role === 'admin';
+    const assignedById = normalizeObjectId(task.assignedBy?._id || task.assignedBy);
+    const userId = normalizeObjectId(req.user._id);
+    const canRate = (assignedById && userId && assignedById === userId) || req.user.role === 'admin';
     if (!canRate) {
       return res.status(403).json({
         success: false,
@@ -431,7 +642,17 @@ const rateTask = async (req, res) => {
 // @access  Private (Admin only)
 const deleteTask = async (req, res) => {
   try {
-    const { id } = req.params;
+    let { id } = req.params;
+    
+    // Chuẩn hóa ID
+    id = normalizeObjectId(id);
+    
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        message: 'ID nhiệm vụ không hợp lệ'
+      });
+    }
 
     // Chỉ admin mới có quyền xóa
     if (req.user.role !== 'admin') {
@@ -549,11 +770,16 @@ const checkTaskViewPermission = (user, task) => {
   // Admin xem được tất cả
   if (user.role === 'admin') return true;
   
+  // Chuẩn hóa IDs để so sánh
+  const userId = normalizeObjectId(user._id);
+  const assignedToId = normalizeObjectId(task.assignedTo?._id || task.assignedTo);
+  const assignedById = normalizeObjectId(task.assignedBy?._id || task.assignedBy);
+  
   // Người được giao nhiệm vụ xem được
-  if (task.assignedTo.toString() === user._id.toString()) return true;
+  if (assignedToId && userId && assignedToId === userId) return true;
   
   // Người giao nhiệm vụ xem được
-  if (task.assignedBy.toString() === user._id.toString()) return true;
+  if (assignedById && userId && assignedById === userId) return true;
   
   return false;
 };
@@ -562,11 +788,16 @@ const checkTaskUpdatePermission = (user, task) => {
   // Admin cập nhật được tất cả
   if (user.role === 'admin') return true;
   
+  // Chuẩn hóa IDs để so sánh
+  const userId = normalizeObjectId(user._id);
+  const assignedToId = normalizeObjectId(task.assignedTo?._id || task.assignedTo);
+  const assignedById = normalizeObjectId(task.assignedBy?._id || task.assignedBy);
+  
   // Người được giao nhiệm vụ cập nhật được
-  if (task.assignedTo.toString() === user._id.toString()) return true;
+  if (assignedToId && userId && assignedToId === userId) return true;
   
   // Người giao nhiệm vụ cập nhật được
-  if (task.assignedBy.toString() === user._id.toString()) return true;
+  if (assignedById && userId && assignedById === userId) return true;
   
   return false;
 };

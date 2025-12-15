@@ -10,11 +10,20 @@ const {
   getSupplyChains,
   recallSupplyChain,
   getSupplyChainMapData,
-  subscribeSupplyChainEvents
+  subscribeSupplyChainEvents,
+  bulkDeleteSupplyChains,
+  exportSupplyChains
 } = require('../controllers/supplyChainController');
 
 // Import middleware
 const { authenticate, authorize } = require('../middleware/auth');
+const { validate, validateQuery } = require('../utils/validation');
+const { 
+  createSupplyChainSchema, 
+  addSupplyChainStepSchema, 
+  recallSupplyChainSchema,
+  paginationSchema 
+} = require('../utils/validation');
 
 // @route   POST /api/supply-chain
 // @desc    Tạo hành trình chuỗi cung ứng mới
@@ -22,6 +31,7 @@ const { authenticate, authorize } = require('../middleware/auth');
 router.post('/',
   authenticate,
   authorize(['admin', 'manufacturer']),
+  validate(createSupplyChainSchema),
   createSupplyChain
 );
 
@@ -30,22 +40,56 @@ router.post('/',
 // @access  Private
 router.get('/',
   authenticate,
+  validateQuery(paginationSchema),
   getSupplyChains
 );
 
-router.get('/map/overview',
-  authenticate,
-  getSupplyChainMapData
-);
+// @route   GET /api/supply-chain/map/data
+// @desc    Lấy dữ liệu bản đồ chuỗi cung ứng
+// @access  Private
+// QUAN TRỌNG: Phải đặt TRƯỚC route /:id để tránh conflict
+router.get('/map/data', authenticate, (req, res, next) => {
+  console.log('[Route] /map/data called');
+  next();
+}, getSupplyChainMapData);
 
-router.get('/events/stream',
+// @route   GET /api/supply-chain/events
+// @desc    Đăng ký sự kiện real-time (SSE)
+// @access  Private
+// QUAN TRỌNG: Phải đặt TRƯỚC route /:id để tránh conflict
+router.get('/events',
   authenticate,
   subscribeSupplyChainEvents
 );
 
+// @route   POST /api/supply-chain/bulk-delete
+// @desc    Xóa nhiều chuỗi cung ứng
+// @access  Private (Admin)
+router.post('/bulk-delete',
+  authenticate,
+  authorize(['admin']),
+  bulkDeleteSupplyChains
+);
+
+// @route   GET /api/supply-chain/export
+// @desc    Export chuỗi cung ứng
+// @access  Private
+// QUAN TRỌNG: Phải đặt TRƯỚC route /:id để tránh conflict
+router.get('/export',
+  authenticate,
+  exportSupplyChains
+);
+
+// @route   GET /api/supply-chain/qr/:batchNumber
+// @desc    Truy xuất nguồn gốc qua QR code (Public)
+// @access  Public
+// QUAN TRỌNG: Phải đặt TRƯỚC route /:id để tránh conflict
+router.get('/qr/:batchNumber', getSupplyChainByQR);
+
 // @route   GET /api/supply-chain/:id
 // @desc    Lấy thông tin hành trình chi tiết
 // @access  Private
+// PHẢI ĐẶT CUỐI CÙNG để tránh match với các route cụ thể khác
 router.get('/:id',
   authenticate,
   getSupplyChain
@@ -56,6 +100,7 @@ router.get('/:id',
 // @access  Private
 router.post('/:id/steps',
   authenticate,
+  validate(addSupplyChainStepSchema),
   addSupplyChainStep
 );
 
@@ -65,12 +110,9 @@ router.post('/:id/steps',
 router.post('/:id/recall',
   authenticate,
   authorize(['admin', 'manufacturer']),
+  validate(recallSupplyChainSchema),
   recallSupplyChain
 );
 
-// @route   GET /api/supply-chain/qr/:batchNumber
-// @desc    Truy xuất nguồn gốc qua QR code (Public)
-// @access  Public
-router.get('/qr/:batchNumber', getSupplyChainByQR);
 
 module.exports = router;

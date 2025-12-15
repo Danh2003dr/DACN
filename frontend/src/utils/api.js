@@ -32,7 +32,7 @@ console.log('🔗 API Base URL:', apiUrl);
 
 const api = axios.create({
   baseURL: apiUrl,
-  timeout: 30000, // Tăng timeout lên 30s để tránh timeout khi backend chậm
+  timeout: 60000, // Tăng timeout lên 60s để tránh timeout khi backend chậm (đặc biệt cho blockchain)
   headers: {
     'Content-Type': 'application/json',
   },
@@ -313,6 +313,43 @@ export const userAPI = {
     const response = await api.get(`/users/organization/${organizationId}`);
     return response.data;
   },
+  
+  // Kiểm tra credit status (creditLimit, currentDebt, availableCredit)
+  // Thông tin này được trả về trong user object, nhưng có thể tạo endpoint riêng nếu cần
+  checkCreditStatus: async (userId = null) => {
+    // Nếu không có userId, lấy thông tin user hiện tại từ profile
+    if (!userId) {
+      const response = await api.get('/auth/me'); // Hoặc endpoint profile
+      if (response.data.success && response.data.data.user) {
+        const user = response.data.data.user;
+        return {
+          success: true,
+          data: {
+            creditLimit: user.creditLimit || 0,
+            currentDebt: user.currentDebt || 0,
+            availableCredit: (user.creditLimit || 0) - (user.currentDebt || 0),
+            canUseCredit: user.creditLimit > 0 && user.currentDebt < user.creditLimit
+          }
+        };
+      }
+      throw new Error('Không thể lấy thông tin credit');
+    }
+    // Nếu có userId, lấy thông tin user đó
+    const response = await api.get(`/users/${userId}`);
+    if (response.data.success && response.data.data.user) {
+      const user = response.data.data.user;
+      return {
+        success: true,
+        data: {
+          creditLimit: user.creditLimit || 0,
+          currentDebt: user.currentDebt || 0,
+          availableCredit: (user.creditLimit || 0) - (user.currentDebt || 0),
+          canUseCredit: user.creditLimit > 0 && user.currentDebt < user.creditLimit
+        }
+      };
+    }
+    throw new Error('Không thể lấy thông tin credit');
+  },
 };
 
 // Drug API
@@ -445,7 +482,9 @@ export const supplyChainAPI = {
 
   // Get supply chain by ID
   getSupplyChain: async (id) => {
-    const response = await api.get(`/supply-chain/${id}`);
+    // Đảm bảo id là string
+    const supplyChainId = typeof id === 'object' && id?.toString ? id.toString() : String(id);
+    const response = await api.get(`/supply-chain/${supplyChainId}`);
     return response.data;
   },
 
@@ -470,6 +509,29 @@ export const supplyChainAPI = {
   // Get supply chain by QR
   getByQR: async (batchNumber) => {
     const response = await api.get(`/supply-chain/qr/${batchNumber}`);
+    return response.data;
+  },
+
+  // Get supply chain map data
+  getMapData: async (params = '') => {
+    const url = params ? `/supply-chain/map/data?${params}` : '/supply-chain/map/data';
+    const response = await api.get(url);
+    return response.data;
+  },
+
+  // Bulk delete supply chains
+  bulkDelete: async (ids) => {
+    const response = await api.post('/supply-chain/bulk-delete', { ids });
+    return response.data;
+  },
+
+  // Export supply chains
+  export: async (params = '', format = 'csv') => {
+    // Params đã bao gồm format, không cần thêm
+    const url = params ? `/supply-chain/export?${params}` : `/supply-chain/export?format=${format}`;
+    const response = await api.get(url, {
+      responseType: 'blob'
+    });
     return response.data;
   }
 };
@@ -597,7 +659,10 @@ export const notificationAPI = {
 // Review API
 export const digitalSignatureAPI = {
   // Ký số cho một đối tượng
-  signDocument: (data) => api.post('/digital-signatures/sign', data),
+  signDocument: async (data) => {
+    const response = await api.post('/digital-signatures/sign', data);
+    return response.data;
+  },
   
   // Xác thực chữ ký số
   verifySignature: (data) => api.post('/digital-signatures/verify', data),
@@ -884,6 +949,15 @@ export const auditLogAPI = {
     return response.data;
   },
 
+  // Alias for getAuditStats (for consistency with other APIs)
+  getStats: async (params = {}) => {
+    const response = await api.get('/audit-logs/stats', { 
+      params,
+      skipErrorHandler: true // Bỏ qua error handler để tránh toast cho empty data
+    });
+    return response.data;
+  },
+
   // Export audit logs
   exportAuditLogs: async (params = {}) => {
     const response = await api.get('/audit-logs/export', { params, responseType: 'blob' });
@@ -919,7 +993,9 @@ export const backupAPI = {
 
   // Download backup
   downloadBackup: async (id) => {
-    const response = await api.get(`/backups/${id}/download`, { responseType: 'blob' });
+    // Đảm bảo id là string
+    const backupId = typeof id === 'object' && id?.toString ? id.toString() : String(id);
+    const response = await api.get(`/backups/${backupId}/download`, { responseType: 'blob' });
     return response;
   },
 
@@ -931,6 +1007,12 @@ export const backupAPI = {
 
   // Get backup stats
   getBackupStats: async () => {
+    const response = await api.get('/backups/stats');
+    return response.data;
+  },
+
+  // Alias for getBackupStats (for consistency with other APIs)
+  getStats: async () => {
     const response = await api.get('/backups/stats');
     return response.data;
   },
@@ -959,6 +1041,12 @@ export const inventoryAPI = {
   // Get inventory by location
   getInventoryByLocation: async (locationId) => {
     const response = await api.get(`/inventory/location/${locationId}`);
+    return response.data;
+  },
+
+  // Get list of locations
+  getLocations: async () => {
+    const response = await api.get('/inventory/locations');
     return response.data;
   },
 
@@ -1041,7 +1129,9 @@ export const orderAPI = {
 
   // Get order by ID
   getOrderById: async (id) => {
-    const response = await api.get(`/orders/${id}`);
+    // Đảm bảo id là string
+    const orderId = typeof id === 'object' && id?.toString ? id.toString() : String(id);
+    const response = await api.get(`/orders/${orderId}`);
     return response.data;
   },
 
@@ -1053,31 +1143,41 @@ export const orderAPI = {
 
   // Confirm order
   confirmOrder: async (id) => {
-    const response = await api.post(`/orders/${id}/confirm`);
+    // Đảm bảo id là string
+    const orderId = typeof id === 'object' && id?.toString ? id.toString() : String(id);
+    const response = await api.post(`/orders/${orderId}/confirm`);
     return response.data;
   },
 
   // Process order
   processOrder: async (id) => {
-    const response = await api.post(`/orders/${id}/process`);
+    // Đảm bảo id là string
+    const orderId = typeof id === 'object' && id?.toString ? id.toString() : String(id);
+    const response = await api.post(`/orders/${orderId}/process`);
     return response.data;
   },
 
   // Ship order
   shipOrder: async (id, data = {}) => {
-    const response = await api.post(`/orders/${id}/ship`, data);
+    // Đảm bảo id là string
+    const orderId = typeof id === 'object' && id?.toString ? id.toString() : String(id);
+    const response = await api.post(`/orders/${orderId}/ship`, data);
     return response.data;
   },
 
   // Deliver order
   deliverOrder: async (id) => {
-    const response = await api.post(`/orders/${id}/deliver`);
+    // Đảm bảo id là string
+    const orderId = typeof id === 'object' && id?.toString ? id.toString() : String(id);
+    const response = await api.post(`/orders/${orderId}/deliver`);
     return response.data;
   },
 
   // Cancel order
   cancelOrder: async (id, data = {}) => {
-    const response = await api.post(`/orders/${id}/cancel`, data);
+    // Đảm bảo id là string
+    const orderId = typeof id === 'object' && id?.toString ? id.toString() : String(id);
+    const response = await api.post(`/orders/${orderId}/cancel`, data);
     return response.data;
   },
 
@@ -1095,6 +1195,13 @@ export const orderAPI = {
       params,
       skipErrorHandler: true // Bỏ qua error handler để tránh toast cho empty data
     });
+    return response.data;
+  },
+  
+  // Re-order - Lấy items từ đơn hàng cũ để đặt lại
+  reorder: async (orderId) => {
+    const id = typeof orderId === 'object' && orderId?.toString ? orderId.toString() : String(orderId);
+    const response = await api.post(`/orders/${id}/reorder`);
     return response.data;
   }
 };
@@ -1215,6 +1322,18 @@ export const importExportAPI = {
     return response.data;
   },
 
+  // Import drugs from PDF (Ministry of Health document)
+  importDrugsFromPDF: async (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await api.post('/import-export/drugs/import-pdf', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      }
+    });
+    return response.data;
+  },
+
   // Import inventory
   importInventory: async (file) => {
     const formData = new FormData();
@@ -1261,6 +1380,66 @@ export const importExportAPI = {
       responseType: 'blob'
     });
     return response;
+  }
+};
+
+// Bids API
+export const bidAPI = {
+  // Tạo bid mới
+  createBid: async (bidData) => {
+    const response = await api.post('/bids', bidData);
+    return response.data;
+  },
+  
+  // Lấy danh sách bids (với filters)
+  getBids: async (params = {}) => {
+    const response = await api.get('/bids', { params });
+    return response.data;
+  },
+  
+  // Lấy bid theo ID
+  getBidById: async (id) => {
+    const response = await api.get(`/bids/${id}`);
+    return response.data;
+  },
+  
+  // Lấy bids của user hiện tại
+  getMyBids: async (params = {}) => {
+    const response = await api.get('/bids/my-bids', { params });
+    return response.data;
+  },
+  
+  // Lấy bids cho manufacturer
+  getManufacturerBids: async (params = {}) => {
+    const response = await api.get('/bids/manufacturer-bids', { params });
+    return response.data;
+  },
+  
+  // Chấp nhận bid
+  acceptBid: async (id, notes = null) => {
+    const response = await api.put(`/bids/${id}/accept`, { notes });
+    return response.data;
+  },
+  
+  // Từ chối bid
+  rejectBid: async (id, notes = null) => {
+    const response = await api.put(`/bids/${id}/reject`, { notes });
+    return response.data;
+  },
+  
+  // Hủy bid
+  cancelBid: async (id) => {
+    const response = await api.put(`/bids/${id}/cancel`);
+    return response.data;
+  },
+  
+  // Gửi counter offer (Manufacturer gửi giá đối ứng)
+  counterOffer: async (id, counterPrice, counterNotes = null) => {
+    const response = await api.put(`/bids/${id}/counter-offer`, {
+      counterPrice,
+      counterNotes
+    });
+    return response.data;
   }
 };
 

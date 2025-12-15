@@ -75,7 +75,17 @@ const Notifications = () => {
       }
       
       if (response.success) {
-        setNotifications(response.data.notifications);
+        // Normalize _id của mỗi notification
+        const normalizedNotifications = (response.data.notifications || []).map(notif => {
+          if (notif._id && typeof notif._id === 'object') {
+            const normalizedId = normalizeId(notif._id);
+            if (normalizedId) {
+              return { ...notif, _id: normalizedId };
+            }
+          }
+          return notif;
+        });
+        setNotifications(normalizedNotifications);
         setPagination(response.data.pagination);
       }
     } catch (error) {
@@ -198,7 +208,9 @@ const Notifications = () => {
         setShowDetailModal(true);
       }
     } catch (error) {
-      toast.error('Lỗi khi lấy thông tin thông báo');
+      const errorMessage = error.response?.data?.message || error.message || 'Lỗi khi lấy thông tin thông báo';
+      toast.error(errorMessage);
+      console.error('Get notification details error:', error);
     }
   };
 
@@ -225,6 +237,88 @@ const Notifications = () => {
       urgent: AlertCircle
     };
     return icons[type] || Bell;
+  };
+
+  // Helper để normalize ID
+  const normalizeId = (id, fallback = '') => {
+    if (!id) return fallback;
+    if (typeof id === 'string' && id.trim() !== '' && id !== '[object Object]') return id;
+    if (typeof id === 'object' && id !== null) {
+      // Handle MongoDB ObjectId serialized as { '0': '6', '1': '9', ... }
+      if (Object.keys(id).every(key => /^\d+$/.test(key))) {
+        const normalized = Object.keys(id)
+          .sort((a, b) => parseInt(a) - parseInt(b))
+          .map(key => id[key])
+          .join('');
+        if (normalized.length === 24 && /^[0-9a-fA-F]{24}$/.test(normalized)) {
+          return normalized;
+        }
+      }
+      if (id._id) {
+        const nestedId = id._id;
+        if (typeof nestedId === 'string' && nestedId.trim() !== '' && nestedId !== '[object Object]') {
+          return nestedId;
+        }
+      }
+      if (id.id) {
+        const idValue = id.id;
+        if (typeof idValue === 'string' && idValue.trim() !== '' && idValue !== '[object Object]') {
+          return idValue;
+        }
+      }
+      if (id.toString && typeof id.toString === 'function') {
+        try {
+          const str = id.toString();
+          if (str !== '[object Object]' && str.trim() !== '') {
+            return str;
+          }
+        } catch (e) {
+          console.error("Error in toString for ID:", id, e);
+        }
+      }
+    }
+    try {
+      const str = String(id);
+      if (str !== '[object Object]' && str.trim() !== '') {
+        return str;
+      }
+    } catch (e) {
+      console.error("Error in String(id) for ID:", id, e);
+    }
+    return fallback;
+  };
+
+  // Helper để tạo unique key cho list items
+  const getUniqueKey = (item, idx) => {
+    // Luôn đảm bảo key là string và unique
+    try {
+      // Thử normalize ID trước
+      const normalizedId = normalizeId(item._id);
+      let idPart = '';
+      
+      if (normalizedId && normalizedId !== '[object Object]' && normalizedId.trim() !== '' && normalizedId.length > 0) {
+        idPart = normalizedId;
+      } else {
+        // Fallback to other unique identifiers
+        const title = String(item.title || 'no-title').substring(0, 30).replace(/[^a-zA-Z0-9]/g, '-');
+        const createdAt = item.createdAt ? String(new Date(item.createdAt).getTime()) : String(idx * 1000);
+        const senderId = item.sender?._id ? normalizeId(item.sender._id).substring(0, 12) : 'no-sender';
+        const type = String(item.type || 'no-type').substring(0, 20);
+        idPart = `${idx}-${title}-${type}-${senderId}-${createdAt}`;
+      }
+      
+      // Đảm bảo idPart không rỗng và không phải [object Object]
+      const finalIdPart = String(idPart || `notif-${idx}`);
+      if (!finalIdPart || finalIdPart === '[object Object]' || finalIdPart.trim() === '') {
+        return `notification-${idx}-fallback-${String(idx)}`;
+      }
+      
+      return `notification-${idx}-${finalIdPart}`;
+    } catch (error) {
+      console.error('Error generating unique key:', error, item);
+      // Fallback cuối cùng
+      return `notification-${idx}-error-${String(idx)}`;
+    }
   };
 
   return (
@@ -431,13 +525,17 @@ const Notifications = () => {
               Không có thông báo nào
             </div>
           ) : (
-            notifications.map((notification) => {
+            notifications.map((notification, idx) => {
               const TypeIcon = getTypeIcon(notification.type);
               const isUnread = activeTab === 'received' && 
-                notification.recipients?.find(r => r.user._id === user.id)?.isRead === false;
+                notification.recipients?.find(r => {
+                  const recipientUserId = normalizeId(r.user?._id || r.user?.id);
+                  const currentUserId = normalizeId(user?.id || user?._id);
+                  return recipientUserId === currentUserId;
+                })?.isRead === false;
               
               return (
-                <div key={notification._id} className={`p-6 hover:bg-gray-50 ${isUnread ? 'bg-blue-50' : ''}`}>
+                <div key={getUniqueKey(notification, idx)} className={`p-6 hover:bg-gray-50 ${isUnread ? 'bg-blue-50' : ''}`}>
                   <div className="flex items-start justify-between">
                     <div className="flex items-start space-x-4 flex-1">
                       <div className="flex-shrink-0">
@@ -484,7 +582,7 @@ const Notifications = () => {
                     
                     <div className="flex items-center space-x-2">
                       <button
-                        onClick={() => getNotificationDetails(notification._id)}
+                        onClick={() => getNotificationDetails(normalizeId(notification._id))}
                         className="text-blue-600 hover:text-blue-900"
                         title="Xem chi tiết"
                       >
@@ -493,7 +591,7 @@ const Notifications = () => {
                       
                       {activeTab === 'received' && isUnread && (
                         <button
-                          onClick={() => markAsRead(notification._id)}
+                          onClick={() => markAsRead(normalizeId(notification._id))}
                           className="text-green-600 hover:text-green-900"
                           title="Đánh dấu đã đọc"
                         >
@@ -501,7 +599,7 @@ const Notifications = () => {
                         </button>
                       )}
                       
-                      {activeTab === 'sent' && (notification.sender._id === user.id || user.role === 'admin') && (
+                      {activeTab === 'sent' && (normalizeId(notification.sender?._id) === normalizeId(user?.id || user?._id) || user.role === 'admin') && (
                         <>
                           {/* Placeholder button cho tương lai nếu cần chỉnh sửa nội dung */}
                           {/* <button
@@ -511,7 +609,7 @@ const Notifications = () => {
                             <Edit className="h-4 w-4" />
                           </button> */}
                           <button
-                            onClick={() => deleteNotification(notification._id)}
+                            onClick={() => deleteNotification(normalizeId(notification._id))}
                             className="text-red-600 hover:text-red-800"
                             title="Xóa thông báo"
                           >
@@ -857,8 +955,60 @@ const NotificationDetailModal = ({ notification, onClose, onMarkAsRead, currentU
     return icons[type] || Bell;
   };
 
+  // Helper để normalize ID
+  const normalizeId = (id, fallback = '') => {
+    if (!id) return fallback;
+    if (typeof id === 'string' && id.trim() !== '' && id !== '[object Object]') return id;
+    if (typeof id === 'object' && id !== null) {
+      if (Object.keys(id).every(key => /^\d+$/.test(key))) {
+        const normalized = Object.keys(id)
+          .sort((a, b) => parseInt(a) - parseInt(b))
+          .map(key => id[key])
+          .join('');
+        if (normalized.length === 24 && /^[0-9a-fA-F]{24}$/.test(normalized)) {
+          return normalized;
+        }
+      }
+      if (id._id) {
+        const nestedId = id._id;
+        if (typeof nestedId === 'string' && nestedId.trim() !== '' && nestedId !== '[object Object]') {
+          return nestedId;
+        }
+      }
+      if (id.id) {
+        const idValue = id.id;
+        if (typeof idValue === 'string' && idValue.trim() !== '' && idValue !== '[object Object]') {
+          return idValue;
+        }
+      }
+      if (id.toString && typeof id.toString === 'function') {
+        try {
+          const str = id.toString();
+          if (str !== '[object Object]' && str.trim() !== '') {
+            return str;
+          }
+        } catch (e) {
+          console.error("Error in toString for ID:", id, e);
+        }
+      }
+    }
+    try {
+      const str = String(id);
+      if (str !== '[object Object]' && str.trim() !== '') {
+        return str;
+      }
+    } catch (e) {
+      console.error("Error in String(id) for ID:", id, e);
+    }
+    return fallback;
+  };
+
   const TypeIcon = getTypeIcon(notification.type);
-  const isUnread = notification.recipients?.find(r => r.user._id === currentUser.id)?.isRead === false;
+  const isUnread = notification.recipients?.find(r => {
+    const recipientUserId = normalizeId(r.user?._id || r.user?.id);
+    const currentUserId = normalizeId(currentUser?.id || currentUser?._id);
+    return recipientUserId === currentUserId;
+  })?.isRead === false;
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -929,8 +1079,13 @@ const NotificationDetailModal = ({ notification, onClose, onMarkAsRead, currentU
           {isUnread && (
             <button
               onClick={() => {
-                onMarkAsRead(notification._id);
-                onClose();
+                const normalizedId = normalizeId(notification._id);
+                if (normalizedId) {
+                  onMarkAsRead(normalizedId);
+                  onClose();
+                } else {
+                  toast.error('ID thông báo không hợp lệ');
+                }
               }}
               className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
             >

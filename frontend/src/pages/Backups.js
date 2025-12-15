@@ -50,6 +50,51 @@ const Backups = () => {
     collections: []
   });
 
+  // Helper function để chuyển đổi ID thành string an toàn
+  const normalizeId = (id) => {
+    if (!id && id !== 0) return '';
+    if (typeof id === 'string') {
+      // Kiểm tra xem có phải là '[object Object]' không
+      if (id === '[object Object]') return '';
+      return id.trim();
+    }
+    if (typeof id === 'number') return String(id);
+    if (typeof id === 'object') {
+      // Nếu là object có thuộc tính _id hoặc id
+      if (id._id !== undefined) return normalizeId(id._id);
+      if (id.id !== undefined) return normalizeId(id.id);
+      // Nếu có method toString (như MongoDB ObjectId)
+      if (typeof id.toString === 'function') {
+        try {
+          const str = id.toString();
+          // Kiểm tra xem có phải là [object Object] không
+          if (str === '[object Object]') {
+            // Thử lấy giá trị từ valueOf (cho MongoDB ObjectId)
+            if (typeof id.valueOf === 'function') {
+              const val = id.valueOf();
+              if (val && typeof val === 'object' && val.toString) {
+                return val.toString();
+              }
+              return String(val);
+            }
+            // Nếu có thuộc tính str (một số ObjectId wrapper)
+            if (id.str) return String(id.str);
+            // Fallback cuối cùng
+            return '';
+          }
+          return str;
+        } catch (e) {
+          console.warn('Error converting ID to string:', e, id);
+          return '';
+        }
+      }
+      // Fallback: thử JSON stringify nhưng không nên dùng
+      console.warn('Unable to normalize ID, object without toString:', id);
+      return '';
+    }
+    return String(id);
+  };
+
   // Load backups
   const loadBackups = async (page = 1) => {
     try {
@@ -64,7 +109,21 @@ const Backups = () => {
       
       const response = await backupAPI.getBackups(params);
       if (response && response.success) {
-        setBackups(response.data.backups || []);
+        // Normalize _id thành string để tránh lỗi [object Object]
+        // Ưu tiên sử dụng id (đã là string) thay vì _id (có thể là object)
+        const normalizedBackups = (response.data.backups || []).map(backup => {
+          // Ưu tiên backup.id nếu có và hợp lệ, sau đó mới dùng _id
+          const validId = backup.id && backup.id !== '[object Object]' 
+            ? backup.id 
+            : normalizeId(backup._id || backup.id);
+          
+          return {
+            ...backup,
+            _id: validId,
+            id: validId // Đảm bảo cả id và _id đều có giá trị hợp lệ
+          };
+        });
+        setBackups(normalizedBackups);
         setPagination(response.data.pagination || { page: 1, limit: 50, total: 0, pages: 0 });
       } else {
         setBackups([]);
@@ -118,15 +177,88 @@ const Backups = () => {
       }, 2000);
     } catch (error) {
       console.error('Error creating backup:', error);
+      toast.error('Không thể tạo backup: ' + (error.response?.data?.message || error.message));
     }
   };
+
+  // Track downloading state để tránh duplicate clicks
+  const [downloadingIds, setDownloadingIds] = useState(new Set());
 
   // Download backup
   const handleDownload = async (backupId) => {
     try {
-      await backupAPI.downloadBackup(backupId);
+      // Đảm bảo backupId là string - xử lý mọi trường hợp
+      const id = normalizeId(backupId);
+      
+      if (!id || id === '' || id === '[object Object]') {
+        console.error('Invalid backup ID:', backupId);
+        toast.error('ID backup không hợp lệ');
+        return;
+      }
+      
+      // Kiểm tra xem đang download chưa
+      if (downloadingIds.has(id)) {
+        toast.error('Download đang được xử lý, vui lòng đợi...');
+        return;
+      }
+      
+      // Đánh dấu đang download
+      setDownloadingIds(prev => new Set(prev).add(id));
+      
+      console.log('Downloading backup with ID:', id, 'Original:', backupId);
+      
+      try {
+        const response = await backupAPI.downloadBackup(id);
+        
+        // Tạo blob URL và trigger download
+        const blob = new Blob([response.data]);
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        
+        // Lấy tên file từ header hoặc sử dụng tên mặc định
+        const contentDisposition = response.headers['content-disposition'];
+        let filename = `backup-${id}.tar.gz`;
+        if (contentDisposition) {
+          const filenameMatch = contentDisposition.match(/filename="?(.+)"?/i);
+          if (filenameMatch) {
+            filename = decodeURIComponent(filenameMatch[1]);
+          }
+        }
+        
+        link.setAttribute('download', filename);
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.URL.revokeObjectURL(url);
+        
+        toast.success('Đã tải backup thành công');
+      } finally {
+        // Xóa khỏi downloading state
+        setDownloadingIds(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(id);
+          return newSet;
+        });
+      }
     } catch (error) {
       console.error('Error downloading backup:', error);
+      
+      // Xóa khỏi downloading state khi có lỗi
+      const id = normalizeId(backupId);
+      setDownloadingIds(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(id);
+        return newSet;
+      });
+      
+      const errorMessage = error.response?.data?.message || error.message;
+      if (error.response?.status === 409) {
+        // Duplicate request
+        toast.error(errorMessage || 'Download đang được xử lý, vui lòng đợi...');
+      } else {
+        toast.error('Không thể tải backup: ' + errorMessage);
+      }
     }
   };
 
@@ -138,7 +270,23 @@ const Backups = () => {
     }
     
     try {
-      await backupAPI.restoreBackup(selectedBackup._id, restoreForm);
+      if (!selectedBackup) {
+        toast.error('Không có backup được chọn');
+        return;
+      }
+      
+      // Ưu tiên sử dụng selectedBackup.id (thường đã là string hợp lệ)
+      const id = selectedBackup.id && selectedBackup.id !== '[object Object]' && typeof selectedBackup.id === 'string'
+        ? selectedBackup.id
+        : normalizeId(selectedBackup._id || selectedBackup.id);
+      
+      if (!id || id === '' || id === '[object Object]') {
+        console.error('Invalid backup ID for restore:', selectedBackup);
+        toast.error('ID backup không hợp lệ');
+        return;
+      }
+      
+      await backupAPI.restoreBackup(id, restoreForm);
       setShowRestoreModal(false);
       setSelectedBackup(null);
       setRestoreForm({
@@ -148,6 +296,7 @@ const Backups = () => {
       toast.success('Khôi phục dữ liệu thành công. Vui lòng refresh trang.');
     } catch (error) {
       console.error('Error restoring backup:', error);
+      toast.error('Không thể khôi phục backup: ' + (error.response?.data?.message || error.message));
     }
   };
 
@@ -158,11 +307,24 @@ const Backups = () => {
     }
     
     try {
-      await backupAPI.deleteBackup(backupId);
+      // Normalize ID để đảm bảo là string hợp lệ
+      const id = typeof backupId === 'string' && backupId !== '[object Object]' 
+        ? backupId 
+        : normalizeId(backupId);
+      
+      if (!id || id === '' || id === '[object Object]') {
+        console.error('Invalid backup ID for delete:', backupId);
+        toast.error('ID backup không hợp lệ');
+        return;
+      }
+      
+      await backupAPI.deleteBackup(id);
+      toast.success('Đã xóa backup thành công');
       loadBackups(pagination.page);
       loadStats();
     } catch (error) {
       console.error('Error deleting backup:', error);
+      toast.error('Không thể xóa backup: ' + (error.response?.data?.message || error.message));
     }
   };
 
@@ -218,6 +380,31 @@ const Backups = () => {
       case 'pending': return <Clock className="w-4 h-4 text-yellow-600" />;
       default: return <Clock className="w-4 h-4" />;
     }
+  };
+
+  // Helper function để tạo unique key - luôn đảm bảo trả về string và unique
+  const getUniqueKey = (item, idx) => {
+    let idPart = '';
+    
+    if (item._id) {
+      if (typeof item._id === 'string' && item._id.trim() !== '' && item._id !== '[object Object]') {
+        idPart = item._id;
+      } else if (typeof item._id === 'object' && item._id !== null) {
+        const nestedId = item._id._id || item._id.id;
+        if (nestedId && typeof nestedId === 'string' && nestedId !== '[object Object]') {
+          idPart = nestedId;
+        }
+      }
+    }
+    
+    if (!idPart || idPart === '[object Object]') {
+      const name = String(item.name || '');
+      const createdAt = item.createdAt ? String(new Date(item.createdAt).getTime()) : String(Date.now());
+      const type = String(item.type || '');
+      idPart = `${name}-${type}-${createdAt}`;
+    }
+    
+    return `backup-${idx}-${idPart}`;
   };
 
   return (
@@ -411,8 +598,8 @@ const Backups = () => {
                   </td>
                 </tr>
               ) : (
-                backups.map((backup) => (
-                  <tr key={backup._id} className="hover:bg-gray-50">
+                backups.map((backup, idx) => (
+                  <tr key={getUniqueKey(backup, idx)} className="hover:bg-gray-50">
                     <td className="px-6 py-4">
                       <div className="text-sm font-medium text-gray-900">{backup.name}</div>
                     </td>
@@ -438,16 +625,50 @@ const Backups = () => {
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex gap-2">
-                        {backup.status === 'completed' && (
+                        {backup && backup.status === 'completed' && (
                           <>
                             <button
-                              onClick={() => handleDownload(backup._id)}
-                              className="text-blue-600 hover:text-blue-800 text-sm"
+                              onClick={() => {
+                                if (!backup) {
+                                  toast.error('Backup không hợp lệ');
+                                  return;
+                                }
+                                // Ưu tiên sử dụng backup.id (thường đã là string hợp lệ)
+                                // Chỉ dùng _id nếu id không có hoặc không hợp lệ
+                                let id = backup.id;
+                                if (!id || id === '[object Object]' || typeof id !== 'string') {
+                                  id = normalizeId(backup._id);
+                                }
+                                
+                                if (!id || id === '' || id === '[object Object]') {
+                                  console.error('Invalid backup ID in button click:', { id, _id: backup?._id, backupId: backup?.id });
+                                  toast.error('ID backup không hợp lệ');
+                                  return;
+                                }
+                                
+                                // Kiểm tra xem đang download chưa
+                                if (downloadingIds.has(id)) {
+                                  toast.error('Download đang được xử lý, vui lòng đợi...');
+                                  return;
+                                }
+                                
+                                handleDownload(id);
+                              }}
+                              disabled={downloadingIds.has(backup.id || normalizeId(backup._id))}
+                              className={`text-sm ${
+                                downloadingIds.has(backup.id || normalizeId(backup._id))
+                                  ? 'text-gray-400 cursor-not-allowed'
+                                  : 'text-blue-600 hover:text-blue-800'
+                              }`}
                             >
-                              Download
+                              {downloadingIds.has(backup.id || normalizeId(backup._id)) ? 'Đang tải...' : 'Download'}
                             </button>
                             <button
                               onClick={() => {
+                                if (!backup) {
+                                  toast.error('Backup không hợp lệ');
+                                  return;
+                                }
                                 setSelectedBackup(backup);
                                 setShowRestoreModal(true);
                               }}
@@ -458,7 +679,17 @@ const Backups = () => {
                           </>
                         )}
                         <button
-                          onClick={() => handleDelete(backup._id)}
+                          onClick={() => {
+                            if (!backup) {
+                              toast.error('Backup không hợp lệ');
+                              return;
+                            }
+                            // Ưu tiên sử dụng backup.id (thường đã là string hợp lệ)
+                            const id = backup.id && backup.id !== '[object Object]' && typeof backup.id === 'string'
+                              ? backup.id
+                              : normalizeId(backup._id || backup.id);
+                            handleDelete(id);
+                          }}
                           className="text-red-600 hover:text-red-800 text-sm"
                         >
                           Xóa

@@ -256,33 +256,46 @@ const updateProfileSchema = Joi.object({
   
   organizationInfo: Joi.object({
     name: Joi.string()
-      .min(2)
-      .max(200)
-      .messages({
-        'string.min': 'Tên tổ chức phải có ít nhất 2 ký tự',
-        'string.max': 'Tên tổ chức không được quá 200 ký tự'
+      .allow('', null)
+      .optional()
+      .custom((value, helpers) => {
+        if (!value || value.trim() === '') return value; // Allow empty
+        if (value.length < 2) {
+          return helpers.message('Tên tổ chức phải có ít nhất 2 ký tự');
+        }
+        if (value.length > 200) {
+          return helpers.message('Tên tổ chức không được quá 200 ký tự');
+        }
+        return value;
       }),
     
-    license: Joi.string()
-      .min(3)
-      .max(50)
-      .messages({
-        'string.min': 'Số giấy phép phải có ít nhất 3 ký tự',
-        'string.max': 'Số giấy phép không được quá 50 ký tự'
-      }),
-    
-    type: Joi.string()
-      .valid('pharmaceutical_company', 'distribution_company', 'hospital')
-      .messages({
-        'any.only': 'Loại tổ chức không hợp lệ'
-      }),
-    
-    description: Joi.string()
+    address: Joi.string()
       .max(500)
+      .allow('')
+      .optional()
       .messages({
-        'string.max': 'Mô tả không được quá 500 ký tự'
+        'string.max': 'Địa chỉ tổ chức không được quá 500 ký tự'
+      }),
+    
+    phone: Joi.string()
+      .allow('', null)
+      .optional()
+      .pattern(/^$|^[0-9]{10,11}$/)
+      .messages({
+        'string.pattern.base': 'Số điện thoại tổ chức phải có 10-11 chữ số hoặc rỗng'
+      }),
+    
+    email: Joi.string()
+      .email()
+      .allow('')
+      .optional()
+      .messages({
+        'string.email': 'Email tổ chức không hợp lệ'
       })
-  })
+  }).optional(),
+  
+  isActive: Joi.boolean()
+    .optional()
 });
 
 // Schema validation cho reset password (Admin)
@@ -301,10 +314,20 @@ const resetPasswordSchema = Joi.object({
 // Middleware validation
 const validate = (schema) => {
   return (req, res, next) => {
-    const { error } = schema.validate(req.body, { abortEarly: false });
+    const { error, value } = schema.validate(req.body, { 
+      abortEarly: false,
+      allowUnknown: false, // Không cho phép các field không định nghĩa
+      stripUnknown: false  // Không xóa các field không định nghĩa, để có thể báo lỗi rõ ràng
+    });
     
     if (error) {
       const messages = error.details.map(detail => detail.message);
+      console.error('❌ Validation error:', {
+        url: req.originalUrl,
+        method: req.method,
+        errors: messages,
+        receivedBody: req.body
+      });
       return res.status(400).json({
         success: false,
         message: 'Dữ liệu không hợp lệ.',
@@ -312,6 +335,8 @@ const validate = (schema) => {
       });
     }
     
+    // Gán giá trị đã validated vào req.body để controller sử dụng
+    req.body = value;
     next();
   };
 };
@@ -319,15 +344,37 @@ const validate = (schema) => {
 // Validation cho query parameters
 const validateQuery = (schema) => {
   return (req, res, next) => {
-    const { error } = schema.validate(req.query, { abortEarly: false });
+    const isBidsRoute = req.originalUrl?.includes('/bids');
     
+    // Log để debug
+    if (isBidsRoute) {
+      console.log('🔍 validateQuery - URL:', req.originalUrl);
+      console.log('🔍 validateQuery - Query params:', req.query);
+      console.log('🔍 validateQuery - Schema keys:', Object.keys(schema.describe().keys || {}));
+    }
+    
+    const { error, value } = schema.validate(req.query, { 
+      abortEarly: false,
+      allowUnknown: true, // Cho phép các field không định nghĩa trong schema
+      stripUnknown: true  // Xóa các field không định nghĩa (chỉ giữ lại các field hợp lệ)
+    });
+
     if (error) {
+      console.error('❌ validateQuery ERROR:', error.details);
+      if (isBidsRoute) {
+        console.error('❌ Failed query params:', req.query);
+        console.error('❌ Error messages:', error.details.map(d => d.message));
+      }
       const messages = error.details.map(detail => detail.message);
       return res.status(400).json({
         success: false,
         message: 'Tham số truy vấn không hợp lệ.',
         errors: messages
       });
+    }
+
+    if (isBidsRoute) {
+      console.log('✅ validateQuery PASSED - Validated value:', value);
     }
     
     next();
@@ -370,7 +417,180 @@ const paginationSchema = Joi.object({
     .optional()
     .messages({
       'any.only': 'Vai trò không hợp lệ'
+    }),
+  
+  status: Joi.string()
+    .valid('pending', 'accepted', 'rejected', 'expired', 'cancelled', 'countered', '')
+    .optional()
+    .messages({
+      'any.only': 'Trạng thái không hợp lệ'
     })
+});
+
+// Schema validation cho tạo supply chain
+const createSupplyChainSchema = Joi.object({
+  drugId: Joi.string()
+    .required()
+    .messages({
+      'string.empty': 'ID thuốc là bắt buộc',
+      'any.required': 'Vui lòng chọn thuốc'
+    }),
+  
+  drugBatchNumber: Joi.string()
+    .min(3)
+    .max(100)
+    .required()
+    .messages({
+      'string.min': 'Số lô phải có ít nhất 3 ký tự',
+      'string.max': 'Số lô không được quá 100 ký tự',
+      'string.empty': 'Số lô là bắt buộc',
+      'any.required': 'Vui lòng nhập số lô'
+    }),
+  
+  metadata: Joi.object({
+    quantity: Joi.number()
+      .min(1)
+      .optional()
+      .messages({
+        'number.base': 'Số lượng phải là số',
+        'number.min': 'Số lượng phải lớn hơn 0'
+      }),
+    
+    unit: Joi.string()
+      .valid('unit', 'box', 'bottle', 'tablet', 'vial', 'pack')
+      .optional()
+      .messages({
+        'any.only': 'Đơn vị không hợp lệ'
+      }),
+    
+    notes: Joi.string()
+      .max(500)
+      .allow('')
+      .optional()
+      .messages({
+        'string.max': 'Ghi chú không được quá 500 ký tự'
+      })
+  }).optional(),
+  
+  participants: Joi.array()
+    .items(Joi.object({
+      actorId: Joi.string().required(),
+      role: Joi.string().valid('manufacturer', 'distributor', 'hospital', 'patient').required()
+    }))
+    .optional()
+});
+
+// Schema validation cho thêm step vào supply chain
+const addSupplyChainStepSchema = Joi.object({
+  action: Joi.string()
+    .valid('created', 'shipped', 'received', 'stored', 'dispensed', 'recalled', 'quality_check', 'handover', 'reported', 'consumed')
+    .required()
+    .messages({
+      'any.only': 'Hành động không hợp lệ',
+      'any.required': 'Vui lòng chọn hành động'
+    }),
+  
+  location: Joi.object({
+    type: Joi.string().valid('Point').default('Point'),
+    coordinates: Joi.array()
+      .items(Joi.number())
+      .length(2)
+      .optional()
+      .messages({
+        'array.length': 'Tọa độ phải có 2 giá trị [longitude, latitude]'
+      }),
+    address: Joi.string()
+      .max(500)
+      .allow('')
+      .optional()
+      .messages({
+        'string.max': 'Địa chỉ không được quá 500 ký tự'
+      })
+  }).optional(),
+  
+  conditions: Joi.object({
+    temperature: Joi.number()
+      .min(-50)
+      .max(100)
+      .optional()
+      .messages({
+        'number.base': 'Nhiệt độ phải là số',
+        'number.min': 'Nhiệt độ không được nhỏ hơn -50°C',
+        'number.max': 'Nhiệt độ không được lớn hơn 100°C'
+      }),
+    
+    humidity: Joi.number()
+      .min(0)
+      .max(100)
+      .optional()
+      .messages({
+        'number.base': 'Độ ẩm phải là số',
+        'number.min': 'Độ ẩm không được nhỏ hơn 0%',
+        'number.max': 'Độ ẩm không được lớn hơn 100%'
+      }),
+    
+    light: Joi.string()
+      .valid('dark', 'low', 'normal', 'bright')
+      .optional(),
+    
+    notes: Joi.string()
+      .max(500)
+      .allow('')
+      .optional()
+  }).optional(),
+  
+  metadata: Joi.object({
+    batchNumber: Joi.string().optional(),
+    serialNumber: Joi.string().optional(),
+    quantity: Joi.number().min(0).optional(),
+    unit: Joi.string()
+      .valid('unit', 'box', 'bottle', 'tablet', 'vial', 'pack')
+      .optional()
+      .messages({
+        'any.only': 'Đơn vị không hợp lệ'
+      }),
+    expiryDate: Joi.date().optional(),
+    transportation: Joi.string().max(200).allow('').optional(),
+    receiver: Joi.string().max(200).allow('').optional(),
+    notes: Joi.string().max(1000).allow('').optional()
+  }).optional(),
+  
+  qualityChecks: Joi.array()
+    .items(Joi.object({
+      checkType: Joi.string().valid('temperature', 'humidity', 'integrity', 'expiry', 'custom').required(),
+      result: Joi.string().valid('pass', 'fail', 'warning').required(),
+      value: Joi.string().optional(),
+      notes: Joi.string().max(500).allow('').optional()
+    }))
+    .optional(),
+  
+  handover: Joi.object({
+    fromRole: Joi.string().optional(),
+    toRole: Joi.string().required(),
+    toActorId: Joi.string().optional(),
+    token: Joi.string().optional()
+  }).optional()
+});
+
+// Schema validation cho recall supply chain
+const recallSupplyChainSchema = Joi.object({
+  reason: Joi.string()
+    .min(10)
+    .max(1000)
+    .required()
+    .messages({
+      'string.min': 'Lý do thu hồi phải có ít nhất 10 ký tự',
+      'string.max': 'Lý do thu hồi không được quá 1000 ký tự',
+      'any.required': 'Vui lòng nhập lý do thu hồi'
+    }),
+  
+  action: Joi.string()
+    .valid('return', 'destroy', 'quarantine', 'investigate')
+    .optional(),
+  
+  affectedUnits: Joi.array()
+    .items(Joi.string())
+    .optional()
 });
 
 module.exports = {
@@ -382,6 +602,9 @@ module.exports = {
   updateProfileSchema,
   resetPasswordSchema,
   paginationSchema,
+  createSupplyChainSchema,
+  addSupplyChainStepSchema,
+  recallSupplyChainSchema,
   
   // Middleware
   validate,

@@ -9,7 +9,8 @@ const {
   downloadBackup,
   deleteBackup,
   getBackupStats,
-  cleanupBackups
+  cleanupBackups,
+  getBackupProgress
 } = require('../controllers/backupController');
 
 // Tất cả routes yêu cầu admin
@@ -20,6 +21,11 @@ router.use(authorize('admin'));
 // @desc    Lấy thống kê backups
 // @access  Private (Admin only)
 router.get('/stats', getBackupStats);
+
+// @route   GET /api/backups/progress/:operationId
+// @desc    Lấy progress của backup/restore operation
+// @access  Private (Admin only)
+router.get('/progress/:operationId', getBackupProgress);
 
 // @route   POST /api/backups/cleanup
 // @desc    Cleanup expired backups

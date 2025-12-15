@@ -30,6 +30,23 @@ console.log('✅ [DEV] routes/trustScores loaded');
 const metricsRoutes = require('./routes/metrics');
 console.log('✅ [DEV] routes/metrics loaded');
 
+// Bids routes (Marketplace/Bidding)
+let bidsRoutes;
+try {
+  bidsRoutes = require('./routes/bids');
+  console.log('✅ [DEV] routes/bids loaded');
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/225bc8d1-6824-4e38-b617-49570f639471',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'dev-server.js:36',message:'Bids routes required successfully',data:{hasRouter:!!bidsRoutes,routerType:typeof bidsRoutes,timestamp:Date.now()},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H1,H2'})}).catch(()=>{});
+  // #endregion
+} catch (error) {
+  console.error('❌ [DEV] routes/bids failed to load:', error.message);
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/225bc8d1-6824-4e38-b617-49570f639471',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'dev-server.js:39',message:'Bids routes failed to load',data:{error:error.message,stack:error.stack,timestamp:Date.now()},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H2'})}).catch(()=>{});
+  // #endregion
+  // Không throw để dev server vẫn chạy (tránh crash khi route file bị lỗi)
+  bidsRoutes = null;
+}
+
 // Import blockchain service
 console.log('⏳ [DEV] Đang load blockchainService...');
 const blockchainService = require('./services/blockchainService');
@@ -130,6 +147,16 @@ app.use('/api/invoices', require('./routes/invoices'));
 app.use('/api/payments', require('./routes/payments'));
 app.use('/api/suppliers', require('./routes/suppliers'));
 app.use('/api/import-export', require('./routes/importExport'));
+if (bidsRoutes) {
+  app.use('/api/bids', bidsRoutes);
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/225bc8d1-6824-4e38-b617-49570f639471',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'dev-server.js:145',message:'Bids routes mounted to /api/bids',data:{mounted:true,timestamp:Date.now()},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H1'})}).catch(()=>{});
+  // #endregion
+} else {
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/225bc8d1-6824-4e38-b617-49570f639471',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'dev-server.js:149',message:'Bids routes NOT mounted (bidsRoutes is null)',data:{mounted:false,timestamp:Date.now()},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H2'})}).catch(()=>{});
+  // #endregion
+}
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
@@ -178,6 +205,12 @@ app.use((err, req, res, next) => {
 
 // 404 handler
 app.use((req, res) => {
+  // #region agent log
+  const isBidsRoute = req.originalUrl?.includes('/bids') || req.path?.includes('/bids');
+  if (isBidsRoute) {
+    fetch('http://127.0.0.1:7242/ingest/225bc8d1-6824-4e38-b617-49570f639471',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'dev-server.js:180',message:'404 handler triggered for bids route',data:{method:req.method,path:req.path,originalUrl:req.originalUrl,matchedRoutes:app._router?.stack?.filter(layer=>layer.regexp?.test(req.path))?.length||0,timestamp:Date.now()},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H1,H2,H4,H5'})}).catch(()=>{});
+  }
+  // #endregion
   res.status(404).json({
     success: false,
     message: 'Route not found'

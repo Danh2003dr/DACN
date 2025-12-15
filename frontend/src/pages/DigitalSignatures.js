@@ -12,7 +12,8 @@ import {
   Eye,
   X,
   Shield,
-  Calendar
+  Calendar,
+  ExternalLink
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { digitalSignatureAPI, drugAPI } from '../utils/api';
@@ -40,6 +41,92 @@ const DigitalSignatures = () => {
   const [drugs, setDrugs] = useState([]);
 
   const { register, handleSubmit, reset, formState: { errors } } = useForm();
+
+  // Helper function để chuẩn hóa ID - đảm bảo luôn trả về string ObjectId hợp lệ
+  const normalizeId = (id, fallback = null) => {
+    if (!id) return fallback;
+    
+    // Nếu đã là string, kiểm tra xem có phải ObjectId hợp lệ không
+    if (typeof id === 'string') {
+      // ObjectId MongoDB có 24 ký tự hex
+      if (/^[0-9a-fA-F]{24}$/.test(id)) {
+        return id;
+      }
+      // Nếu không phải ObjectId hợp lệ, trả về null thay vì fallback
+      return null;
+    }
+    
+    // Nếu là object, thử lấy _id hoặc id
+    if (typeof id === 'object' && id !== null) {
+      // Nếu có _id, đệ quy normalize nó
+      if (id._id) {
+        const normalized = normalizeId(id._id);
+        if (normalized) return normalized;
+      }
+      // Nếu có id
+      if (id.id) {
+        const normalized = normalizeId(id.id);
+        if (normalized) return normalized;
+      }
+      
+      // Thử toString() nếu có
+      if (id.toString && typeof id.toString === 'function') {
+        const str = id.toString();
+        if (str !== '[object Object]' && /^[0-9a-fA-F]{24}$/.test(str)) {
+          return str;
+        }
+      }
+      
+      // Nếu là object với các keys như '0', '1', '2'... (char array)
+      const keys = Object.keys(id);
+      if (keys.length > 0 && keys.every(key => /^\d+$/.test(key))) {
+        const normalized = keys
+          .sort((a, b) => parseInt(a) - parseInt(b))
+          .map(key => id[key])
+          .join('');
+        if (/^[0-9a-fA-F]{24}$/.test(normalized)) {
+          return normalized;
+        }
+      }
+    }
+    
+    // Cuối cùng, thử convert sang string
+    const str = String(id);
+    if (/^[0-9a-fA-F]{24}$/.test(str)) {
+      return str;
+    }
+    
+    return null;
+  };
+
+  // Helper function để tạo Etherscan URL từ network và transaction hash
+  const getEtherscanUrl = (network, transactionHash) => {
+    if (!transactionHash || !network || network === 'mock' || network === 'development') {
+      return null;
+    }
+    
+    const hash = transactionHash.startsWith('0x') ? transactionHash : `0x${transactionHash}`;
+    
+    const networkUrls = {
+      'mainnet': 'https://etherscan.io',
+      'sepolia': 'https://sepolia.etherscan.io',
+      'bsc_mainnet': 'https://bscscan.com',
+      'bsc_testnet': 'https://testnet.bscscan.com',
+      'polygon_mainnet': 'https://polygonscan.com',
+      'polygon_mumbai': 'https://mumbai.polygonscan.com',
+      'arbitrum_one': 'https://arbiscan.io',
+      'arbitrum_sepolia': 'https://sepolia.arbiscan.io',
+      'optimism_mainnet': 'https://optimistic.etherscan.io',
+      'optimism_sepolia': 'https://sepolia-optimism.etherscan.io'
+    };
+    
+    const baseUrl = networkUrls[network];
+    if (!baseUrl) {
+      return null;
+    }
+    
+    return `${baseUrl}/tx/${hash}`;
+  };
 
   useEffect(() => {
     loadSignatures();
@@ -122,12 +209,39 @@ const DigitalSignatures = () => {
       if (response.success) {
         // response.data có thể là object với drugs array hoặc trực tiếp là array
         const drugsData = response.data?.drugs || response.data || [];
-        setDrugs(Array.isArray(drugsData) ? drugsData : []);
+        console.log('Loaded drugs data:', drugsData.length, 'items');
+        
+        // Normalize _id thành string để tránh lỗi [object Object]
+        const normalizedDrugs = (Array.isArray(drugsData) ? drugsData : []).map(drug => {
+          const validId = drug.id && drug.id !== '[object Object]' && typeof drug.id === 'string' && drug.id.length >= 20
+            ? drug.id
+            : normalizeId(drug._id || drug.id);
+          
+          if (!validId || validId === '[object Object]' || validId.length < 20) {
+            console.warn('Invalid drug ID after normalization:', {
+              originalId: drug._id,
+              originalIdType: typeof drug._id,
+              normalizedId: validId,
+              drug: drug
+            });
+          }
+          
+          return {
+            ...drug,
+            _id: validId || drug._id,
+            id: validId || drug.id
+          };
+        }).filter(drug => drug._id && drug._id !== '[object Object]' && drug._id.length >= 20);
+        
+        console.log('Normalized drugs:', normalizedDrugs.length, 'valid items');
+        setDrugs(normalizedDrugs);
       } else {
+        console.warn('Failed to load drugs:', response);
         setDrugs([]);
       }
     } catch (error) {
       console.error('Error loading drugs:', error);
+      toast.error('Không thể tải danh sách thuốc: ' + (error.response?.data?.message || error.message));
       setDrugs([]);
     }
   };
@@ -135,28 +249,54 @@ const DigitalSignatures = () => {
   const handleSign = async (data) => {
     try {
       setSigning(true);
-      const response = await digitalSignatureAPI.signDocument({
+      
+      console.log('Signing document with data:', data);
+      
+      // Normalize targetId để đảm bảo là string ObjectId hợp lệ
+      const normalizedTargetId = normalizeId(data.targetId);
+      if (!normalizedTargetId) {
+        console.error('Invalid targetId:', data.targetId, 'Type:', typeof data.targetId);
+        toast.error('ID đối tượng không hợp lệ. Vui lòng chọn lại đối tượng.');
+        setSigning(false);
+        return;
+      }
+      
+      console.log('Normalized targetId:', normalizedTargetId, 'Original:', data.targetId);
+      
+      const signData = {
         targetType: data.targetType,
-        targetId: data.targetId,
+        targetId: normalizedTargetId,
         options: {
           caProvider: data.caProvider || 'vnca',
           requireTimestamp: data.requireTimestamp !== false,
           purpose: data.purpose
         }
-      });
+      };
+      
+      console.log('Sending sign request:', signData);
+      
+      const response = await digitalSignatureAPI.signDocument(signData);
+      console.log('Sign response:', response);
 
-      if (response.success) {
+      if (response && response.success) {
         toast.success('Ký số thành công!');
         setShowSignModal(false);
         reset();
         loadSignatures();
         loadStats();
       } else {
-        toast.error(response.message || 'Không thể ký số');
+        console.error('Sign failed:', response);
+        toast.error(response?.message || 'Không thể ký số');
       }
     } catch (error) {
       console.error('Error signing document:', error);
-      toast.error(error.response?.data?.message || 'Không thể ký số');
+      console.error('Error details:', {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status,
+        targetId: data?.targetId
+      });
+      toast.error(error.response?.data?.message || error.message || 'Không thể ký số');
     } finally {
       setSigning(false);
     }
@@ -165,8 +305,20 @@ const DigitalSignatures = () => {
   const handleVerify = async (signatureId) => {
     try {
       setVerifying(true);
+      
+      // Chuẩn hóa signatureId - đảm bảo là ObjectId hợp lệ
+      const normalizedId = normalizeId(signatureId);
+      
+      if (!normalizedId) {
+        console.error('Invalid signatureId:', signatureId);
+        toast.error('signatureId không hợp lệ');
+        return;
+      }
+      
+      console.log('Verifying signature with ID:', normalizedId);
+      
       const response = await digitalSignatureAPI.verifySignature({
-        signatureId
+        signatureId: normalizedId
       });
 
       if (response.success && response.data?.valid) {
@@ -176,14 +328,33 @@ const DigitalSignatures = () => {
       }
     } catch (error) {
       console.error('Error verifying signature:', error);
-      toast.error(error.response?.data?.message || 'Không thể xác thực chữ ký số');
+      const errorMessage = error.response?.data?.message || error.message || 'Không thể xác thực chữ ký số';
+      toast.error(errorMessage);
     } finally {
       setVerifying(false);
     }
   };
 
   const handleRevoke = (id) => {
-    setSelectedSignature(signatures.find(sig => sig._id === id));
+    // Chuẩn hóa ID trước khi tìm signature
+    const normalizedId = normalizeId(id);
+    if (!normalizedId) {
+      console.error('Invalid ID for revoke:', id);
+      toast.error('ID chữ ký số không hợp lệ');
+      return;
+    }
+    
+    const signature = signatures.find(sig => {
+      const sigId = normalizeId(sig._id);
+      return sigId === normalizedId;
+    });
+    
+    if (!signature) {
+      toast.error('Không tìm thấy chữ ký số');
+      return;
+    }
+    
+    setSelectedSignature(signature);
     setRevokeReason('');
     setShowRevokeModal(true);
   };
@@ -371,14 +542,20 @@ const DigitalSignatures = () => {
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Người ký</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">CA Provider</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Timestamp</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Blockchain</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Trạng thái</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Ngày ký</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Thao tác</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
-                {signatures.map((sig) => (
-                  <tr key={sig._id} className="hover:bg-gray-50">
+                {signatures.map((sig, index) => {
+                  // Đảm bảo key luôn là string hợp lệ
+                  const sigId = normalizeId(sig._id);
+                  const uniqueKey = sigId || `signature-${index}-${Date.now()}`;
+                  
+                  return (
+                  <tr key={uniqueKey} className="hover:bg-gray-50">
                     <td className="px-6 py-4">
                       <div className="text-sm font-medium text-gray-900">{getTargetTypeLabel(sig.targetType)}</div>
                       <div className="text-xs text-gray-500">{getTargetDisplayName(sig)}</div>
@@ -401,6 +578,47 @@ const DigitalSignatures = () => {
                         <span className="text-gray-400 text-sm">Chưa timestamp</span>
                       )}
                     </td>
+                    <td className="px-6 py-4">
+                      {sig.blockchain?.transactionHash ? (
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            {(() => {
+                              const etherscanUrl = sig.blockchain?.etherscanUrl || 
+                                getEtherscanUrl(sig.blockchain?.network, sig.blockchain.transactionHash);
+                              return etherscanUrl ? (
+                                <a
+                                  href={etherscanUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 text-sm font-medium"
+                                  title="Xem trên Etherscan"
+                                >
+                                  <ExternalLink className="w-4 h-4" />
+                                  <span>Etherscan</span>
+                                </a>
+                              ) : (
+                                <span className="text-gray-500 text-xs">Chưa có link</span>
+                              );
+                            })()}
+                          </div>
+                          <div className="text-xs font-mono text-gray-600 break-all" title={sig.blockchain.transactionHash}>
+                            {sig.blockchain.transactionHash}
+                          </div>
+                          {sig.blockchain?.blockNumber && (
+                            <div className="text-xs text-gray-500">
+                              Block: {sig.blockchain.blockNumber}
+                            </div>
+                          )}
+                          {sig.blockchain?.network && (
+                            <div className="text-xs text-gray-500">
+                              Network: {sig.blockchain.network}
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-gray-400 text-sm">Chưa lưu</span>
+                      )}
+                    </td>
                     <td className="px-6 py-4">{getStatusBadge(sig.status)}</td>
                     <td className="px-6 py-4 text-sm text-gray-500">
                       {new Date(sig.createdAt).toLocaleDateString('vi-VN')}
@@ -418,8 +636,15 @@ const DigitalSignatures = () => {
                           <Eye className="w-5 h-5" />
                         </button>
                         <button
-                          onClick={() => handleVerify(sig._id)}
-                          disabled={verifying}
+                          onClick={() => {
+                            const id = normalizeId(sig._id);
+                            if (id) {
+                              handleVerify(id);
+                            } else {
+                              toast.error('Không thể xác định ID chữ ký số');
+                            }
+                          }}
+                          disabled={verifying || !sigId}
                           className="text-green-600 hover:text-green-800 disabled:opacity-50 disabled:cursor-not-allowed"
                           title="Xác thực"
                         >
@@ -427,8 +652,16 @@ const DigitalSignatures = () => {
                         </button>
                         {(user?.role === 'admin' || sig.signedBy?._id === user?.id) && sig.status === 'active' && (
                           <button
-                            onClick={() => handleRevoke(sig._id)}
-                            className="text-red-600 hover:text-red-800"
+                            onClick={() => {
+                              const id = normalizeId(sig._id);
+                              if (id) {
+                                handleRevoke(id);
+                              } else {
+                                toast.error('Không thể xác định ID chữ ký số');
+                              }
+                            }}
+                            disabled={!sigId}
+                            className="text-red-600 hover:text-red-800 disabled:opacity-50 disabled:cursor-not-allowed"
                             title="Thu hồi"
                           >
                             <X className="w-5 h-5" />
@@ -437,7 +670,8 @@ const DigitalSignatures = () => {
                       </div>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -500,11 +734,23 @@ const DigitalSignatures = () => {
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="">Chọn đối tượng</option>
-                  {Array.isArray(drugs) && drugs.map((drug) => (
-                    <option key={drug._id} value={drug._id}>
-                      {drug.name} - {drug.batchNumber}
-                    </option>
-                  ))}
+                  {Array.isArray(drugs) && drugs.map((drug) => {
+                    // Normalize ID để đảm bảo là string hợp lệ
+                    const drugId = drug.id && drug.id !== '[object Object]' && typeof drug.id === 'string'
+                      ? drug.id
+                      : normalizeId(drug._id || drug.id);
+                    
+                    if (!drugId || drugId === '[object Object]') {
+                      console.warn('Invalid drug ID, skipping:', drug);
+                      return null;
+                    }
+                    
+                    return (
+                      <option key={drugId} value={drugId}>
+                        {drug.name} - {drug.batchNumber}
+                      </option>
+                    );
+                  })}
                 </select>
                 {errors.targetId && (
                   <p className="text-red-500 text-sm mt-1">{errors.targetId.message}</p>
@@ -603,6 +849,62 @@ const DigitalSignatures = () => {
                       <span className="text-green-600">Đã timestamp</span>
                     ) : (
                       <span className="text-gray-400">Chưa timestamp</span>
+                    )}
+                  </div>
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-gray-600">Blockchain</label>
+                  <div className="text-gray-900">
+                    {selectedSignature.blockchain?.transactionHash ? (
+                      <div className="space-y-2">
+                        {(() => {
+                          const etherscanUrl = selectedSignature.blockchain?.etherscanUrl || 
+                            getEtherscanUrl(selectedSignature.blockchain?.network, selectedSignature.blockchain.transactionHash);
+                          return etherscanUrl ? (
+                            <a
+                              href={etherscanUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 font-medium"
+                            >
+                              <ExternalLink className="w-4 h-4" />
+                              Xem trên Etherscan
+                            </a>
+                          ) : (
+                            <span className="text-gray-500 text-sm">Chưa có link Etherscan</span>
+                          );
+                        })()}
+                        <div className="bg-gray-50 p-3 rounded border">
+                          <div className="text-xs text-gray-600 mb-1">Transaction Hash:</div>
+                          <div className="font-mono text-xs break-all text-gray-900">
+                            {selectedSignature.blockchain.transactionHash}
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 text-xs">
+                          {selectedSignature.blockchain.blockNumber && (
+                            <div>
+                              <span className="text-gray-600">Block:</span>{' '}
+                              <span className="font-medium">{selectedSignature.blockchain.blockNumber}</span>
+                            </div>
+                          )}
+                          {selectedSignature.blockchain.network && (
+                            <div>
+                              <span className="text-gray-600">Network:</span>{' '}
+                              <span className="font-medium">{selectedSignature.blockchain.network}</span>
+                            </div>
+                          )}
+                          {selectedSignature.blockchain.timestamp && (
+                            <div>
+                              <span className="text-gray-600">Timestamp:</span>{' '}
+                              <span className="font-medium">
+                                {new Date(selectedSignature.blockchain.timestamp).toLocaleString('vi-VN')}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <span className="text-gray-400">Chưa lưu lên blockchain</span>
                     )}
                   </div>
                 </div>

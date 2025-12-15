@@ -33,6 +33,12 @@ import Invoices from './pages/Invoices';
 import ImportExport from './pages/ImportExport';
 import Suppliers from './pages/Suppliers';
 import DrugTimelineDemo from './pages/DrugTimelineDemo';
+import Marketplace from './pages/Marketplace';
+import Bids from './pages/Bids';
+import Checkout from './pages/Checkout';
+import AIChatWidget from './components/AIChatWidget';
+import CartDrawer from './components/CartDrawer';
+import { CartProvider } from './contexts/CartContext';
 
 // Create a client
 const queryClient = new QueryClient({
@@ -199,6 +205,35 @@ const AppRoutes = () => {
             <Layout>
               <Orders />
             </Layout>
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/marketplace"
+        element={
+          <ProtectedRoute requiredRoles={['admin', 'manufacturer', 'distributor', 'hospital']}>
+            <Marketplace />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/bids"
+        element={
+          <ProtectedRoute requiredRoles={['admin', 'manufacturer', 'distributor', 'hospital']}>
+            <Layout>
+              <Bids />
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/checkout"
+        element={
+          <ProtectedRoute requiredRoles={['admin', 'manufacturer', 'distributor', 'hospital']}>
+            <Checkout />
           </ProtectedRoute>
         }
       />
@@ -434,9 +469,12 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
-        <Router>
-          <AppRoutes />
-          <Toaster
+        <CartProvider>
+          <Router>
+            <AppRoutes />
+            <CartDrawer />
+            <AIChatWidget />
+            <Toaster
             position="top-right"
             toastOptions={{
               duration: 3000,
@@ -460,7 +498,8 @@ function App() {
               },
             }}
           />
-        </Router>
+          </Router>
+        </CartProvider>
       </AuthProvider>
     </QueryClientProvider>
   );

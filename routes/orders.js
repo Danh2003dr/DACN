@@ -10,7 +10,8 @@ const {
   shipOrder,
   deliverOrder,
   cancelOrder,
-  getOrderStats
+  getOrderStats,
+  reorder
 } = require('../controllers/orderController');
 
 // Tất cả routes yêu cầu authentication
@@ -60,6 +61,11 @@ router.post('/:id/deliver', deliverOrder);
 // @desc    Hủy đơn hàng
 // @access  Private
 router.post('/:id/cancel', cancelOrder);
+
+// @route   POST /api/orders/:id/reorder
+// @desc    Đặt lại đơn hàng (lấy items từ order cũ)
+// @access  Private
+router.post('/:id/reorder', reorder);
 
 module.exports = router;
 

@@ -181,6 +181,58 @@ const userSchema = new mongoose.Schema({
     type: Date
   },
   
+  // Credit Terms - Mua trả sau (B2B Enterprise Feature)
+  creditLimit: {
+    type: Number,
+    default: 0,
+    min: 0,
+    // Chỉ áp dụng cho các role B2B
+    validate: {
+      validator: function(value) {
+        // Nếu là role B2B, creditLimit có thể > 0
+        const b2bRoles = ['manufacturer', 'distributor', 'hospital', 'pharmacy', 'dealer'];
+        return !b2bRoles.includes(this.role) || value >= 0;
+      },
+      message: 'Credit limit phải >= 0'
+    }
+  },
+  
+  currentDebt: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
+  
+  // Lịch sử thay đổi credit
+  creditHistory: [{
+    type: {
+      type: String,
+      enum: ['order_created', 'order_paid', 'manual_adjustment', 'limit_changed'],
+      required: true
+    },
+    amount: {
+      type: Number,
+      required: true
+    },
+    previousDebt: Number,
+    newDebt: Number,
+    previousLimit: Number,
+    newLimit: Number,
+    orderId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Order'
+    },
+    notes: String,
+    changedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    },
+    changedAt: {
+      type: Date,
+      default: Date.now
+    }
+  }],
+  
   // Metadata
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,
@@ -225,6 +277,74 @@ userSchema.pre('save', async function(next) {
 // Method để so sánh mật khẩu
 userSchema.methods.comparePassword = async function(candidatePassword) {
   return await bcrypt.compare(candidatePassword, this.password);
+};
+
+// Virtual để tính available credit
+userSchema.virtual('availableCredit').get(function() {
+  return Math.max(0, this.creditLimit - this.currentDebt);
+});
+
+// Virtual để kiểm tra có thể mua trả sau không
+userSchema.virtual('canUseCredit').get(function() {
+  return this.creditLimit > 0 && this.currentDebt < this.creditLimit;
+});
+
+// Method để kiểm tra có đủ credit để mua không
+userSchema.methods.hasEnoughCredit = function(amount) {
+  return this.creditLimit > 0 && (this.currentDebt + amount) <= this.creditLimit;
+};
+
+// Method để cập nhật debt khi tạo order
+userSchema.methods.addDebt = async function(amount, orderId, changedBy, notes = null) {
+  const previousDebt = this.currentDebt;
+  this.currentDebt += amount;
+  
+  this.creditHistory.push({
+    type: 'order_created',
+    amount: amount,
+    previousDebt: previousDebt,
+    newDebt: this.currentDebt,
+    orderId: orderId,
+    changedBy: changedBy,
+    notes: notes || `Tăng nợ cho đơn hàng ${orderId}`
+  });
+  
+  return await this.save();
+};
+
+// Method để giảm debt khi thanh toán
+userSchema.methods.reduceDebt = async function(amount, orderId, changedBy, notes = null) {
+  const previousDebt = this.currentDebt;
+  this.currentDebt = Math.max(0, this.currentDebt - amount);
+  
+  this.creditHistory.push({
+    type: 'order_paid',
+    amount: amount,
+    previousDebt: previousDebt,
+    newDebt: this.currentDebt,
+    orderId: orderId,
+    changedBy: changedBy,
+    notes: notes || `Thanh toán cho đơn hàng ${orderId}`
+  });
+  
+  return await this.save();
+};
+
+// Method để thay đổi credit limit (admin only)
+userSchema.methods.updateCreditLimit = async function(newLimit, changedBy, notes = null) {
+  const previousLimit = this.creditLimit;
+  this.creditLimit = newLimit;
+  
+  this.creditHistory.push({
+    type: 'limit_changed',
+    amount: newLimit - previousLimit,
+    previousLimit: previousLimit,
+    newLimit: newLimit,
+    changedBy: changedBy,
+    notes: notes || `Thay đổi credit limit từ ${previousLimit} thành ${newLimit}`
+  });
+  
+  return await this.save();
 };
 
 // Method để tạo JWT token

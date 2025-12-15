@@ -1,6 +1,7 @@
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import '../utils/logger.dart';
+import '../utils/notification_navigator.dart';
 
 // Background message handler (must be top-level function)
 @pragma('vm:entry-point')
@@ -196,18 +197,21 @@ class NotificationService {
 
   void _onNotificationTapped(NotificationResponse response) {
     AppLogger.d('Notification tapped: ${response.payload}');
-    // TODO: Navigate to specific screen based on payload
+    _navigateFromNotification(response.payload);
   }
 
   void _handleNotificationTap(RemoteMessage message) {
     final data = message.data;
     AppLogger.d('Handling notification tap with data: $data');
+    _navigateFromNotificationData(data);
+  }
 
-    // TODO: Navigate to specific screen based on data
-    // Example:
-    // if (data['type'] == 'drug_recall') {
-    //   navigatorKey.currentState?.pushNamed('/drug-detail', arguments: data['drugId']);
-    // }
+  void _navigateFromNotification(String? payload) {
+    NotificationNavigator.navigateFromPayload(payload);
+  }
+
+  void _navigateFromNotificationData(Map<String, dynamic> data) {
+    NotificationNavigator.navigateFromNotification(data);
   }
 
   Future<void> subscribeToTopic(String topic) async {

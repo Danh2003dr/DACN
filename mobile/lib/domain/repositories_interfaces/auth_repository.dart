@@ -25,4 +25,10 @@ abstract class AuthRepository {
   Future<Either<Failure, Map<String, String>?>> getSavedCredentials();
 
   Future<Either<Failure, void>> clearSavedCredentials();
+
+  Future<Either<Failure, void>> changePassword(
+    String currentPassword,
+    String newPassword,
+    String confirmPassword,
+  );
 }

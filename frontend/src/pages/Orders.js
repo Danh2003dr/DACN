@@ -59,6 +59,43 @@ const Orders = () => {
     notes: ''
   });
 
+  // Helper function để chuyển đổi ID thành string an toàn
+  const normalizeId = (id) => {
+    if (!id && id !== 0) return '';
+    if (typeof id === 'string') {
+      if (id === '[object Object]') return '';
+      return id.trim();
+    }
+    if (typeof id === 'number') return String(id);
+    if (typeof id === 'object') {
+      if (id._id !== undefined) return normalizeId(id._id);
+      if (id.id !== undefined) return normalizeId(id.id);
+      if (typeof id.toString === 'function') {
+        try {
+          const str = id.toString();
+          if (str === '[object Object]') {
+            if (typeof id.valueOf === 'function') {
+              const val = id.valueOf();
+              if (val && typeof val === 'object' && val.toString) {
+                return val.toString();
+              }
+              return String(val);
+            }
+            if (id.str) return String(id.str);
+            return '';
+          }
+          return str;
+        } catch (e) {
+          console.warn('Error converting ID to string:', e, id);
+          return '';
+        }
+      }
+      console.warn('Unable to normalize ID, object without toString:', id);
+      return '';
+    }
+    return String(id);
+  };
+
   // Load orders
   const loadOrders = async (page = 1) => {
     try {
@@ -73,7 +110,19 @@ const Orders = () => {
       
       const response = await orderAPI.getOrders(params);
       if (response && response.success) {
-        setOrders(response.data?.orders || []);
+        // Normalize _id thành string để tránh lỗi [object Object]
+        const normalizedOrders = (response.data?.orders || []).map(order => {
+          const validId = order.id && order.id !== '[object Object]' 
+            ? order.id 
+            : normalizeId(order._id || order.id);
+          
+          return {
+            ...order,
+            _id: validId,
+            id: validId
+          };
+        });
+        setOrders(normalizedOrders);
         setPagination(response.data?.pagination || { page: 1, limit: 50, total: 0, pages: 0 });
       } else {
         // Empty data - không phải lỗi
@@ -158,11 +207,18 @@ const Orders = () => {
   // Status actions
   const handleConfirm = async (orderId) => {
     try {
-      await orderAPI.confirmOrder(orderId);
+      const id = normalizeId(orderId);
+      if (!id || id === '[object Object]') {
+        toast.error('ID đơn hàng không hợp lệ');
+        return;
+      }
+      await orderAPI.confirmOrder(id);
+      toast.success('Đã xác nhận đơn hàng');
       loadOrders(pagination.page);
       loadStats();
     } catch (error) {
       console.error('Error confirming order:', error);
+      toast.error('Không thể xác nhận đơn hàng: ' + (error.response?.data?.message || error.message));
     }
   };
 
@@ -171,11 +227,18 @@ const Orders = () => {
     if (!locationId) return;
     
     try {
-      await orderAPI.processOrder(orderId, locationId);
+      const id = normalizeId(orderId);
+      if (!id || id === '[object Object]') {
+        toast.error('ID đơn hàng không hợp lệ');
+        return;
+      }
+      await orderAPI.processOrder(id, locationId);
+      toast.success('Đã xử lý đơn hàng');
       loadOrders(pagination.page);
       loadStats();
     } catch (error) {
       console.error('Error processing order:', error);
+      toast.error('Không thể xử lý đơn hàng: ' + (error.response?.data?.message || error.message));
     }
   };
 
@@ -184,21 +247,35 @@ const Orders = () => {
     if (!trackingNumber) return;
     
     try {
-      await orderAPI.shipOrder(orderId, { trackingNumber });
+      const id = normalizeId(orderId);
+      if (!id || id === '[object Object]') {
+        toast.error('ID đơn hàng không hợp lệ');
+        return;
+      }
+      await orderAPI.shipOrder(id, { trackingNumber });
+      toast.success('Đã cập nhật trạng thái giao hàng');
       loadOrders(pagination.page);
       loadStats();
     } catch (error) {
       console.error('Error shipping order:', error);
+      toast.error('Không thể cập nhật trạng thái giao hàng: ' + (error.response?.data?.message || error.message));
     }
   };
 
   const handleDeliver = async (orderId) => {
     try {
-      await orderAPI.deliverOrder(orderId);
+      const id = normalizeId(orderId);
+      if (!id || id === '[object Object]') {
+        toast.error('ID đơn hàng không hợp lệ');
+        return;
+      }
+      await orderAPI.deliverOrder(id);
+      toast.success('Đã xác nhận giao hàng');
       loadOrders(pagination.page);
       loadStats();
     } catch (error) {
       console.error('Error delivering order:', error);
+      toast.error('Không thể xác nhận giao hàng: ' + (error.response?.data?.message || error.message));
     }
   };
 
@@ -207,11 +284,18 @@ const Orders = () => {
     if (!reason) return;
     
     try {
-      await orderAPI.cancelOrder(orderId, reason);
+      const id = normalizeId(orderId);
+      if (!id || id === '[object Object]') {
+        toast.error('ID đơn hàng không hợp lệ');
+        return;
+      }
+      await orderAPI.cancelOrder(id, reason);
+      toast.success('Đã hủy đơn hàng');
       loadOrders(pagination.page);
       loadStats();
     } catch (error) {
       console.error('Error cancelling order:', error);
+      toast.error('Không thể hủy đơn hàng: ' + (error.response?.data?.message || error.message));
     }
   };
 
@@ -248,6 +332,36 @@ const Orders = () => {
       case 'cancelled': return <XCircle className="w-4 h-4 text-red-600" />;
       default: return <AlertCircle className="w-4 h-4" />;
     }
+  };
+
+  // Helper function để tạo unique key - luôn đảm bảo trả về string và unique
+  const getUniqueKey = (item, idx) => {
+    // Luôn bắt đầu với index để đảm bảo uniqueness ngay từ đầu
+    let idPart = '';
+    
+    // Thử lấy ID từ nhiều nguồn
+    if (item._id) {
+      if (typeof item._id === 'string' && item._id.trim() !== '' && item._id !== '[object Object]') {
+        idPart = item._id;
+      } else if (typeof item._id === 'object' && item._id !== null) {
+        // Nếu _id là object, lấy nested _id hoặc id
+        const nestedId = item._id._id || item._id.id;
+        if (nestedId && typeof nestedId === 'string' && nestedId !== '[object Object]') {
+          idPart = nestedId;
+        }
+      }
+    }
+    
+    // Nếu không có ID hợp lệ, tạo từ các giá trị khác
+    if (!idPart || idPart === '[object Object]') {
+      const orderNumber = String(item.orderNumber || '');
+      const orderDate = item.orderDate ? String(new Date(item.orderDate).getTime()) : String(Date.now());
+      const orderType = String(item.orderType || '');
+      idPart = `${orderNumber}-${orderType}-${orderDate}`;
+    }
+    
+    // Luôn kết hợp index làm phần chính để đảm bảo unique tuyệt đối
+    return `order-${idx}-${idPart}`;
   };
 
   // Add item to form
@@ -462,8 +576,8 @@ const Orders = () => {
                   </td>
                 </tr>
               ) : (
-                orders.map((order) => (
-                  <tr key={order._id} className="hover:bg-gray-50">
+                orders.map((order, idx) => (
+                  <tr key={getUniqueKey(order, idx)} className="hover:bg-gray-50">
                     <td className="px-6 py-4">
                       <div className="text-sm font-medium text-gray-900">{order.orderNumber}</div>
                     </td>
@@ -651,7 +765,7 @@ const Orders = () => {
                 </div>
                 <div className="space-y-2">
                   {orderForm.items.map((item, index) => (
-                    <div key={index} className="grid grid-cols-6 gap-2 items-end">
+                    <div key={`order-form-item-${index}-${item.drugId || ''}`} className="grid grid-cols-6 gap-2 items-end">
                       <div>
                         <label className="block text-xs text-gray-600 mb-1">Mã thuốc</label>
                         <input
@@ -777,7 +891,7 @@ const Orders = () => {
                   <p className="text-sm font-medium text-gray-700 mb-2">Items:</p>
                   <div className="space-y-2">
                     {selectedOrder.items.map((item, index) => (
-                      <div key={index} className="border rounded p-2">
+                      <div key={`order-detail-item-${index}-${item.drugId || item.drugName || ''}`} className="border rounded p-2">
                         <p className="font-medium">{item.drugName || item.drugId}</p>
                         <p className="text-sm text-gray-600">
                           Số lượng: {item.quantity} {item.unit} - Giá: {new Intl.NumberFormat('vi-VN').format(item.unitPrice || 0)} đ

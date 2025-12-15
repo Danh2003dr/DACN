@@ -122,6 +122,7 @@ const stockIn = async (data, user, req = null) => {
           locationId,
           locationName,
           address: data.address || '',
+          organizationId: user.organizationId || null,
           coordinates: data.coordinates || null
         },
         quantity: 0,

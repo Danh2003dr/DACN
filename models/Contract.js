@@ -244,25 +244,89 @@ contractSchema.statics.getContracts = async function(filters = {}, options = {})
   const skip = (page - 1) * limit;
   query.skip(skip).limit(limit);
   
-  // Populate
-  query.populate('supplier', 'name supplierCode')
-    .populate('buyer', 'fullName organizationInfo')
-    .populate('digitalSignature')
-    .populate('createdBy', 'fullName')
-    .populate('updatedBy', 'fullName');
+  // Populate với error handling - sử dụng try-catch cho từng populate
+  query.populate({
+    path: 'supplier',
+    select: 'name supplierCode',
+    options: { strictPopulate: false }
+  });
   
-  const [contracts, total] = await Promise.all([
-    query.exec(),
-    this.countDocuments(filters)
-  ]);
+  query.populate({
+    path: 'buyer',
+    select: 'fullName organizationInfo',
+    options: { strictPopulate: false }
+  });
+  
+  // Populate digitalSignature chỉ nếu có (optional)
+  query.populate({
+    path: 'digitalSignature',
+    select: 'signature certificate status createdAt',
+    options: { strictPopulate: false }
+  });
+  
+  query.populate({
+    path: 'createdBy',
+    select: 'fullName',
+    options: { strictPopulate: false }
+  });
+  
+  query.populate({
+    path: 'updatedBy',
+    select: 'fullName',
+    options: { strictPopulate: false }
+  });
+  
+  let contracts = [];
+  let total = 0;
+  
+  try {
+    [contracts, total] = await Promise.all([
+      query.exec(),
+      this.countDocuments(filters)
+    ]);
+  } catch (queryError) {
+    console.error('Error in getContracts query:', queryError);
+    console.error('Query error details:', {
+      message: queryError.message,
+      name: queryError.name,
+      filters: JSON.stringify(filters, null, 2),
+      stack: queryError.stack
+    });
+    
+    // Nếu lỗi là do populate, thử lại không populate
+    if (queryError.message && (
+      queryError.message.includes('populate') || 
+      queryError.message.includes('strictPopulate') ||
+      queryError.message.includes('Cannot populate')
+    )) {
+      console.warn('Retrying query without populate due to populate error');
+      try {
+        const simpleQuery = this.find(filters);
+        simpleQuery.sort(sort);
+        simpleQuery.skip(skip).limit(limit);
+        
+        [contracts, total] = await Promise.all([
+          simpleQuery.exec(),
+          this.countDocuments(filters)
+        ]);
+      } catch (retryError) {
+        console.error('Error in retry query:', retryError);
+        contracts = [];
+        total = 0;
+      }
+    } else {
+      // Nếu không phải lỗi populate, throw lại
+      throw queryError;
+    }
+  }
   
   return {
-    contracts,
+    contracts: Array.isArray(contracts) ? contracts : [],
     pagination: {
       page,
       limit,
-      total,
-      pages: Math.ceil(total / limit)
+      total: total || 0,
+      pages: Math.ceil((total || 0) / limit)
     }
   };
 };

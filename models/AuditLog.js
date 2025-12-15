@@ -60,7 +60,8 @@ const auditLogSchema = new mongoose.Schema({
   module: {
     type: String,
     enum: ['auth', 'user', 'drug', 'supply_chain', 'digital_signature', 'trust_score', 
-           'review', 'task', 'notification', 'settings', 'blockchain', 'report', 'other'],
+           'review', 'task', 'notification', 'settings', 'blockchain', 'report', 
+           'import_export', 'other'],
     required: true,
     index: true
   },
