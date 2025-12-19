@@ -1,13 +1,21 @@
 const Review = require('../models/Review');
 const User = require('../models/User');
 const Drug = require('../models/Drug');
+const mongoose = require('mongoose');
 const TrustScoreService = require('../services/trustScoreService');
 
 // @desc    Tạo đánh giá mới
 // @route   POST /api/reviews
-// @access  Private/Public (cho đánh giá ẩn danh)
+// @access  Private (cần đăng nhập; "ẩn danh" chỉ là ẩn hiển thị danh tính)
 const createReview = async (req, res) => {
   try {
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Bạn cần đăng nhập để tạo đánh giá'
+      });
+    }
+
     const {
       targetType,
       targetId,
@@ -22,6 +30,11 @@ const createReview = async (req, res) => {
       verificationInfo,
       tags
     } = req.body;
+
+    const isAnon =
+      isAnonymous === undefined
+        ? true
+        : (isAnonymous === true || isAnonymous === 'true' || isAnonymous === 1 || isAnonymous === '1');
 
     // Validation cơ bản
     if (!targetType || !targetName || !overallRating || (!targetId && !targetName)) {
@@ -74,7 +87,7 @@ const createReview = async (req, res) => {
       title,
       content,
       reviewType: reviewType || 'usage',
-      isAnonymous: isAnonymous !== undefined ? isAnonymous : true,
+      isAnonymous: isAnon,
       reviewerInfo: reviewerInfo || {},
       verificationInfo: verificationInfo || {},
       tags: tags || [],
@@ -82,12 +95,20 @@ const createReview = async (req, res) => {
       language: 'vi'
     };
 
+    // Admin tạo đánh giá thì tự động duyệt để cập nhật điểm tín nhiệm ngay
+    // (Các user thường vẫn để pending để kiểm duyệt)
+    if (req.user?.role === 'admin') {
+      reviewData.status = 'approved';
+    }
+
     // Luôn set reviewer nếu có user đăng nhập (để user có thể xem đánh giá của mình)
     // isAnonymous chỉ ảnh hưởng đến việc hiển thị tên, không ảnh hưởng đến việc lưu reviewer
-    if (req.user) {
-      reviewData.reviewer = req.user._id;
-      reviewData.reviewerInfo.role = req.user.role;
-    }
+    reviewData.reviewer = req.user._id;
+    // Nếu đánh giá ẩn danh thì không lưu role thật để tránh lộ thông tin
+    // Nếu role ngoài whitelist thì fallback về 'anonymous' để tránh lỗi enum
+    const allowedReviewerRoles = new Set(['patient', 'hospital', 'distributor', 'manufacturer', 'admin', 'anonymous']);
+    const nonAnonRole = allowedReviewerRoles.has(req.user.role) ? req.user.role : 'anonymous';
+    reviewData.reviewerInfo.role = isAnon ? 'anonymous' : nonAnonRole;
 
     // Thêm thông tin IP và User Agent (cho bảo mật)
     reviewData.ipAddress = req.ip || req.connection.remoteAddress;
@@ -124,6 +145,71 @@ const createReview = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Lỗi server khi tạo đánh giá'
+    });
+  }
+};
+
+// @desc    Lấy danh sách đánh giá của tôi
+// @route   GET /api/reviews/my
+// @access  Private
+const getMyReviews = async (req, res) => {
+  try {
+    const {
+      page = 1,
+      limit = 20,
+      status,
+      targetType,
+      minRating,
+      maxRating,
+      search
+    } = req.query;
+
+    const skip = (page - 1) * limit;
+
+    const filter = { reviewer: req.user._id };
+
+    if (status) filter.status = status;
+    if (targetType) filter.targetType = targetType;
+
+    if (minRating || maxRating) {
+      filter.overallRating = {};
+      if (minRating) filter.overallRating.$gte = parseInt(minRating);
+      if (maxRating) filter.overallRating.$lte = parseInt(maxRating);
+    }
+
+    if (search) {
+      filter.$or = [
+        { title: { $regex: search, $options: 'i' } },
+        { content: { $regex: search, $options: 'i' } },
+        { targetName: { $regex: search, $options: 'i' } }
+      ];
+    }
+
+    const reviews = await Review.find(filter)
+      .populate('reviewer', 'fullName email role')
+      .populate('response.respondedBy', 'fullName email role')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit));
+
+    const total = await Review.countDocuments(filter);
+
+    res.status(200).json({
+      success: true,
+      data: {
+        reviews,
+        pagination: {
+          current: parseInt(page),
+          pages: Math.ceil(total / limit),
+          total
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Get my reviews error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Lỗi server khi lấy danh sách đánh giá của tôi'
     });
   }
 };
@@ -224,6 +310,13 @@ const getReviewStats = async (req, res) => {
 const getReview = async (req, res) => {
   try {
     const { id } = req.params;
+
+    if (!mongoose.isValidObjectId(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'ID đánh giá không hợp lệ'
+      });
+    }
 
     const review = await Review.findById(id)
       .populate('reviewer', 'fullName email role avatar')
@@ -397,11 +490,25 @@ const reportReview = async (req, res) => {
       });
     }
 
+    // Nếu có báo cáo mới thì đánh dấu review để admin dễ lọc
+    const reporterIdStr = req.user?._id?.toString?.() || String(req.user?._id || '');
+    const alreadyReported = Array.isArray(review.reports)
+      ? review.reports.some(r => (r.reporter?.toString?.() || String(r.reporter || '')) === reporterIdStr)
+      : false;
+
+    if (!alreadyReported && review.status !== 'flagged') {
+      review.status = 'flagged';
+    }
+
     await review.report(req.user._id, reason, description);
 
     res.status(200).json({
       success: true,
-      message: 'Báo cáo thành công'
+      message: 'Báo cáo thành công',
+      data: {
+        status: review.status,
+        reportsCount: Array.isArray(review.reports) ? review.reports.length : 0
+      }
     });
 
   } catch (error) {
@@ -452,7 +559,8 @@ const getReviewsForAdmin = async (req, res) => {
       minRating,
       maxRating,
       search,
-      reviewer // Thêm filter theo reviewer (user ID)
+      reviewer, // Thêm filter theo reviewer (user ID)
+      hasReports // Lọc các review có báo cáo
     } = req.query;
 
     const skip = (page - 1) * limit;
@@ -487,8 +595,14 @@ const getReviewsForAdmin = async (req, res) => {
       ];
     }
 
+    // Lọc chỉ những review có ít nhất 1 report
+    if (hasReports === 'true') {
+      filter['reports.0'] = { $exists: true };
+    }
+
     const reviews = await Review.find(filter)
       .populate('reviewer', 'fullName email role')
+      .populate('reports.reporter', 'fullName email role')
       .populate('response.respondedBy', 'fullName email role')
       .sort({ createdAt: -1 })
       .skip(skip)
@@ -513,6 +627,58 @@ const getReviewsForAdmin = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Lỗi server khi lấy danh sách đánh giá'
+    });
+  }
+};
+
+// @desc    Cập nhật trạng thái một report (Admin)
+// @route   PUT /api/reviews/:id/reports/:reportId
+// @access  Private (Admin only)
+const updateReviewReportStatus = async (req, res) => {
+  try {
+    const { id, reportId } = req.params;
+    const { status } = req.body;
+
+    if (!['pending', 'resolved', 'dismissed'].includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Trạng thái báo cáo không hợp lệ'
+      });
+    }
+
+    const review = await Review.findById(id);
+    if (!review) {
+      return res.status(404).json({
+        success: false,
+        message: 'Đánh giá không tồn tại'
+      });
+    }
+
+    const report = review.reports?.id ? review.reports.id(reportId) : (review.reports || []).find(r => String(r._id) === String(reportId));
+    if (!report) {
+      return res.status(404).json({
+        success: false,
+        message: 'Báo cáo không tồn tại'
+      });
+    }
+
+    report.status = status;
+    await review.save();
+
+    await review.populate('reports.reporter', 'fullName email role');
+
+    res.status(200).json({
+      success: true,
+      message: 'Cập nhật báo cáo thành công',
+      data: {
+        review
+      }
+    });
+  } catch (error) {
+    console.error('Update review report status error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Lỗi server khi cập nhật báo cáo'
     });
   }
 };
@@ -603,6 +769,7 @@ const deleteReview = async (req, res) => {
 
 module.exports = {
   createReview,
+  getMyReviews,
   getReviewsByTarget,
   getReviewStats,
   getReview,
@@ -612,6 +779,7 @@ module.exports = {
   reportReview,
   getTopRatedTargets,
   getReviewsForAdmin,
+  updateReviewReportStatus,
   updateReviewStatus,
   deleteReview
 };

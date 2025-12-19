@@ -3,6 +3,7 @@ const User = require('../models/User');
 const SupplyChain = require('../models/SupplyChain');
 const Drug = require('../models/Drug');
 const mongoose = require('mongoose');
+const TrustScoreService = require('../services/trustScoreService');
 
 /**
  * Helper function để chuẩn hóa ObjectId từ request body hoặc params
@@ -465,6 +466,25 @@ const updateTask = async (req, res) => {
           sentTo: task.assignedBy
         });
       }
+      
+      // #region agent log
+      // Auto-update trust score khi task hoàn thành
+      if (statusChanged && updateData.status === 'completed' && task.assignedTo) {
+        try {
+          const assignedToId = normalizeObjectId(task.assignedTo?._id || task.assignedTo);
+          if (assignedToId) {
+            // Cập nhật điểm tín nhiệm không blocking (async)
+            TrustScoreService.updateScoreOnTask(task._id).catch(error => {
+              console.error('Error updating trust score on task completion:', error);
+            });
+            fetch('http://127.0.0.1:7242/ingest/225bc8d1-6824-4e38-b617-49570f639471',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'taskController.js:updateTask',message:'TRUST_SCORE_UPDATE_TRIGGERED',data:{taskId:task._id.toString(),assignedTo:assignedToId,reason:'task_completed',timestamp:Date.now()},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H1'})}).catch(()=>{});
+          }
+        } catch (error) {
+          console.error('Error triggering trust score update on task completion:', error);
+          // Không throw error để không ảnh hưởng đến response
+        }
+      }
+      // #endregion
     }
 
     // Populate để trả về thông tin đầy đủ

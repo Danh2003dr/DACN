@@ -698,6 +698,12 @@ export const reviewAPI = {
     return response.data;
   },
 
+  // Get my reviews (authenticated)
+  getMyReviews: async (params = '') => {
+    const response = await api.get(`/reviews/my?${params}`);
+    return response.data;
+  },
+
   // Get reviews by target
   getReviewsByTarget: async (targetType, targetId, params = '') => {
     const response = await api.get(`/reviews/target/${targetType}/${targetId}?${params}`);
@@ -737,6 +743,12 @@ export const reviewAPI = {
   // Report review
   reportReview: async (id, data) => {
     const response = await api.post(`/reviews/${id}/report`, data);
+    return response.data;
+  },
+
+  // Admin: update a report status on a review
+  updateReviewReportStatus: async (reviewId, reportId, data) => {
+    const response = await api.put(`/reviews/${reviewId}/reports/${reportId}`, data);
     return response.data;
   },
 

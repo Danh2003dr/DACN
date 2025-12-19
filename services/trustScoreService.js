@@ -364,6 +364,11 @@ class TrustScoreService {
     // Cập nhật xếp hạng
     await SupplierTrustScore.getRanking(supplierId);
     
+    // #region agent log
+    // Tự động award badges dựa trên điểm và thống kê
+    await this.autoAwardBadges(trustScore);
+    // #endregion
+    
     return trustScore;
   }
   
@@ -399,6 +404,80 @@ class TrustScoreService {
     if (!signature) return;
     
     await this.calculateAndUpdateTrustScore(signature.signedBy);
+  }
+  
+  /**
+   * Tự động award badges dựa trên điểm và thống kê
+   */
+  static async autoAwardBadges(trustScore) {
+    try {
+      // Badge: Excellence (Điểm ≥900)
+      if (trustScore.trustScore >= 900) {
+        await trustScore.addBadge(
+          'excellence_900',
+          'Xuất Sắc',
+          'excellence',
+          'Đạt điểm tín nhiệm ≥900 điểm'
+        );
+      }
+      
+      // Badge: Perfect Compliance (Tỷ lệ tuân thủ 100%)
+      if (trustScore.complianceStats?.validSignatureRate === 100 && 
+          trustScore.complianceStats?.onTimeTaskRate === 100) {
+        await trustScore.addBadge(
+          'perfect_compliance',
+          'Tuân Thủ Hoàn Hảo',
+          'compliance',
+          'Tỷ lệ tuân thủ 100% (chữ ký và nhiệm vụ)'
+        );
+      }
+      
+      // Badge: Quality Master (Tỷ lệ chất lượng 100%)
+      if (trustScore.qualityStats?.totalQualityTests > 0 &&
+          trustScore.qualityStats?.passedQualityTests === trustScore.qualityStats?.totalQualityTests) {
+        await trustScore.addBadge(
+          'quality_master',
+          'Bậc Thầy Chất Lượng',
+          'quality',
+          '100% test chất lượng đạt'
+        );
+      }
+      
+      // Badge: Reliability (Hoàn thành 100% nhiệm vụ đúng hạn)
+      if (trustScore.complianceStats?.totalTasks > 0 &&
+          trustScore.complianceStats?.onTimeTaskRate === 100) {
+        await trustScore.addBadge(
+          'reliability',
+          'Đáng Tin Cậy',
+          'reliability',
+          'Hoàn thành 100% nhiệm vụ đúng hạn'
+        );
+      }
+      
+      // Badge: Customer Favorite (Nhiều đánh giá tích cực)
+      if (trustScore.reviewStats?.totalReviews >= 10 &&
+          trustScore.reviewStats?.positiveReviews >= trustScore.reviewStats?.totalReviews * 0.8) {
+        await trustScore.addBadge(
+          'customer_favorite',
+          'Yêu Thích Khách Hàng',
+          'excellence',
+          '≥80% đánh giá tích cực từ ≥10 reviews'
+        );
+      }
+      
+      // Badge: Top Performer (Xếp hạng top 10)
+      if (trustScore.ranking?.overall && trustScore.ranking.overall <= 10) {
+        await trustScore.addBadge(
+          'top_performer',
+          'Top 10',
+          'excellence',
+          `Xếp hạng #${trustScore.ranking.overall} trong hệ thống`
+        );
+      }
+    } catch (error) {
+      console.error('Error auto-awarding badges:', error);
+      // Không throw error, chỉ log
+    }
   }
 }
 

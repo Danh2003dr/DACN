@@ -1,6 +1,7 @@
 const SupplierTrustScore = require('../models/SupplierTrustScore');
 const TrustScoreService = require('../services/trustScoreService');
 const User = require('../models/User');
+const Review = require('../models/Review');
 
 // @desc    Lấy điểm tín nhiệm của nhà cung ứng
 // @route   GET /api/trust-scores/:supplierId
@@ -41,6 +42,35 @@ const getTrustScore = async (req, res) => {
         success: false,
         message: 'Không tìm thấy điểm tín nhiệm'
       });
+    }
+
+    // Nếu có review APPROVED mới hơn lần tính gần nhất thì tự động tính lại (tránh dữ liệu bị "không lên")
+    try {
+      const role = supplier.role;
+      const targetType =
+        role === 'manufacturer' ? 'manufacturer' :
+        role === 'distributor' ? 'distributor' :
+        role === 'hospital' ? 'hospital' :
+        null;
+
+      if (targetType) {
+        const lastCalculated = trustScore.lastCalculated ? new Date(trustScore.lastCalculated) : null;
+        const hasNewApprovedReview = await Review.exists({
+          targetType,
+          targetId: supplier._id,
+          status: 'approved',
+          ...(lastCalculated ? { createdAt: { $gt: lastCalculated } } : {})
+        });
+
+        if (hasNewApprovedReview) {
+          await TrustScoreService.calculateAndUpdateTrustScore(supplierId);
+          trustScore = await SupplierTrustScore.findBySupplier(supplierId)
+            .populate('supplier', 'fullName email organizationInfo role organizationId');
+        }
+      }
+    } catch (autoRecalcError) {
+      // Không chặn response nếu auto recalc fail
+      console.error('Auto recalculate trust score error:', autoRecalcError);
     }
     
     res.status(200).json({

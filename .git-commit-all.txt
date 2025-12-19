@@ -1,0 +1,9 @@
+chore: Cập nhật tất cả các thay đổi
+
+- Fix bidController.js: Xử lý drugId string trong getBids API
+- Fix routes/drugs.js: Thêm route /drugs/search cho mobile app
+- Fix mobile tasks: Tối ưu performance và fix provider issues
+- Fix mobile search: Route search đã có backend
+- Fix mobile verification history: Sửa lỗi text overflow
+- Update GitHub Actions workflow để tránh fail checks
+- Các file documentation và config updates

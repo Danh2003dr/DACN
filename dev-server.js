@@ -55,7 +55,19 @@ console.log('✅ [DEV] blockchainService loaded');
 const app = express();
 
 // Security middleware
-app.use(helmet());
+// Security middleware (dev-friendly)
+// Lưu ý: frontend chạy khác origin (localhost:3000) nên cần tắt/relax CORP/CSP trong dev
+const helmetConfig = process.env.NODE_ENV === 'production'
+  ? {
+      crossOriginResourcePolicy: { policy: 'cross-origin' },
+      crossOriginEmbedderPolicy: false
+    }
+  : {
+      crossOriginResourcePolicy: false,
+      crossOriginEmbedderPolicy: false,
+      contentSecurityPolicy: false
+    };
+app.use(helmet(helmetConfig));
 app.use(compression());
 
 // CORS configuration - cho phép tất cả trong dev

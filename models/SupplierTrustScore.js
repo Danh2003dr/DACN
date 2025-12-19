@@ -226,7 +226,8 @@ const supplierTrustScoreSchema = new mongoose.Schema({
     },
     relatedType: {
       type: String,
-      enum: ['review', 'task', 'signature', 'drug', 'quality_test', 'manual'],
+      // Cho phép null/không gắn loại liên quan (vd: cập nhật định kỳ)
+      enum: ['review', 'task', 'signature', 'drug', 'quality_test', 'manual', null],
       default: null
     },
     description: String,
@@ -263,7 +264,8 @@ const supplierTrustScoreSchema = new mongoose.Schema({
     },
     relatedType: {
       type: String,
-      enum: ['review', 'task', 'signature', 'drug', 'quality_test', 'compliance', 'manual'],
+      // Cho phép null/không gắn loại liên quan (vd: thưởng/phạt thủ công không gắn entity)
+      enum: ['review', 'task', 'signature', 'drug', 'quality_test', 'compliance', 'manual', null],
       default: null
     },
     appliedAt: {

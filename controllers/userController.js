@@ -87,21 +87,81 @@ const getAllUsers = async (req, res) => {
     // Tính toán pagination
     const skip = (page - 1) * limit;
     
-    // Query users - sử dụng lean() để trả về plain JavaScript objects thay vì Mongoose documents
-    const users = await User.find(filter)
+    // Query users - không dùng lean() để đảm bảo _id được serialize đúng cách
+    const userDocs = await User.find(filter)
       .select('-password')
       .sort({ createdAt: -1 })
       .skip(skip)
-      .limit(limit)
-      .lean(); // Convert Mongoose documents thành plain objects
+      .limit(limit);
+    
+    // Convert Mongoose documents thành plain objects và normalize _id
+    const users = userDocs.map(doc => {
+      const userObj = doc.toObject ? doc.toObject() : doc;
+      // Đảm bảo _id là string
+      if (userObj._id) {
+        userObj._id = String(userObj._id);
+      }
+      return userObj;
+    });
     
     const total = await User.countDocuments(filter);
     
-    // Đảm bảo _id được serialize đúng cách (MongoDB driver tự động làm điều này khi dùng lean())
+    // Đảm bảo _id được serialize đúng cách thành string
+    // Và thêm field id để đảm bảo frontend luôn có ID hợp lệ
+    const normalizedUsers = users.map(user => {
+      let userId = '';
+      
+      // Normalize _id thành string
+      if (user._id) {
+        if (typeof user._id === 'string') {
+          userId = user._id;
+        } else if (typeof user._id === 'object' && user._id !== null) {
+          // Trường hợp ObjectId là object với keys số (char array)
+          const keys = Object.keys(user._id);
+          if (keys.length > 0 && keys.every(key => /^\d+$/.test(key))) {
+            userId = keys
+              .sort((a, b) => parseInt(a) - parseInt(b))
+              .map(key => user._id[key])
+              .join('');
+          } else if (user._id.toString && typeof user._id.toString === 'function') {
+            userId = user._id.toString();
+          } else if (user._id._id) {
+            userId = String(user._id._id);
+          } else if (keys.length === 0) {
+            // Object rỗng {} - không thể lấy ID từ đây
+            // Thử tìm ID từ các field khác hoặc query lại
+            console.warn('User _id is empty object:', user.username || user.email);
+          }
+        } else {
+          userId = String(user._id);
+        }
+      }
+      
+      // Nếu vẫn không có userId hợp lệ, thử lấy từ field id
+      if ((!userId || userId === '[object Object]' || !/^[0-9a-fA-F]{24}$/.test(userId)) && user.id) {
+        if (typeof user.id === 'string' && /^[0-9a-fA-F]{24}$/.test(user.id)) {
+          userId = user.id;
+        }
+      }
+      
+      // Đảm bảo userId là string hợp lệ (24 hex characters cho ObjectId)
+      if (!userId || userId === '[object Object]' || !/^[0-9a-fA-F]{24}$/.test(userId)) {
+        // Nếu không lấy được ID hợp lệ, log warning nhưng vẫn trả về user
+        console.warn('Cannot normalize _id for user:', user.username || user.email, 'Original _id:', user._id);
+        // Không set userId nếu không hợp lệ, để frontend có thể xử lý
+      }
+      
+      return {
+        ...user,
+        _id: userId || (typeof user._id === 'string' ? user._id : null), // Đảm bảo _id là string hoặc null
+        id: userId || user.id || (typeof user._id === 'string' ? user._id : null) // Thêm field id để frontend dễ truy cập
+      };
+    });
+    
     res.status(200).json({
       success: true,
       data: {
-        users,
+        users: normalizedUsers,
         pagination: {
           page: page,
           current: page,

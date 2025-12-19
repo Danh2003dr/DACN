@@ -63,18 +63,29 @@ const mapDrugFormToEnum = (formValue) => {
     'cao khô': 'cao khô',
     'cao đặc': 'cao đặc',
     
+    // Bột pha
+    'bột pha': 'khác',
+    'bột pha hỗn dịch': 'khác',
+    'bột pha hỗn dịch uống': 'khác',
+    'bột pha dung dịch uống': 'khác',
+    
+    // Nguyên liệu
+    'nguyên liệu': 'khác',
+    'nguyên liệu làm thuốc': 'khác',
+    
+    // Hỗn dịch
+    'hỗn dịch': 'khác',
+    'hỗn dịch xịt mũi': 'khác',
+    
     // Tất cả các loại còn lại map về "khác"
     'dung dịch': 'khác',
     'dung dịch dùng ngoài': 'khác',
     'dung dịch nhỏ mũi': 'khác',
     'dung dịch vệ sinh': 'khác',
-    'bột pha hỗn dịch uống': 'khác',
-    'bột pha dung dịch uống': 'khác',
     'thuốc xịt': 'khác',
     'thuốc xịt mũi': 'khác',
-    'hỗn dịch xịt mũi': 'khác',
     'thuốc cốm': 'khác',
-    'nguyên liệu làm thuốc': 'khác'
+    'thuốc bột': 'khác'
   };
   
   // Kiểm tra mapping trực tiếp (chính xác)
@@ -110,9 +121,25 @@ const mapDrugFormToEnum = (formValue) => {
   if (formLower.includes('cao đặc')) {
     return 'cao đặc';
   }
+  // Xử lý các form đặc biệt - phải kiểm tra trước khi log warning
+  if (formLower.includes('bột pha')) {
+    return 'khác'; // Không log warning vì đã xử lý
+  }
+  if (formLower.includes('nguyên liệu')) {
+    return 'khác'; // Không log warning vì đã xử lý
+  }
+  if (formLower.includes('hỗn dịch')) {
+    return 'khác'; // Không log warning vì đã xử lý
+  }
+  if (formLower.includes('thuốc bột')) {
+    return 'khác'; // Không log warning vì đã xử lý
+  }
   
   // Mặc định: tất cả các dạng khác đều map về "khác"
-  console.log(`⚠️ Form value "${formValue}" không có trong mapping, sử dụng giá trị mặc định "khác"`);
+  // Chỉ log warning nếu form value không rỗng và không phải "khác" và không phải giá trị đã được xử lý
+  if (formValue && formValue.trim() && formLower !== 'khác' && !formLower.includes('khác')) {
+    console.log(`⚠️ Form value "${formValue}" không có trong mapping, sử dụng giá trị mặc định "khác"`);
+  }
   return 'khác';
 };
 
@@ -1263,11 +1290,36 @@ const isContextLine = (line) => {
 const processDrugBuffer = (buffer, context) => {
   if (!buffer || buffer.length === 0) return null;
 
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/225bc8d1-6824-4e38-b617-49570f639471',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'importExportService.js:processDrugBuffer',message:'BUFFER_INPUT',data:{bufferLength:buffer.length,bufferLines:buffer.slice(0,3),timestamp:Date.now()},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H1'})}).catch(()=>{});
+  // #endregion
+
   // 1. Gộp dòng và xử lý dính chữ cơ bản
   let fullText = buffer.join(' ').replace(/\s+/g, ' ').trim();
   
-  // Fix dính chữ dạng CamelCase (thuốcHoạt -> thuốc Hoạt)
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/225bc8d1-6824-4e38-b617-49570f639471',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'importExportService.js:processDrugBuffer',message:'FULLTEXT_AFTER_JOIN',data:{fullText:fullText.substring(0,200),length:fullText.length,timestamp:Date.now()},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H1'})}).catch(()=>{});
+  // #endregion
+  
+  // Fix dính chữ - Cải thiện logic để xử lý tốt hơn
+  // Thứ tự quan trọng: xử lý pattern cụ thể trước, sau đó mới xử lý pattern chung
+  
+  // 1. Xử lý các pattern đặc biệt trước (để tránh bị pattern chung can thiệp)
+  // "5mgViên" -> "5mg Viên", "10mlHộp" -> "10ml Hộp"
+  fullText = fullText.replace(/(\d+)(mg|ml|g|kg)([A-ZÀ-Ỹ])/gi, '$1$2 $3');
+  // "viênHộp" -> "viên Hộp", "góiHộp" -> "gói Hộp"
+  fullText = fullText.replace(/(viên|gói|chai|hộp|vỉ|lọ|tuýp|ống)([A-ZÀ-Ỹ])/gi, '$1 $2');
+  // "mgViên" -> "mg Viên" (không có số trước)
+  fullText = fullText.replace(/(mg|ml|g|kg)([A-ZÀ-Ỹ])/gi, '$1 $2');
+  
+  // 2. Số + chữ hoa (1Iodine -> 1 Iodine)
+  fullText = fullText.replace(/(\d)([A-ZÀ-Ỹ])/g, '$1 $2');
+  // 3. Chữ thường + chữ hoa (IodinePovidone -> Iodine Povidone)
   fullText = fullText.replace(/([a-zà-ỹ])([A-ZÀ-Ỹ])/g, '$1 $2');
+  // 4. Chữ hoa + chữ hoa (nếu có pattern như "A.F." -> giữ nguyên, nhưng "AB" -> "A B" nếu sau đó là chữ thường)
+  fullText = fullText.replace(/([A-ZÀ-Ỹ])([A-ZÀ-Ỹ][a-zà-ỹ])/g, '$1 $2');
+  // 5. Số + chữ thường (nếu có, nhưng ít gặp)
+  fullText = fullText.replace(/(\d)([a-zà-ỹ])/g, '$1 $2');
   
   // Loại bỏ các từ khóa rác ở đầu dòng nếu có (VD: "1. Cách ghi...", "2. Số đăng ký...")
   // Kiểm tra cả trường hợp chữ bị tách: "Cách ghi" có thể là "C ách g hi"
@@ -1302,42 +1354,102 @@ const processDrugBuffer = (buffer, context) => {
     expiryDate: null,
     registrationFacility: context.registrationFacility,
     manufacturingFacility: context.manufacturingFacility,
-    appendix: context.appendix
+    appendix: context.appendix,
+    validityPeriod: context.validityPeriod,
+    validityDate: context.validityDate,
+    packaging: '', // Quy cách đóng gói
+    standard: '', // Tiêu chuẩn
+    notes: '' // Ghi chú đặc biệt (cho Phụ lục II)
   };
 
-  // 2. Tách STT
-  const sttMatch = fullText.match(/^(?:"?)(\d{1,3})(?:"?)(?:[\.\)\s]+)/);
+  // 2. Tách STT - Cải thiện để xử lý trường hợp không có khoảng trắng sau STT
+  // Pattern: số 1-3 chữ số, theo sau là dấu chấm/ngoặc/khoảng trắng HOẶC chữ cái viết hoa
+  const sttMatch = fullText.match(/^(?:"?)(\d{1,3})(?:"?)(?:[\.\)\s]+|(?=[A-ZÀ-Ỹ]))/);
   let contentWithoutSTT = fullText;
   if (sttMatch) {
     drugInfo.stt = sttMatch[1];
-    contentWithoutSTT = fullText.substring(sttMatch[0].length).trim();
+    const sttEndIndex = sttMatch[0].length;
+    contentWithoutSTT = fullText.substring(sttEndIndex).trim();
+    
+    // Nếu sau STT là chữ cái viết hoa (không có khoảng trắng), thêm khoảng trắng
+    if (contentWithoutSTT && /^[A-ZÀ-Ỹ]/.test(contentWithoutSTT)) {
+      // Không cần thêm khoảng, sẽ xử lý ở bước sau
+    }
   } else {
     // Nếu không có STT, bỏ qua nếu dòng quá ngắn (rác)
     if (fullText.length < 20) return null;
     drugInfo.stt = `AUTO_${Date.now().toString().slice(-4)}`;
   }
 
-  // 3. Tìm SĐK (Neo quan trọng)
+  // 3. Tìm SĐK (Neo quan trọng) - Cải thiện theo cấu trúc QĐ 720/QĐ-QLD
+  // Pattern: SĐK mới (12 số) có thể kèm SĐK cũ trong ngoặc đơn: "893100493025 (VS-4878-14)"
   const reg12Match = contentWithoutSTT.match(/(\d{12})/);
-  const regOldMatch = contentWithoutSTT.match(/([A-Z]{2,3}\d{0,1}-\d{4,5}-\d{2,3})/i);
+  const regOldMatch = contentWithoutSTT.match(/\(([A-Z]{2,3}\d{0,1}-\d{4,5}-\d{2,3})\)/i); // Tìm trong ngoặc đơn
   let splitIndex = -1;
 
   if (reg12Match) {
     drugInfo.registrationNumber = reg12Match[0];
     splitIndex = contentWithoutSTT.indexOf(reg12Match[0]);
-    if (regOldMatch && regOldMatch.index > reg12Match.index) drugInfo.oldRegistrationNumber = regOldMatch[0];
+    
+    // Tìm SĐK cũ trong ngoặc đơn sau SĐK mới
+    if (regOldMatch) {
+      const oldRegIndex = contentWithoutSTT.indexOf(regOldMatch[0]);
+      // Chỉ lấy SĐK cũ nếu nó nằm sau SĐK mới (trong cùng dòng hoặc dòng tiếp theo)
+      if (oldRegIndex > reg12Match.index || Math.abs(oldRegIndex - reg12Match.index) < 50) {
+        drugInfo.oldRegistrationNumber = regOldMatch[1]; // Lấy nội dung trong ngoặc, không lấy dấu ngoặc
+      }
+    }
+    
+    // Nếu không tìm thấy trong ngoặc, thử tìm pattern cũ (không có ngoặc)
+    if (!drugInfo.oldRegistrationNumber) {
+      const regOldMatchNoParen = contentWithoutSTT.match(/([A-Z]{2,3}\d{0,1}-\d{4,5}-\d{2,3})/i);
+      if (regOldMatchNoParen && regOldMatchNoParen.index > reg12Match.index) {
+        drugInfo.oldRegistrationNumber = regOldMatchNoParen[0];
+      }
+    }
   } else if (regOldMatch) {
-    drugInfo.oldRegistrationNumber = regOldMatch[0];
-    drugInfo.registrationNumber = regOldMatch[0];
+    // Chỉ có SĐK cũ (không có SĐK mới 12 số)
+    drugInfo.oldRegistrationNumber = regOldMatch[1];
+    drugInfo.registrationNumber = regOldMatch[1]; // Dùng SĐK cũ làm SĐK chính
     splitIndex = contentWithoutSTT.indexOf(regOldMatch[0]);
   }
 
-  // 4. Tìm Tuổi thọ
-  const shelfLifeMatch = contentWithoutSTT.match(/\b(24|36|48|60)\b/);
-  if (shelfLifeMatch) drugInfo.shelfLife = parseInt(shelfLifeMatch[1]);
+  // 4. Tìm Tuổi thọ (tháng) - Cải thiện theo QĐ 720/QĐ-QLD
+  const shelfLifeMatch = contentWithoutSTT.match(/\b(24|36|48|60)\s*(?:tháng)?\b/i);
+  if (shelfLifeMatch) {
+    drugInfo.shelfLife = parseInt(shelfLifeMatch[1]);
+  }
+  
+  // 5. Tìm Quy cách đóng gói (sau dạng bào chế, trước SĐK)
+  // Pattern: "Hộp 1 chai 20ml; Hộp 1 chai 30ml" hoặc "Hộp 10 vỉ x 10 viên"
+  const packagingMatch = contentWithoutSTT.match(/(Hộp|Chai|Vỉ|Gói|Lọ|Tuýp|Ống)[^0-9]*\d+[^0-9]*\d*[^0-9]*(?:;|$)/i);
+  if (packagingMatch) {
+    // Lấy toàn bộ phần quy cách (có thể kéo dài nhiều dòng)
+    const packagingStart = contentWithoutSTT.indexOf(packagingMatch[0]);
+    const beforeSDK = (splitIndex > -1) ? contentWithoutSTT.substring(packagingStart, splitIndex) : contentWithoutSTT.substring(packagingStart);
+    drugInfo.packaging = beforeSDK.replace(/\s+(nsx|tccs|bp|usp|dđvn).*$/i, '').trim();
+  }
+  
+  // 6. Tìm Tiêu chuẩn (NSX, BP, USP, DĐVN, TCCS)
+  const standardMatch = contentWithoutSTT.match(/\b(NSX|BP|USP|DĐVN|TCCS|JP|EP)\b/i);
+  if (standardMatch) {
+    drugInfo.standard = standardMatch[0].toUpperCase();
+  }
 
-  // 5. Phân tích Tên và Hoạt chất
+  // 7. Phân tích Tên và Hoạt chất (loại bỏ quy cách và tiêu chuẩn đã extract)
   let mainContent = (splitIndex > -1) ? contentWithoutSTT.substring(0, splitIndex).trim() : contentWithoutSTT;
+  
+  // Loại bỏ phần quy cách và tiêu chuẩn đã extract khỏi mainContent
+  if (drugInfo.packaging) {
+    mainContent = mainContent.replace(drugInfo.packaging, '').trim();
+  }
+  if (drugInfo.standard) {
+    mainContent = mainContent.replace(new RegExp(drugInfo.standard, 'i'), '').trim();
+  }
+  
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/225bc8d1-6824-4e38-b617-49570f639471',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'importExportService.js:processDrugBuffer',message:'MAIN_CONTENT_BEFORE_CLEAN',data:{mainContent:mainContent.substring(0,200),splitIndex,hasRegNumber:!!drugInfo.registrationNumber,timestamp:Date.now()},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H2'})}).catch(()=>{});
+  // #endregion
   
   // Clean rác cuối chuỗi
   mainContent = mainContent.replace(/\s+(nsx|tccs|bp|usp|dđvn).*$/i, '').replace(/\s+\d+\s*tháng.*$/i, '').trim();
@@ -1355,54 +1467,111 @@ const processDrugBuffer = (buffer, context) => {
       const fIndex = match.index;
       const preForm = mainContent.substring(0, fIndex).trim();
       
-      // Tách Tên / Hoạt chất
+      // Tách Tên / Hoạt chất - Cải thiện theo cấu trúc QĐ 720/QĐ-QLD
+      // Pattern: "Tên thuốc Hoạt chất - Hàm lượng" hoặc "Tên thuốc; Hoạt chất"
       if (preForm.includes(';')) {
+        // Có dấu chấm phẩy: tên và hoạt chất được tách rõ
         const parts = preForm.split(';');
         drugInfo.name = parts[0].trim();
         drugInfo.activeIngredient = parts.slice(1).join('; ').trim();
+      } else if (preForm.includes('-')) {
+        // Có dấu gạch ngang: có thể là "Hoạt chất - Hàm lượng"
+        const dashIndex = preForm.lastIndexOf(' - ');
+        if (dashIndex > 0) {
+          // Tên thuốc là phần trước dấu gạch ngang cuối cùng
+          drugInfo.name = preForm.substring(0, dashIndex).trim();
+          drugInfo.activeIngredient = preForm.substring(dashIndex + 3).trim();
+        } else {
+          // Dấu gạch ngang không phải separator, xử lý như bình thường
+          const words = preForm.split(/\s+/).filter(w => w.length > 0);
+          if (words.length <= 2) {
+            drugInfo.name = words.join(' ');
+            drugInfo.activeIngredient = words.join(' ');
+          } else {
+            drugInfo.name = words.slice(0, 2).join(' ');
+            drugInfo.activeIngredient = words.slice(2).join(' ');
+          }
+        }
       } else {
-        // Fallback: Lấy tối đa 5 từ đầu làm tên
-        const words = preForm.split(' ');
-        // Nếu chuỗi quá dài (> 10 từ), khả năng là tên thuốc ngắn, còn lại là hoạt chất
-        const nameWordCount = Math.min(words.length, 5); 
-        drugInfo.name = words.slice(0, nameWordCount).join(' ');
-        drugInfo.activeIngredient = preForm.substring(drugInfo.name.length).trim() || drugInfo.name;
+        // Không có separator rõ ràng: tách thông minh
+        // Pattern: Tên thuốc thường là 1-2 từ đầu (có thể có số), còn lại là hoạt chất
+        const words = preForm.split(/\s+/).filter(w => w.length > 0);
+        
+        if (words.length === 0) {
+          drugInfo.name = preForm;
+          drugInfo.activeIngredient = preForm;
+        } else if (words.length === 1) {
+          drugInfo.name = words[0];
+          drugInfo.activeIngredient = words[0];
+        } else if (words.length <= 2) {
+          // 1-2 từ: thường là tên thuốc (ví dụ: "Iodine", "Prednison 5 mg")
+          drugInfo.name = words.join(' ');
+          drugInfo.activeIngredient = words.join(' '); // Nếu không có hoạt chất riêng
+        } else {
+          // > 2 từ: 1-2 từ đầu là tên, còn lại là hoạt chất
+          // Tên thuốc thường ngắn (1-2 từ), hoạt chất dài hơn
+          const nameWordCount = Math.min(2, Math.floor(words.length / 2));
+          drugInfo.name = words.slice(0, nameWordCount).join(' ');
+          drugInfo.activeIngredient = words.slice(nameWordCount).join(' ').trim() || drugInfo.name;
+        }
       }
+      
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/225bc8d1-6824-4e38-b617-49570f639471',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'importExportService.js:processDrugBuffer',message:'PARSED_NAME_INGREDIENT',data:{preForm:preForm.substring(0,150),parsedName:drugInfo.name,parsedIngredient:drugInfo.activeIngredient.substring(0,100),formFound:formFound,form:drugInfo.form,timestamp:Date.now()},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H3'})}).catch(()=>{});
+      // #endregion
+      
       formFound = true;
       break;
     }
   }
 
   if (!formFound) {
-    // Nếu không tìm thấy dạng bào chế, cắt thô
-    // Lấy 30 ký tự đầu làm tên nếu chuỗi dài
-    if (mainContent.length > 50) {
-        const firstSpaceAfter30 = mainContent.indexOf(' ', 30);
-        if (firstSpaceAfter30 > -1) {
-            drugInfo.name = mainContent.substring(0, firstSpaceAfter30);
-            drugInfo.activeIngredient = mainContent.substring(firstSpaceAfter30).trim();
-        } else {
-            drugInfo.name = mainContent;
-            drugInfo.activeIngredient = mainContent;
-        }
+    // Nếu không tìm thấy dạng bào chế, cắt thông minh hơn
+    const words = mainContent.split(/\s+/).filter(w => w.length > 0);
+    
+    if (words.length === 0) {
+      drugInfo.name = mainContent;
+      drugInfo.activeIngredient = mainContent;
+    } else if (words.length === 1) {
+      drugInfo.name = words[0];
+      drugInfo.activeIngredient = words[0];
+    } else if (words.length <= 3) {
+      // 2-3 từ: thường là tên thuốc
+      drugInfo.name = words.join(' ');
+      drugInfo.activeIngredient = words.join(' ');
     } else {
-        drugInfo.name = mainContent;
-        drugInfo.activeIngredient = mainContent;
+      // > 3 từ: 1-2 từ đầu là tên, còn lại là hoạt chất
+      const nameWordCount = Math.min(2, Math.floor(words.length / 2));
+      drugInfo.name = words.slice(0, nameWordCount).join(' ');
+      drugInfo.activeIngredient = words.slice(nameWordCount).join(' ').trim() || drugInfo.name;
     }
   }
 
-  // Map form
-  drugInfo.form = mapDrugFormToEnum(drugInfo.form || 'khác');
+  // Map form - chỉ map nếu form chưa phải là enum hợp lệ
+  const validForms = ['viên nén', 'viên nang', 'siro', 'dung dịch tiêm', 'kem', 'gel', 'thuốc mỡ', 'cao khô', 'cao đặc', 'khác'];
+  if (!validForms.includes(drugInfo.form)) {
+    drugInfo.form = mapDrugFormToEnum(drugInfo.form || 'khác');
+  }
 
-  // Tính ngày hết hạn
+  // Tính ngày hết hạn - Cải thiện theo QĐ 720/QĐ-QLD
   if (!drugInfo.expiryDate) {
-      if (context.validityDate) {
-          drugInfo.expiryDate = new Date(context.validityDate);
-      } else {
-          const years = context.validityPeriod || 5;
+      if (drugInfo.validityDate) {
+          // Phụ lục III: có ngày cụ thể
+          drugInfo.expiryDate = new Date(drugInfo.validityDate);
+      } else if (drugInfo.validityPeriod) {
+          // Phụ lục I (5 năm) hoặc II (3 năm)
           const now = new Date();
-          drugInfo.expiryDate = new Date(now.getFullYear() + years, now.getMonth(), now.getDate());
+          drugInfo.expiryDate = new Date(now.getFullYear() + drugInfo.validityPeriod, now.getMonth(), now.getDate());
+      } else {
+          // Mặc định: 5 năm
+          const now = new Date();
+          drugInfo.expiryDate = new Date(now.getFullYear() + 5, now.getMonth(), now.getDate());
       }
+  }
+  
+  // Xử lý ghi chú đặc biệt cho Phụ lục II
+  if (drugInfo.appendix === 'II' || drugInfo.appendix === '2') {
+    drugInfo.notes = 'Sau khi hết hạn giấy đăng ký lưu hành, phải bổ sung công thức tham chiếu hoặc dữ liệu lâm sàng chứng minh an toàn, hiệu quả của thuốc';
   }
   
   // Áp dụng fixVietnameseSpacing cho tên và hoạt chất TRƯỚC KHI truncate
@@ -1424,6 +1593,10 @@ const processDrugBuffer = (buffer, context) => {
   if ((!drugInfo.name || drugInfo.name.length < 2) && drugInfo.registrationNumber) {
       drugInfo.name = `Thuốc ${drugInfo.registrationNumber}`;
   }
+
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/225bc8d1-6824-4e38-b617-49570f639471',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'importExportService.js:processDrugBuffer',message:'FINAL_DRUG_INFO',data:{stt:drugInfo.stt,name:drugInfo.name,activeIngredient:drugInfo.activeIngredient.substring(0,100),form:drugInfo.form,registrationNumber:drugInfo.registrationNumber,timestamp:Date.now()},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H4'})}).catch(()=>{});
+  // #endregion
 
   // Validate cuối cùng: Phải có tên hoặc SĐK
   if (!drugInfo.name && !drugInfo.registrationNumber) return null;
@@ -1486,17 +1659,37 @@ const parsePDFFromMinistryOfHealth = async (filePath) => {
           buffer = [];
         }
 
-        // Logic cập nhật context giữ nguyên như cũ
+        // Logic cập nhật context - Cải thiện theo QĐ 720/QĐ-QLD
         if (lowerLine.includes('phụ lục')) {
             const match = lowerLine.match(/phụ lục\s+([IVX]+)/i);
-            if (match) currentContext.appendix = match[1];
+            if (match) {
+              currentContext.appendix = match[1];
+              // Xác định hiệu lực dựa trên Phụ lục
+              // Phụ lục I: Gia hạn 05 năm
+              // Phụ lục II: Gia hạn 03 năm  
+              // Phụ lục III: Gia hạn đến ngày cụ thể (31/12/2025)
+              if (match[1] === 'I' || match[1] === '1') {
+                currentContext.validityPeriod = 5;
+              } else if (match[1] === 'II' || match[1] === '2') {
+                currentContext.validityPeriod = 3;
+              } else if (match[1] === 'III' || match[1] === '3') {
+                // Phụ lục III: gia hạn đến 31/12/2025
+                currentContext.validityDate = new Date(2025, 11, 31); // Tháng 11 = tháng 12 (0-indexed)
+              }
+            }
         }
-        if (lowerLine.includes('05 năm') || lowerLine.includes('05năm')) currentContext.validityPeriod = 5;
-        if (lowerLine.includes('03 năm') || lowerLine.includes('03năm')) currentContext.validityPeriod = 3;
-        const dateMatch = line.match(/đến\s*(\d{1,2}\/\d{1,2}\/\d{4})/);
+        // Kiểm tra pattern "gia hạn 05 năm" hoặc "gia hạn 03 năm"
+        if (lowerLine.includes('gia hạn 05 năm') || lowerLine.includes('gia hạn 05năm') || lowerLine.includes('05 năm')) {
+          currentContext.validityPeriod = 5;
+        }
+        if (lowerLine.includes('gia hạn 03 năm') || lowerLine.includes('gia hạn 03năm') || lowerLine.includes('03 năm')) {
+          currentContext.validityPeriod = 3;
+        }
+        // Kiểm tra pattern "gia hạn đến" với ngày cụ thể
+        const dateMatch = line.match(/gia hạn đến\s*(\d{1,2}\/\d{1,2}\/\d{4})/i) || line.match(/đến\s*(\d{1,2}\/\d{1,2}\/\d{4})/);
         if (dateMatch) {
             const parts = dateMatch[1].split('/');
-            currentContext.validityDate = new Date(parts[2], parts[1]-1, parts[0]);
+            currentContext.validityDate = new Date(parseInt(parts[2]), parseInt(parts[1])-1, parseInt(parts[0]));
         }
         const regMatch = line.match(/^\d+\.\s*Cơ sở đăng ký[:\s]+(.+)$/i);
         if (regMatch) currentContext.registrationFacility = regMatch[1].trim();
@@ -1654,8 +1847,28 @@ const importDrugsFromPDF = async (filePath, user, req = null) => {
           productionDate: new Date(),
           expiryDate: expiryDate,
           manufacturerId: manufacturerId,
-          qualityTest: qualityTestInfo
+          qualityTest: qualityTestInfo,
+          // Thêm các trường mới theo cấu trúc QĐ 720/QĐ-QLD
+          registrationNumber: drugInfo.registrationNumber || drugInfo.oldRegistrationNumber || null,
+          packaging: drugInfo.packaging || null, // Quy cách đóng gói
+          shelfLife: drugInfo.shelfLife || null, // Tuổi thọ (tháng)
+          // Lưu thông tin bổ sung trong qualityTest.testReport
+          notes: drugInfo.notes || null // Ghi chú đặc biệt (cho Phụ lục II)
         };
+        
+        // Cập nhật testReport với thông tin đầy đủ hơn
+        if (drugInfo.packaging) {
+          qualityTestInfo.testReport += `. Quy cách: ${drugInfo.packaging}`;
+        }
+        if (drugInfo.standard) {
+          qualityTestInfo.testReport += `. Tiêu chuẩn: ${drugInfo.standard}`;
+        }
+        if (drugInfo.shelfLife) {
+          qualityTestInfo.testReport += `. Tuổi thọ: ${drugInfo.shelfLife} tháng`;
+        }
+        if (drugInfo.notes) {
+          qualityTestInfo.testReport += `. ${drugInfo.notes}`;
+        }
         
         // Kiểm tra batch number đã tồn tại
         const existing = await Drug.findOne({ batchNumber: drugData.batchNumber });

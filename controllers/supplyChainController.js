@@ -16,6 +16,45 @@ const emitSupplyChainEvent = (type, payload) => {
   });
 };
 
+const hasValidCoordinates = (coords) => {
+  if (!coords || !Array.isArray(coords) || coords.length !== 2) return false;
+  const [lng, lat] = coords;
+  if (lng === null || lat === null || lng === undefined || lat === undefined) return false;
+  if (isNaN(lng) || isNaN(lat)) return false;
+  return true;
+};
+
+// Chuẩn hoá location để tránh lưu `coordinates: []` (làm map/geocode bị kẹt)
+const sanitizeLocation = (loc) => {
+  if (!loc) return null;
+  let out = loc;
+  if (typeof out === 'string') {
+    out = { address: out };
+  } else if (out.toObject && typeof out.toObject === 'function') {
+    out = out.toObject();
+  }
+
+  const address = typeof out.address === 'string' ? out.address.trim() : null;
+  const coords = out.coordinates;
+
+  const sanitized = {
+    ...out,
+    address: address || null
+  };
+
+  if (hasValidCoordinates(coords)) {
+    sanitized.coordinates = coords;
+  } else {
+    // Xoá các trường hợp: [], [x], [x,y,z], [null,null], ...
+    delete sanitized.coordinates;
+  }
+
+  // Đồng bộ type GeoJSON
+  sanitized.type = 'Point';
+
+  return sanitized;
+};
+
 // @desc    Tạo hành trình chuỗi cung ứng mới
 // @route   POST /api/supply-chain
 // @access  Private (Manufacturer, Admin)
@@ -101,6 +140,16 @@ const createSupplyChain = async (req, res) => {
       steps: []
     });
     
+    // Chuẩn hoá + geocode vị trí khởi tạo (nếu có address nhưng thiếu coordinates hợp lệ)
+    let initialLocation = sanitizeLocation(req.user.location || null);
+    if (initialLocation?.address && !hasValidCoordinates(initialLocation.coordinates)) {
+      console.log(`📍 Geocoding initial location: "${initialLocation.address}"`);
+      const coordinates = await geocodeService.geocodeToCoordinates(initialLocation.address);
+      if (coordinates && coordinates.length === 2) {
+        initialLocation = { ...initialLocation, coordinates, type: 'Point' };
+      }
+    }
+
     // Thêm bước đầu tiên (sản xuất)
     const initialStep = {
       stepType: 'production',
@@ -109,7 +158,7 @@ const createSupplyChain = async (req, res) => {
       actorRole: req.user.role,
       action: 'created',
       timestamp: new Date(),
-      location: req.user.location || null,
+      location: initialLocation,
       metadata: {
         ...metadata,
         batchNumber: drugBatchNumber,
@@ -124,8 +173,8 @@ const createSupplyChain = async (req, res) => {
       actorId: req.user._id,
       actorName: req.user.fullName,
       actorRole: req.user.role,
-      address: req.user.location?.address,
-      coordinates: req.user.location?.coordinates,
+      address: initialLocation?.address || req.user.location?.address,
+      coordinates: hasValidCoordinates(initialLocation?.coordinates) ? initialLocation.coordinates : undefined,
       lastUpdated: new Date()
     };
     
@@ -256,9 +305,10 @@ const addSupplyChainStep = async (req, res) => {
     }
     
     // Geocode địa chỉ nếu có address nhưng chưa có coordinates
-    let processedLocation = location || req.user.location || null;
+    let processedLocation = sanitizeLocation(location || req.user.location || null);
     
-    if (processedLocation && processedLocation.address && !processedLocation.coordinates) {
+    // NOTE: tránh case coordinates = [] làm điều kiện "!processedLocation.coordinates" sai
+    if (processedLocation && processedLocation.address && !hasValidCoordinates(processedLocation.coordinates)) {
       console.log(`📍 Geocoding address: "${processedLocation.address}"`);
       const coordinates = await geocodeService.geocodeToCoordinates(processedLocation.address);
       
@@ -310,7 +360,10 @@ const addSupplyChainStep = async (req, res) => {
     supplyChain.steps.push(newStep);
     
     // Cập nhật currentLocation với coordinates đã geocode (nếu có)
-    const finalCoordinates = processedLocation?.coordinates || req.user.location?.coordinates;
+    const finalCoordinates =
+      hasValidCoordinates(processedLocation?.coordinates)
+        ? processedLocation.coordinates
+        : (hasValidCoordinates(req.user.location?.coordinates) ? req.user.location.coordinates : undefined);
     supplyChain.currentLocation = {
       actorId: req.user._id,
       actorName: req.user.fullName,
@@ -835,6 +888,24 @@ const getSupplyChainMapData = async (req, res) => {
   console.log('🗺️ Request method:', req.method);
   console.log('🗺️ Request URL:', req.originalUrl);
   try {
+    // Cache theo request để tránh geocode trùng địa chỉ (giảm delay + tránh rate-limit)
+    const geocodeCache = new Map(); // key(normalizedAddress) -> coordinates|null
+    const normalizeAddressKey = (address) =>
+      String(address || '')
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, ' ');
+
+    const geocodeCached = async (address) => {
+      if (!address || typeof address !== 'string') return null;
+      const key = normalizeAddressKey(address);
+      if (!key) return null;
+      if (geocodeCache.has(key)) return geocodeCache.get(key);
+      const coords = await geocodeService.geocodeToCoordinates(address);
+      geocodeCache.set(key, coords || null);
+      return coords || null;
+    };
+
     const { status, role } = req.query;
     const filter = {};
     if (status) {
@@ -906,7 +977,7 @@ const getSupplyChainMapData = async (req, res) => {
         if (currentLocation.address && !hasValidCoordinates) {
           console.log(`📍 Geocoding currentLocation for batch ${chain.drugBatchNumber}: "${currentLocation.address}"`);
           try {
-            const coordinates = await geocodeService.geocodeToCoordinates(currentLocation.address);
+            const coordinates = await geocodeCached(currentLocation.address);
             if (coordinates && coordinates.length === 2) {
               currentLocation = {
                 ...currentLocation,
@@ -984,7 +1055,7 @@ const getSupplyChainMapData = async (req, res) => {
         if (address) {
           console.log(`📍 Geocoding step "${step.action}" for batch ${chain.drugBatchNumber}: "${address}"`);
           try {
-            const coordinates = await geocodeService.geocodeToCoordinates(address);
+            const coordinates = await geocodeCached(address);
             if (coordinates && coordinates.length === 2) {
               console.log(`✅ Geocoded step "${step.action}": [${coordinates[1]}, ${coordinates[0]}] (lat, lng)`);
               return {

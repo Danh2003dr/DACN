@@ -44,19 +44,15 @@ const ProductDetailModal = ({ product, isOpen, onClose }) => {
   if (!isOpen || !product) return null;
 
   const minOrderQuantity = product.minOrderQuantity || product.moq || 1;
-  // Ưu tiên giá từ bid accepted nếu có, sau đó là giá từ product prop, cuối cùng là giá gốc
-  const wholesalePrice = acceptedBidPrice || product.acceptedBidPrice || product.wholesalePrice || product.basePrice || product.price || 0;
+  // LUÔN SỬ DỤNG GIÁ GỐC - không thay đổi giá hiển thị dựa trên bid accepted
+  // Giá đấu thầu chỉ áp dụng cho đơn hàng cụ thể được tạo từ bid đó
+  const wholesalePrice = product.wholesalePrice || product.basePrice || product.price || 0;
   const currentQuantity = getItemQuantity(product.drugId || product._id);
   
   // Helper function để tính giá dựa trên priceTiers
-  // NOTE: Nếu có acceptedBidPrice, giá đã được fix từ bid accepted, không áp dụng priceTiers
+  // KHÔNG sử dụng acceptedBidPrice để thay đổi giá hiển thị
   const getPriceForQuantity = (qty) => {
-    // Nếu có giá từ bid accepted, sử dụng giá đó (không áp dụng priceTiers)
-    if (acceptedBidPrice || product.acceptedBidPrice) {
-      return acceptedBidPrice || product.acceptedBidPrice;
-    }
-    
-    // Nếu không có bid accepted, áp dụng priceTiers nếu có
+    // Áp dụng priceTiers nếu có
     if (!product.priceTiers || product.priceTiers.length === 0) {
       return wholesalePrice;
     }
@@ -233,7 +229,7 @@ const ProductDetailModal = ({ product, isOpen, onClose }) => {
                 <div className="bg-blue-50 rounded-lg p-4 border border-blue-200 space-y-3">
                   <div className="flex items-center justify-between">
                     <span className="text-sm text-gray-600">
-                      {acceptedBidPrice || product.acceptedBidPrice ? 'Giá đã đấu thầu:' : 'Giá bán buôn:'}
+                      Giá bán buôn:
                     </span>
                     <span className="text-2xl font-bold text-blue-600">
                       {new Intl.NumberFormat('vi-VN', {
@@ -242,9 +238,13 @@ const ProductDetailModal = ({ product, isOpen, onClose }) => {
                       }).format(currentPrice)}
                     </span>
                   </div>
+                  {/* Hiển thị thông tin về bid accepted nếu có (không thay đổi giá) */}
                   {acceptedBidPrice || product.acceptedBidPrice ? (
-                    <div className="text-xs text-green-600 bg-green-50 px-2 py-1 rounded">
-                      ✅ Giá này đã được thỏa thuận qua đấu thầu
+                    <div className="text-xs text-blue-600 bg-blue-100 px-2 py-1 rounded">
+                      ℹ️ Có giá đấu thầu đã được chấp nhận: {new Intl.NumberFormat('vi-VN', {
+                        style: 'currency',
+                        currency: 'VND',
+                      }).format(acceptedBidPrice || product.acceptedBidPrice)} (giá này chỉ áp dụng cho đơn hàng từ đấu thầu)
                     </div>
                   ) : quantity > 0 && currentPrice !== wholesalePrice && (
                     <div className="text-xs text-green-600 bg-green-50 px-2 py-1 rounded">
@@ -420,15 +420,16 @@ const ProductDetailModal = ({ product, isOpen, onClose }) => {
                         />
                       </div>
                       <p className="mt-1 text-xs text-gray-500">
-                        {acceptedBidPrice ? (
+                        {acceptedBidPrice || product.acceptedBidPrice ? (
                           <span>
-                            Giá đã được đấu thầu thành công:{' '}
-                            <span className="font-semibold text-green-600">
+                            Có giá đấu thầu đã được chấp nhận:{' '}
+                            <span className="font-semibold text-blue-600">
                               {new Intl.NumberFormat('vi-VN', {
                                 style: 'currency',
                                 currency: 'VND',
-                              }).format(acceptedBidPrice)}
+                              }).format(acceptedBidPrice || product.acceptedBidPrice)}
                             </span>
+                            {' '}(giá này chỉ áp dụng cho đơn hàng từ đấu thầu)
                           </span>
                         ) : (
                           <span>

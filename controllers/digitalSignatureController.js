@@ -4,6 +4,7 @@ const Drug = require('../models/Drug');
 const SupplyChain = require('../models/SupplyChain');
 const mongoose = require('mongoose');
 const hsmService = require('../services/hsm/hsmService');
+const TrustScoreService = require('../services/trustScoreService');
 
 /**
  * Helper function để tạo Etherscan URL dựa trên network và transaction hash
@@ -274,6 +275,23 @@ exports.signDocument = async (req, res) => {
         // Không throw error, vì chữ ký đã được lưu trong DigitalSignature collection
       }
     }
+    
+    // #region agent log
+    // Auto-update trust score khi có chữ ký số mới
+    if (result.success && result.digitalSignature && result.digitalSignature.signedBy) {
+      try {
+        const signedById = result.digitalSignature.signedBy;
+        // Cập nhật điểm tín nhiệm không blocking (async)
+        TrustScoreService.updateScoreOnSignature(result.digitalSignature._id).catch(error => {
+          console.error('Error updating trust score on signature:', error);
+        });
+        fetch('http://127.0.0.1:7242/ingest/225bc8d1-6824-4e38-b617-49570f639471',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'digitalSignatureController.js:signDocument',message:'TRUST_SCORE_UPDATE_TRIGGERED',data:{signatureId:result.digitalSignature._id.toString(),signedBy:signedById.toString(),reason:'signature_added',timestamp:Date.now()},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H2'})}).catch(()=>{});
+      } catch (error) {
+        console.error('Error triggering trust score update on signature:', error);
+        // Không throw error để không ảnh hưởng đến response
+      }
+    }
+    // #endregion
     
     // Tạo thông báo chi tiết
     let message = 'Ký số thành công';

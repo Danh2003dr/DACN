@@ -16,6 +16,8 @@ const Marketplace = () => {
   const [manufacturers, setManufacturers] = useState([]);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+  const [displayMode, setDisplayMode] = useState('auto'); // 'auto' | 'all' | 'accepted'
+  const [displayModeTouched, setDisplayModeTouched] = useState(false);
 
   // Load drugs
   const loadDrugs = useCallback(async () => {
@@ -71,6 +73,12 @@ const Marketplace = () => {
           console.warn('Không thể load accepted bids:', bidsError);
           // Không block nếu không load được bids, chỉ dùng giá gốc
         }
+        
+        const acceptedCount = Object.keys(acceptedBidsMap).length;
+        // Auto chọn chế độ hiển thị: nếu có accepted bids thì ưu tiên chỉ hiển thị thuốc đã chốt giá
+        if (!displayModeTouched && displayMode === 'auto') {
+          setDisplayMode(acceptedCount > 0 ? 'accepted' : 'all');
+        }
 
         // Transform drugs to marketplace format
         const marketplaceDrugs = response.data.drugs.map((drug) => {
@@ -85,32 +93,23 @@ const Marketplace = () => {
           // Kiểm tra xem có bid accepted không (match theo _id)
           const acceptedBid = drugObjectId ? acceptedBidsMap[drugObjectId] : null;
           
-          // Tính giá bán buôn: ưu tiên giá từ bid accepted, sau đó là giá gốc
+          // GIỮ NGUYÊN GIÁ GỐC - không thay đổi wholesalePrice dựa trên bid accepted
+          // Giá đấu thầu chỉ áp dụng cho đơn hàng cụ thể được tạo từ bid đó
           let wholesalePrice = drug.wholesalePrice || drug.price;
           
-          // Nếu có bid accepted, sử dụng giá từ bid (counterPrice nếu có, nếu không thì bidPrice)
-          if (acceptedBid) {
-            const bidPrice = acceptedBid.counterPrice || acceptedBid.bidPrice;
-            if (bidPrice && bidPrice > 0) {
-              wholesalePrice = bidPrice;
-              console.log(`💰 Drug ${drug.name} (${drugObjectId}) - Using accepted bid price: ${wholesalePrice} (original: ${drug.wholesalePrice || drug.price})`);
-            }
-          } else {
-            // KHÔNG có bid accepted, giữ giá gốc
             // Chỉ set giá mặc định nếu không có giá nào cả
           if (!wholesalePrice || wholesalePrice === 0) {
             wholesalePrice = 50000; // 50,000 VND mặc định
             }
-            // Log để debug
-            if (drugObjectId) {
-              console.log(`📦 Drug ${drug.name} (${drugObjectId}) - Using original price: ${wholesalePrice} (no accepted bid)`);
-            }
-          }
+          
+          // Lưu thông tin về accepted bid để hiển thị riêng (không thay đổi giá hiển thị)
+          const acceptedBidPrice = acceptedBid ? (acceptedBid.counterPrice || acceptedBid.bidPrice) : null;
           
           return {
             ...drug,
-            wholesalePrice: wholesalePrice,
-            acceptedBidPrice: acceptedBid ? (acceptedBid.counterPrice || acceptedBid.bidPrice) : null, // Lưu giá bid để hiển thị thông tin
+            wholesalePrice: wholesalePrice, // Luôn là giá gốc
+            acceptedBidPrice: acceptedBidPrice, // Lưu giá bid để hiển thị thông tin (không dùng để thay đổi giá)
+            hasAcceptedBid: !!acceptedBid,
             minOrderQuantity: drug.minOrderQuantity || drug.moq || 1,
             manufacturerName:
               drug.manufacturerId?.organizationInfo?.name ||
@@ -119,8 +118,17 @@ const Marketplace = () => {
               'Chưa có thông tin',
           };
         });
-        setDrugs(marketplaceDrugs);
-        setTotalPages(response.data.pagination?.pages || 1);
+        
+        // Lọc theo displayMode
+        const effectiveMode = displayMode === 'auto' ? (acceptedCount > 0 ? 'accepted' : 'all') : displayMode;
+        const filteredDrugs =
+          effectiveMode === 'accepted'
+            ? marketplaceDrugs.filter((d) => d.hasAcceptedBid)
+            : marketplaceDrugs;
+        
+        setDrugs(filteredDrugs);
+        // Nếu chỉ hiển thị accepted thì pagination từ API drugs không còn chính xác -> đặt về 1 trang để tránh hiểu nhầm
+        setTotalPages(effectiveMode === 'accepted' ? 1 : (response.data.pagination?.pages || 1));
       }
     } catch (error) {
       console.error('Error loading drugs:', error);
@@ -128,7 +136,7 @@ const Marketplace = () => {
     } finally {
       setLoading(false);
     }
-  }, [page, searchTerm, filterManufacturer]);
+  }, [page, searchTerm, filterManufacturer, displayMode, displayModeTouched]);
 
   // Load manufacturers for filter
   useEffect(() => {
@@ -254,6 +262,25 @@ const Marketplace = () => {
                     {mfg.name}
                   </option>
                 ))}
+              </select>
+            </div>
+
+            {/* Display Mode */}
+            <div className="relative">
+              <Filter className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+              <select
+                value={displayMode}
+                onChange={(e) => {
+                  setDisplayModeTouched(true);
+                  setDisplayMode(e.target.value);
+                  setPage(1);
+                }}
+                className="pl-10 pr-8 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 appearance-none bg-white"
+                title="Chọn chế độ hiển thị"
+              >
+                <option value="auto">Tự động</option>
+                <option value="accepted">Chỉ thuốc đã chốt giá (accepted)</option>
+                <option value="all">Tất cả sản phẩm</option>
               </select>
             </div>
           </div>

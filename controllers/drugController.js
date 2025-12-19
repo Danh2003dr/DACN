@@ -10,6 +10,7 @@ const blockchainService = require('../services/blockchainService');
 const getServerUrl = require('../utils/getServerUrl');
 const drugRiskService = require('../services/drugRiskService');
 const auditService = require('../services/auditService');
+const TrustScoreService = require('../services/trustScoreService');
 // Import JSON helper utilities để xử lý BigInt
 const { toJSONSafe, safeJsonResponse } = require('../utils/jsonHelper');
 // Debug logging helper
@@ -536,6 +537,23 @@ const updateDrug = async (req, res) => {
       req,
       `Cập nhật lô thuốc: ${drug.name} (${drug.batchNumber})`
     );
+
+    // #region agent log
+    // Auto-update trust score khi quality test thay đổi
+    if (qualityTest && updatedDrug.manufacturerId) {
+      try {
+        const manufacturerId = updatedDrug.manufacturerId._id || updatedDrug.manufacturerId;
+        // Cập nhật điểm tín nhiệm không blocking (async)
+        TrustScoreService.calculateAndUpdateTrustScore(manufacturerId).catch(error => {
+          console.error('Error updating trust score on quality test update:', error);
+        });
+        fetch('http://127.0.0.1:7242/ingest/225bc8d1-6824-4e38-b617-49570f639471',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'drugController.js:updateDrug',message:'TRUST_SCORE_UPDATE_TRIGGERED',data:{drugId:updatedDrug._id.toString(),manufacturerId:manufacturerId.toString(),reason:'quality_test_updated',timestamp:Date.now()},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H3'})}).catch(()=>{});
+      } catch (error) {
+        console.error('Error triggering trust score update on quality test:', error);
+        // Không throw error để không ảnh hưởng đến response
+      }
+    }
+    // #endregion
 
     res.status(200).json({
       success: true,
@@ -1188,6 +1206,23 @@ const recallDrug = async (req, res) => {
 
     // Thu hồi thuốc
     await drug.recall(reason, req.user._id);
+
+    // #region agent log
+    // Auto-update trust score khi drug bị recall (penalty)
+    if (drug.manufacturerId) {
+      try {
+        const manufacturerId = drug.manufacturerId._id || drug.manufacturerId;
+        // Cập nhật điểm tín nhiệm không blocking (async)
+        TrustScoreService.calculateAndUpdateTrustScore(manufacturerId).catch(error => {
+          console.error('Error updating trust score on drug recall:', error);
+        });
+        fetch('http://127.0.0.1:7242/ingest/225bc8d1-6824-4e38-b617-49570f639471',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'drugController.js:recallDrug',message:'TRUST_SCORE_UPDATE_TRIGGERED',data:{drugId:drug._id.toString(),manufacturerId:manufacturerId.toString(),reason:'drug_recalled',timestamp:Date.now()},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H4'})}).catch(()=>{});
+      } catch (error) {
+        console.error('Error triggering trust score update on drug recall:', error);
+        // Không throw error để không ảnh hưởng đến response
+      }
+    }
+    // #endregion
 
     res.status(200).json({
       success: true,

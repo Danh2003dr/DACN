@@ -29,7 +29,8 @@ const reviewSchema = new mongoose.Schema({
   reviewerInfo: {
     role: {
       type: String,
-      enum: ['patient', 'hospital', 'distributor', 'manufacturer', 'anonymous'],
+      // Cho phép admin tạo đánh giá; nếu isAnonymous=true thì controller sẽ set về 'anonymous'
+      enum: ['patient', 'hospital', 'distributor', 'manufacturer', 'admin', 'anonymous'],
       default: 'anonymous'
     },
     location: {
