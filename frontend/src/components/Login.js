@@ -416,6 +416,16 @@ const Login = () => {
                 </button>
               </form>
 
+              {/* Register Link */}
+              <div className="mt-4 text-center">
+                <p className="text-slate-400 text-sm">
+                  Chưa có tài khoản?{' '}
+                  <Link to="/register" className="text-indigo-400 hover:text-indigo-300 font-medium">
+                    Đăng ký ngay
+                  </Link>
+                </p>
+              </div>
+
               {/* Default Password Hint */}
               <div className="mt-6 text-center">
                 <p className="text-slate-500 text-sm">

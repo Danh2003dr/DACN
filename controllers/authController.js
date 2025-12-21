@@ -715,9 +715,144 @@ const loginWithFirebase = async (req, res) => {
   }
 };
 
+// @desc    Đăng ký tài khoản công khai (Public Registration)
+// @route   POST /api/auth/register/public
+// @access  Public
+const publicRegister = async (req, res) => {
+  try {
+    const {
+      username,
+      email,
+      password,
+      fullName,
+      phone,
+      address
+    } = req.body;
+    
+    // Kiểm tra user đã tồn tại chưa (chỉ kiểm tra username và email)
+    const existingUser = await User.findOne({
+      $or: [
+        { username: username },
+        { email: email }
+      ]
+    });
+    
+    if (existingUser) {
+      return res.status(400).json({
+        success: false,
+        message: 'Tên đăng nhập hoặc email đã được sử dụng.'
+      });
+    }
+    
+    // Tạo patientId unique: PAT_{timestamp}_{randomString}
+    const timestamp = Date.now();
+    const randomString = Math.random().toString(36).substring(2, 9).toUpperCase();
+    let patientId = `PAT_${timestamp}_${randomString}`;
+    
+    // Đảm bảo patientId là unique (kiểm tra và tạo lại nếu cần)
+    let attempts = 0;
+    while (await User.findOne({ patientId }) && attempts < 10) {
+      const newRandomString = Math.random().toString(36).substring(2, 9).toUpperCase();
+      patientId = `PAT_${timestamp}_${newRandomString}`;
+      attempts++;
+    }
+    
+    if (attempts >= 10) {
+      // Nếu vẫn không tìm được unique, thêm timestamp vào cuối
+      patientId = `PAT_${timestamp}_${randomString}_${Date.now()}`;
+    }
+    
+    // Tạo user mới với role mặc định là 'patient'
+    const userData = {
+      username,
+      email,
+      password,
+      fullName,
+      phone: phone || undefined,
+      address: address || undefined,
+      role: 'patient',
+      patientId: patientId,
+      mustChangePassword: false, // Không bắt buộc đổi mật khẩu lần đầu cho public registration
+      authProvider: 'local'
+    };
+    
+    const user = await User.create(userData);
+    
+    // Ghi audit log (không có req.user vì là public registration)
+    try {
+      await auditService.logCRUD.create(
+        null, // Không có user thực hiện (public registration)
+        'User',
+        user._id,
+        { username: user.username, email: user.email, role: user.role },
+        'user',
+        req,
+        `Đăng ký tài khoản công khai: ${user.username} (${user.role})`
+      );
+    } catch (auditError) {
+      // Không làm fail request nếu audit log lỗi
+      console.error('Audit log error:', auditError);
+    }
+    
+    // Tự động đăng nhập: Tạo JWT token
+    const token = user.generateAuthToken();
+    
+    // Thông tin user để trả về (không bao gồm password)
+    const userInfo = {
+      id: user._id,
+      username: user.username,
+      email: user.email,
+      fullName: user.fullName,
+      role: user.role,
+      patientId: user.patientId,
+      organizationId: user.organizationId,
+      organizationInfo: user.organizationInfo,
+      mustChangePassword: user.mustChangePassword,
+      lastLogin: user.lastLogin
+    };
+    
+    res.status(201).json({
+      success: true,
+      message: 'Đăng ký tài khoản thành công. Bạn đã được đăng nhập tự động.',
+      data: {
+        user: userInfo,
+        token: token
+      }
+    });
+    
+  } catch (error) {
+    console.error('Public registration error:', error);
+    
+    if (error.name === 'ValidationError') {
+      const messages = Object.values(error.errors).map(err => err.message);
+      return res.status(400).json({
+        success: false,
+        message: 'Dữ liệu không hợp lệ.',
+        errors: messages
+      });
+    }
+    
+    // Kiểm tra duplicate key error (MongoDB)
+    if (error.code === 11000) {
+      const field = Object.keys(error.keyPattern)[0];
+      return res.status(400).json({
+        success: false,
+        message: `Thông tin ${field === 'username' ? 'tên đăng nhập' : field === 'email' ? 'email' : field} đã được sử dụng.`
+      });
+    }
+    
+    res.status(500).json({
+      success: false,
+      message: 'Lỗi server khi đăng ký tài khoản.',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
 module.exports = {
   login,
   register,
+  publicRegister,
   changePassword,
   firstChangePassword,
   getMe,

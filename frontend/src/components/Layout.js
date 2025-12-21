@@ -14,6 +14,7 @@ import {
   Bell,
   Search,
   ChevronDown,
+  ChevronUp,
   Package,
   QrCode,
   BarChart3,
@@ -27,17 +28,39 @@ import {
   ExternalLink,
   Search as SearchIcon,
   Store,
-  Gavel
+  Gavel,
+  ArrowUp,
+  UserCheck,
+  Box,
+  ClipboardList,
+  FileSearch,
+  Database,
+  Upload,
+  Layers,
+  Clock,
+  CheckCircle,
+  Activity
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
 const Layout = ({ children }) => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  const [openSubmenus, setOpenSubmenus] = useState({
+    blockchain: false,
+    admin: false
+  });
   
   const { user, logout, hasRole, hasAnyRole } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
+
+  const toggleSubmenu = (key) => {
+    setOpenSubmenus(prev => ({
+      ...prev,
+      [key]: !prev[key]
+    }));
+  };
 
   const handleLogout = async () => {
     await logout();
@@ -45,17 +68,12 @@ const Layout = ({ children }) => {
   };
 
   const navigation = [
+    // ========== CORE FUNCTIONS (Chức năng Cốt lõi) ==========
     {
       name: 'Dashboard',
       href: '/dashboard',
       icon: Home,
       roles: ['admin', 'manufacturer', 'distributor', 'hospital', 'patient']
-    },
-    {
-      name: 'Quản lý Users',
-      href: '/users',
-      icon: Users,
-      roles: ['admin']
     },
     {
       name: 'Quản lý Thuốc',
@@ -66,49 +84,13 @@ const Layout = ({ children }) => {
     {
       name: 'Quản lý Kho',
       href: '/inventory',
-      icon: Package,
+      icon: Box,
       roles: ['admin', 'manufacturer', 'distributor', 'hospital']
     },
     {
       name: 'Quản lý Đơn hàng',
       href: '/orders',
       icon: ShoppingCart,
-      roles: ['admin', 'manufacturer', 'distributor', 'hospital']
-    },
-    {
-      name: 'B2B Marketplace',
-      href: '/marketplace',
-      icon: Store,
-      roles: ['admin', 'manufacturer', 'distributor', 'hospital']
-    },
-    {
-      name: 'Quản lý Đấu thầu',
-      href: '/bids',
-      icon: Gavel,
-      roles: ['admin', 'manufacturer', 'distributor', 'hospital']
-    },
-    {
-      name: 'Chuỗi Cung ứng',
-      href: '/supply-chain',
-      icon: Truck,
-      roles: ['admin', 'manufacturer', 'distributor', 'hospital']
-    },
-    {
-      name: 'Quản lý Nhiệm vụ',
-      href: '/tasks',
-      icon: FileText,
-      roles: ['admin', 'manufacturer', 'distributor', 'hospital', 'patient']
-    },
-    {
-      name: 'Blockchain',
-      href: '/blockchain',
-      icon: Shield,
-      roles: ['admin', 'manufacturer', 'distributor', 'hospital']
-    },
-    {
-      name: 'Blockchain Explorer',
-      href: '/blockchain/explorer',
-      icon: ExternalLink,
       roles: ['admin', 'manufacturer', 'distributor', 'hospital']
     },
     {
@@ -123,17 +105,143 @@ const Layout = ({ children }) => {
       icon: Bell,
       roles: ['admin', 'manufacturer', 'distributor', 'hospital', 'patient']
     },
+    
+    // ========== BUSINESS (Kinh doanh) ==========
+    {
+      name: 'B2B Marketplace',
+      href: '/marketplace',
+      icon: Store,
+      roles: ['admin', 'manufacturer', 'distributor', 'hospital'],
+      dividerBefore: true
+    },
+    {
+      name: 'Quản lý Đấu thầu',
+      href: '/bids',
+      icon: Gavel,
+      roles: ['admin', 'manufacturer', 'distributor', 'hospital']
+    },
+    {
+      name: 'Chuỗi Cung ứng',
+      href: '/supply-chain',
+      icon: Truck,
+      roles: ['admin', 'manufacturer', 'distributor', 'hospital']
+    },
+    {
+      name: 'Hóa đơn & Thanh toán',
+      href: '/invoices',
+      icon: FileText,
+      roles: ['admin', 'manufacturer', 'distributor', 'hospital']
+    },
+    {
+      name: 'Quản lý Nhiệm vụ',
+      href: '/tasks',
+      icon: ClipboardList,
+      roles: ['admin', 'manufacturer', 'distributor', 'hospital', 'patient']
+    },
+    
+    // ========== ANALYTICS & TOOLS (Phân tích & Công cụ) ==========
+    {
+      name: 'Báo cáo',
+      href: '/reports',
+      icon: BarChart3,
+      roles: ['admin', 'manufacturer', 'hospital'],
+      dividerBefore: true,
+      groupTitle: 'Phân tích & Công cụ'
+    },
+    {
+      name: 'Blockchain',
+      icon: Shield,
+      roles: ['admin', 'manufacturer', 'distributor', 'hospital'],
+      hasSubmenu: true,
+      submenu: [
+        {
+          name: 'Blockchain Dashboard',
+          href: '/blockchain',
+          icon: Shield,
+          roles: ['admin', 'manufacturer', 'distributor', 'hospital']
+        },
+        {
+          name: 'Blockchain Explorer',
+          href: '/blockchain/explorer',
+          icon: ExternalLink,
+          roles: ['admin', 'manufacturer', 'distributor', 'hospital']
+        },
+        {
+          name: 'Xác minh Blockchain',
+          href: '/blockchain/verify',
+          icon: CheckCircle,
+          roles: ['admin', 'manufacturer', 'distributor', 'hospital']
+        }
+      ]
+    },
+    {
+      name: 'Nhà cung ứng',
+      href: '/suppliers',
+      icon: Users,
+      roles: ['admin', 'manufacturer', 'distributor']
+    },
     {
       name: 'Đánh giá',
       href: '/reviews',
       icon: Star,
       roles: ['admin', 'hospital', 'patient']
     },
+    
+    // ========== ADMIN (Quản trị) ==========
+    {
+      name: 'Quản trị hệ thống',
+      icon: Settings,
+      roles: ['admin'],
+      dividerBefore: true,
+      groupTitle: 'Quản trị',
+      hasSubmenu: true,
+      submenu: [
+        {
+          name: 'Quản lý Users',
+          href: '/users',
+          icon: Users,
+          roles: ['admin']
+        },
+        {
+          name: 'Quản lý Yêu cầu Nâng cấp',
+          href: '/role-upgrade/management',
+          icon: UserCheck,
+          roles: ['admin']
+        },
+        {
+          name: 'Audit Log',
+          href: '/audit-logs',
+          icon: FileSearch,
+          roles: ['admin']
+        },
+        {
+          name: 'Backup & Restore',
+          href: '/backups',
+          icon: Database,
+          roles: ['admin']
+        },
+        {
+          name: 'Import/Export',
+          href: '/import-export',
+          icon: Upload,
+          roles: ['admin']
+        },
+        {
+          name: 'Cài đặt',
+          href: '/settings',
+          icon: Settings,
+          roles: ['admin']
+        }
+      ]
+    },
+    
+    // ========== ADVANCED TOOLS (Công cụ Nâng cao) ==========
     {
       name: 'Chữ ký số',
       href: '/digital-signatures',
       icon: FileSignature,
-      roles: ['admin', 'manufacturer', 'distributor', 'hospital']
+      roles: ['admin', 'manufacturer', 'distributor', 'hospital'],
+      dividerBefore: true
     },
     {
       name: 'Điểm tín nhiệm',
@@ -141,47 +249,14 @@ const Layout = ({ children }) => {
       icon: Award,
       roles: ['admin', 'manufacturer', 'distributor', 'hospital']
     },
+    
+    // ========== USER-SPECIFIC (Cá nhân) ==========
     {
-      name: 'Audit Log',
-      href: '/audit-logs',
-      icon: FileText,
-      roles: ['admin']
-    },
-        {
-          name: 'Backup & Restore',
-          href: '/backups',
-          icon: Shield,
-          roles: ['admin']
-        },
-        {
-          name: 'Hóa đơn & Thanh toán',
-          href: '/invoices',
-          icon: FileText,
-          roles: ['admin', 'manufacturer', 'distributor', 'hospital']
-        },
-        {
-          name: 'Import/Export',
-          href: '/import-export',
-          icon: FileText,
-          roles: ['admin']
-        },
-        {
-          name: 'Nhà cung ứng',
-          href: '/suppliers',
-          icon: Users,
-          roles: ['admin', 'manufacturer', 'distributor']
-        },
-    {
-      name: 'Báo cáo',
-      href: '/reports',
-      icon: BarChart3,
-      roles: ['admin', 'manufacturer', 'hospital']
-    },
-    {
-      name: 'Cài đặt',
-      href: '/settings',
-      icon: Settings,
-      roles: ['admin'] // Chỉ admin mới có quyền truy cập Settings
+      name: 'Yêu cầu Nâng cấp Role',
+      href: '/role-upgrade/request',
+      icon: ArrowUp,
+      roles: ['patient'],
+      dividerBefore: true
     }
   ];
 
@@ -241,6 +316,8 @@ const Layout = ({ children }) => {
               profileMenuOpen={profileMenuOpen}
               setProfileMenuOpen={setProfileMenuOpen}
               handleLogout={handleLogout}
+              openSubmenus={openSubmenus}
+              toggleSubmenu={toggleSubmenu}
             />
           </div>
         </div>
@@ -258,6 +335,8 @@ const Layout = ({ children }) => {
             profileMenuOpen={profileMenuOpen}
             setProfileMenuOpen={setProfileMenuOpen}
             handleLogout={handleLogout}
+            openSubmenus={openSubmenus}
+            toggleSubmenu={toggleSubmenu}
           />
         </div>
       </div>
@@ -381,7 +460,9 @@ const SidebarContent = ({
   getRoleDisplayName,
   profileMenuOpen,
   setProfileMenuOpen,
-  handleLogout
+  handleLogout,
+  openSubmenus,
+  toggleSubmenu
 }) => {
   return (
     <div className="flex flex-col h-0 flex-1 border-r border-gray-200 bg-white">
@@ -401,19 +482,92 @@ const SidebarContent = ({
         
         {/* Navigation */}
         <nav className="mt-5 flex-1 px-2 space-y-1">
-          {navigation.map((item) => {
-            const isActive = location.pathname === item.href;
+          {navigation.map((item, index) => {
+            // Filter submenu items by role
+            const filteredSubmenu = item.submenu ? item.submenu.filter(subItem => {
+              // Check if user has any of the required roles
+              return subItem.roles.some(role => {
+                if (role === 'admin') return user?.role === 'admin';
+                if (role === 'manufacturer') return user?.role === 'manufacturer';
+                if (role === 'distributor') return user?.role === 'distributor';
+                if (role === 'hospital') return user?.role === 'hospital';
+                if (role === 'patient') return user?.role === 'patient';
+                return false;
+              });
+            }) : null;
+
+            // Check if any submenu item is active
+            const isSubmenuActive = item.submenu && filteredSubmenu?.some(subItem => 
+              location.pathname === subItem.href
+            );
+            const isActive = item.href ? location.pathname === item.href : isSubmenuActive;
+            
+            // Get submenu key for state management
+            const submenuKey = item.name === 'Blockchain' ? 'blockchain' : 
+                              item.name === 'Quản trị hệ thống' ? 'admin' : null;
+            const isSubmenuOpen = submenuKey ? openSubmenus[submenuKey] : false;
+
             return (
-              <Link
-                key={item.name}
-                to={item.href}
-                className={`nav-link ${
-                  isActive ? 'nav-link-active' : 'nav-link-inactive'
-                }`}
-              >
-                <item.icon className="mr-3 h-5 w-5" />
-                {item.name}
-              </Link>
+              <React.Fragment key={item.name}>
+                {item.dividerBefore && index > 0 && (
+                  <div className="mt-4 mb-2">
+                    <hr className="border-t border-gray-200 my-2" />
+                    {item.groupTitle && (
+                      <p className="px-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                        {item.groupTitle}
+                      </p>
+                    )}
+                  </div>
+                )}
+                
+                {item.hasSubmenu && item.submenu ? (
+                  <div>
+                    <button
+                      onClick={() => submenuKey && toggleSubmenu(submenuKey)}
+                      className={`nav-link w-full text-left ${
+                        isActive ? 'nav-link-active' : 'nav-link-inactive'
+                      }`}
+                    >
+                      <item.icon className="mr-3 h-5 w-5" />
+                      <span className="flex-1">{item.name}</span>
+                      {isSubmenuOpen ? (
+                        <ChevronUp className="h-4 w-4 text-gray-400" />
+                      ) : (
+                        <ChevronDown className="h-4 w-4 text-gray-400" />
+                      )}
+                    </button>
+                    {isSubmenuOpen && filteredSubmenu && filteredSubmenu.length > 0 && (
+                      <div className="ml-4 mt-1 space-y-1">
+                        {filteredSubmenu.map((subItem) => {
+                          const isSubItemActive = location.pathname === subItem.href;
+                          return (
+                            <Link
+                              key={subItem.name}
+                              to={subItem.href}
+                              className={`nav-link pl-8 ${
+                                isSubItemActive ? 'nav-link-active' : 'nav-link-inactive'
+                              }`}
+                            >
+                              <subItem.icon className="mr-3 h-4 w-4" />
+                              <span className="text-sm">{subItem.name}</span>
+                            </Link>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <Link
+                    to={item.href}
+                    className={`nav-link ${
+                      isActive ? 'nav-link-active' : 'nav-link-inactive'
+                    }`}
+                  >
+                    <item.icon className="mr-3 h-5 w-5" />
+                    {item.name}
+                  </Link>
+                )}
+              </React.Fragment>
             );
           })}
         </nav>

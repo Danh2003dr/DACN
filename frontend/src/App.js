@@ -7,6 +7,7 @@ import { setAuthToken } from './utils/api';
 import logger from './utils/logger';
 import Layout from './components/Layout';
 import Login from './components/Login';
+import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
 import Users from './pages/Users';
 import Drugs from './pages/Drugs';
@@ -36,6 +37,9 @@ import DrugTimelineDemo from './pages/DrugTimelineDemo';
 import Marketplace from './pages/Marketplace';
 import Bids from './pages/Bids';
 import Checkout from './pages/Checkout';
+import RoleUpgradeRequest from './pages/RoleUpgradeRequest';
+import RoleUpgradeManagement from './pages/RoleUpgradeManagement';
+import Metrics from './pages/Metrics';
 import AIChatWidget from './components/AIChatWidget';
 import CartDrawer from './components/CartDrawer';
 import { CartProvider } from './contexts/CartContext';
@@ -150,6 +154,7 @@ const AppRoutes = () => {
     <Routes>
       {/* Public Routes */}
       <Route path="/login" element={!isAuthenticated ? <Login /> : <Navigate to="/dashboard" replace />} />
+      <Route path="/register" element={!isAuthenticated ? <Register /> : <Navigate to="/dashboard" replace />} />
       <Route path="/google/callback" element={<GoogleCallback />} />
       <Route path="/verify/:blockchainId" element={<Verify />} />
 
@@ -316,7 +321,7 @@ const AppRoutes = () => {
       />
 
       <Route
-        path="/blockchain/verify"
+        path="/blockchain/verify/:blockchainId?"
         element={
           <ProtectedRoute requiredRoles={['admin', 'manufacturer', 'distributor', 'hospital']}>
             <Layout>
@@ -365,6 +370,17 @@ const AppRoutes = () => {
           <ProtectedRoute requiredRoles={['admin']}>
             <Layout>
               <AuditLogs />
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/metrics"
+        element={
+          <ProtectedRoute requiredRoles={['admin']}>
+            <Layout>
+              <Metrics />
             </Layout>
           </ProtectedRoute>
         }
@@ -452,6 +468,30 @@ const AppRoutes = () => {
           <ProtectedRoute>
             <Layout>
               <ProfilePage />
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+
+      {/* Role Upgrade Request - Patient only */}
+      <Route
+        path="/role-upgrade/request"
+        element={
+          <ProtectedRoute requiredRoles={['patient']}>
+            <Layout>
+              <RoleUpgradeRequest />
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+
+      {/* Role Upgrade Management - Admin only */}
+      <Route
+        path="/role-upgrade/management"
+        element={
+          <ProtectedRoute requiredRoles={['admin']}>
+            <Layout>
+              <RoleUpgradeManagement />
             </Layout>
           </ProtectedRoute>
         }

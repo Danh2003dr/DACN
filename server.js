@@ -353,6 +353,7 @@ app.use('/api/invoices', require('./routes/invoices'));
 app.use('/api/payments', require('./routes/payments'));
 app.use('/api/suppliers', require('./routes/suppliers'));
 app.use('/api/import-export', require('./routes/importExport'));
+app.use('/api/role-upgrade', require('./routes/roleUpgrade'));
 // #region agent log
 try {
   console.log('[DEBUG] server.js:302 - Requiring bids routes...', {hypothesisId:'H1'});

@@ -194,6 +194,12 @@ export const authAPI = {
     return response.data;
   },
   
+  // Đăng ký công khai (Public Registration)
+  publicRegister: async (userData) => {
+    const response = await api.post('/auth/register/public', userData);
+    return response.data;
+  },
+  
   // Đổi mật khẩu
   changePassword: async (passwordData) => {
     const response = await api.put('/auth/change-password', passwordData);
@@ -1508,6 +1514,48 @@ export const clearAuth = () => {
 export const isAuthenticated = () => {
   const token = getAuthToken();
   return !!token;
+};
+
+// Role Upgrade API
+export const roleUpgradeAPI = {
+  // Tạo yêu cầu nâng cấp role
+  createRequest: async (formData) => {
+    const response = await api.post('/role-upgrade/request', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      }
+    });
+    return response.data;
+  },
+  
+  // Lấy yêu cầu của user hiện tại
+  getMyRequests: async () => {
+    const response = await api.get('/role-upgrade/my-requests');
+    return response.data;
+  },
+  
+  // Lấy tất cả yêu cầu (Admin only)
+  getAllRequests: async (status) => {
+    const params = status ? { status } : {};
+    const response = await api.get('/role-upgrade/requests', { params });
+    return response.data;
+  },
+  
+  // Duyệt yêu cầu
+  approveRequest: async (id, adminNotes) => {
+    const response = await api.put(`/role-upgrade/requests/${id}/approve`, {
+      adminNotes
+    });
+    return response.data;
+  },
+  
+  // Từ chối yêu cầu
+  rejectRequest: async (id, adminNotes) => {
+    const response = await api.put(`/role-upgrade/requests/${id}/reject`, {
+      adminNotes
+    });
+    return response.data;
+  }
 };
 
 export default api;

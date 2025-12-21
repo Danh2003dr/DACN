@@ -28,7 +28,9 @@ import {
   Trash2,
   FileDown,
   CheckSquare,
-  Square
+  Square,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { supplyChainAPI, drugAPI } from '../utils/api';
@@ -52,6 +54,7 @@ const SupplyChain = () => {
   const [selectedItems, setSelectedItems] = useState([]);
   const [isSelectMode, setIsSelectMode] = useState(false);
   const [sseConnected, setSseConnected] = useState(false);
+  const [showTimelineHelp, setShowTimelineHelp] = useState(false);
   const [pagination, setPagination] = useState({
     current: 1,
     pages: 1,
@@ -726,6 +729,64 @@ const SupplyChain = () => {
             <Plus className="h-5 w-5" />
             <span>Tạo hành trình mới</span>
           </button>
+        )}
+      </div>
+
+      {/* Timeline Help Section */}
+      <div className="bg-blue-50 border border-blue-200 rounded-lg">
+        <button
+          onClick={() => setShowTimelineHelp(!showTimelineHelp)}
+          className="w-full flex items-center justify-between p-4 text-left hover:bg-blue-100 transition-colors rounded-lg"
+        >
+          <div className="flex items-center space-x-3">
+            <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center flex-shrink-0">
+              <span className="text-white text-sm font-bold">ℹ️</span>
+            </div>
+            <div>
+              <h3 className="font-semibold text-blue-900">Hướng dẫn đọc Timeline</h3>
+              <p className="text-sm text-blue-700">Giải thích cách đọc hành trình thuốc trên timeline</p>
+            </div>
+          </div>
+          {showTimelineHelp ? (
+            <ChevronUp className="h-5 w-5 text-blue-600 flex-shrink-0" />
+          ) : (
+            <ChevronDown className="h-5 w-5 text-blue-600 flex-shrink-0" />
+          )}
+        </button>
+        
+        {showTimelineHelp && (
+          <div className="px-4 pb-4 pt-2 border-t border-blue-200">
+            <div className="mt-3 space-y-3 text-sm text-blue-800">
+              <div className="flex items-start space-x-3">
+                <div className="w-4 h-4 bg-blue-500 rounded-full mt-0.5 flex-shrink-0"></div>
+                <div>
+                  <strong>Màu xanh:</strong> Trạng thái bình thường, đã hoàn thành
+                </div>
+              </div>
+              <div className="flex items-start space-x-3">
+                <div className="w-4 h-4 bg-red-500 rounded-full mt-0.5 flex-shrink-0"></div>
+                <div>
+                  <strong>Màu đỏ:</strong> Cảnh báo (nhiệt độ cao, sốc, v.v.)
+                </div>
+              </div>
+              <div className="flex items-start space-x-3">
+                <div className="w-4 h-4 bg-gray-300 rounded-full mt-0.5 flex-shrink-0"></div>
+                <div>
+                  <strong>Màu xám:</strong> Đang chờ xử lý
+                </div>
+              </div>
+              <div className="flex items-start space-x-3">
+                <Shield className="w-4 h-4 mt-0.5 text-green-600 flex-shrink-0" />
+                <div>
+                  <strong>Verified badge:</strong> Đã được ký số và xác minh trên blockchain
+                </div>
+              </div>
+              <div className="pt-2 border-t border-blue-200 space-y-1">
+                <div><strong>Đường nét liền:</strong> Bước đã hoàn thành</div>
+                <div><strong>Đường nét đứt:</strong> Bước đang chờ xử lý</div>
+              </div>
+            </div>
+          </div>
         )}
       </div>
 

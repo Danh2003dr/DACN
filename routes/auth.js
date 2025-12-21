@@ -6,6 +6,7 @@ const passport = require('../config/passport');
 const {
   login,
   register,
+  publicRegister,
   changePassword,
   firstChangePassword,
   getMe,
@@ -37,6 +38,7 @@ const {
   validate,
   loginSchema,
   registerSchema,
+  publicRegisterSchema,
   changePasswordSchema,
   firstChangePasswordSchema,
   updateProfileSchema
@@ -58,6 +60,14 @@ router.post('/register',
   authorize('admin'),
   validate(registerSchema),
   register
+);
+
+// @route   POST /api/auth/register/public
+// @desc    Đăng ký tài khoản công khai (Public Registration)
+// @access  Public
+router.post('/register/public',
+  validate(publicRegisterSchema),
+  publicRegister
 );
 
 // @route   PUT /api/auth/change-password

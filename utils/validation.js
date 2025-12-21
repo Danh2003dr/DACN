@@ -311,6 +311,65 @@ const resetPasswordSchema = Joi.object({
     })
 });
 
+// Schema validation cho đăng ký công khai (Public Registration)
+const publicRegisterSchema = Joi.object({
+  username: Joi.string()
+    .alphanum()
+    .min(3)
+    .max(50)
+    .required()
+    .messages({
+      'string.alphanum': 'Tên đăng nhập chỉ được chứa chữ cái và số',
+      'string.min': 'Tên đăng nhập phải có ít nhất 3 ký tự',
+      'string.max': 'Tên đăng nhập không được quá 50 ký tự',
+      'any.required': 'Vui lòng nhập tên đăng nhập'
+    }),
+  
+  email: Joi.string()
+    .email()
+    .required()
+    .messages({
+      'string.email': 'Email không hợp lệ',
+      'any.required': 'Vui lòng nhập email'
+    }),
+  
+  password: Joi.string()
+    .min(6)
+    .max(128)
+    .required()
+    .messages({
+      'string.min': 'Mật khẩu phải có ít nhất 6 ký tự',
+      'string.max': 'Mật khẩu không được quá 128 ký tự',
+      'any.required': 'Vui lòng nhập mật khẩu'
+    }),
+  
+  fullName: Joi.string()
+    .min(2)
+    .max(100)
+    .required()
+    .messages({
+      'string.min': 'Họ tên phải có ít nhất 2 ký tự',
+      'string.max': 'Họ tên không được quá 100 ký tự',
+      'any.required': 'Vui lòng nhập họ tên'
+    }),
+  
+  phone: Joi.string()
+    .pattern(/^[0-9]{10,11}$/)
+    .allow('')
+    .optional()
+    .messages({
+      'string.pattern.base': 'Số điện thoại phải có 10-11 chữ số'
+    }),
+  
+  address: Joi.string()
+    .max(500)
+    .allow('')
+    .optional()
+    .messages({
+      'string.max': 'Địa chỉ không được quá 500 ký tự'
+    })
+});
+
 // Middleware validation
 const validate = (schema) => {
   return (req, res, next) => {
@@ -597,6 +656,7 @@ module.exports = {
   // Schemas
   loginSchema,
   registerSchema,
+  publicRegisterSchema,
   changePasswordSchema,
   firstChangePasswordSchema,
   updateProfileSchema,

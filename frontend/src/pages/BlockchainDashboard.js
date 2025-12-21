@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import api from '../utils/api';
 import toast from 'react-hot-toast';
 
 const BlockchainDashboard = () => {
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState(null);
   const [drugs, setDrugs] = useState([]);
@@ -12,6 +14,8 @@ const BlockchainDashboard = () => {
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [drugDetails, setDrugDetails] = useState(null);
   const [detailsLoading, setDetailsLoading] = useState(false);
+  const [verifyBlockchainId, setVerifyBlockchainId] = useState('');
+  const [verifyLoading, setVerifyLoading] = useState(false);
 
   useEffect(() => {
     loadDashboardData();
@@ -138,6 +142,25 @@ const BlockchainDashboard = () => {
     setDrugDetails(null);
   };
 
+  const handleQuickVerify = async () => {
+    const blockchainId = verifyBlockchainId.trim();
+    if (!blockchainId) {
+      toast.error('Vui lòng nhập Blockchain ID');
+      return;
+    }
+
+    try {
+      setVerifyLoading(true);
+      // Navigate to verify page
+      navigate(`/verify/${blockchainId}`);
+    } catch (error) {
+      console.error('Error navigating to verify:', error);
+      toast.error('Lỗi khi chuyển đến trang xác minh');
+    } finally {
+      setVerifyLoading(false);
+    }
+  };
+
   const formatDate = (dateString) => {
     if (!dateString) return 'N/A';
     return new Date(dateString).toLocaleDateString('vi-VN');
@@ -261,6 +284,33 @@ const BlockchainDashboard = () => {
             </div>
           </div>
         )}
+
+        {/* Quick Verify Section */}
+        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg shadow p-6 mb-8 border border-blue-100">
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">Xác minh nhanh</h2>
+          <div className="flex gap-4">
+            <div className="flex-1">
+              <input
+                type="text"
+                placeholder="Nhập Blockchain ID để xác minh..."
+                value={verifyBlockchainId}
+                onChange={(e) => setVerifyBlockchainId(e.target.value)}
+                className="w-full px-4 py-2 border border-blue-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                onKeyPress={(e) => e.key === 'Enter' && handleQuickVerify()}
+              />
+            </div>
+            <button
+              onClick={handleQuickVerify}
+              disabled={!verifyBlockchainId.trim() || verifyLoading}
+              className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {verifyLoading ? 'Đang xử lý...' : 'Xác minh ngay'}
+            </button>
+          </div>
+          <p className="text-sm text-gray-600 mt-2">
+            Nhập Blockchain ID hoặc quét QR code để xác minh thông tin thuốc từ blockchain
+          </p>
+        </div>
 
         {/* Search */}
         <div className="bg-white rounded-lg shadow p-6 mb-8">

@@ -13,10 +13,17 @@ import {
   Activity,
   CheckCircle,
   XCircle,
-  AlertTriangle
+  AlertTriangle,
+  Cpu,
+  HardDrive,
+  TrendingUp,
+  Clock,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import api, { settingsAPI } from '../utils/api';
+import toast from 'react-hot-toast';
 
 const Settings = () => {
   const { user } = useAuth();
@@ -26,6 +33,12 @@ const Settings = () => {
   const [messageType, setMessageType] = useState('');
   const [systemInfo, setSystemInfo] = useState({});
   const [blockchainStatus, setBlockchainStatus] = useState({});
+  const [metrics, setMetrics] = useState(null);
+  const [metricsAlerts, setMetricsAlerts] = useState([]);
+  const [metricsLoading, setMetricsLoading] = useState(false);
+  const [metricsError, setMetricsError] = useState(null);
+  const [autoRefresh, setAutoRefresh] = useState(false);
+  const [showMetricsSection, setShowMetricsSection] = useState(false);
 
   const { register, handleSubmit, reset, setValue, formState: { errors } } = useForm();
 
@@ -88,6 +101,18 @@ const Settings = () => {
     loadSystemInfo();
     loadBlockchainStatus();
   }, []);
+
+  // Auto-refresh metrics
+  useEffect(() => {
+    if (autoRefresh && showMetricsSection) {
+      const interval = setInterval(() => {
+        loadMetrics(true); // Silent refresh
+      }, 30000); // Refresh every 30 seconds
+
+      return () => clearInterval(interval);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoRefresh, showMetricsSection]);
 
   // Save settings
   const onSubmit = async (data) => {
@@ -156,6 +181,74 @@ const Settings = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  // Load metrics function
+  const loadMetrics = async (silent = false) => {
+    try {
+      if (!silent) {
+        setMetricsLoading(true);
+      }
+      setMetricsError(null);
+
+      const [metricsResponse, alertsResponse] = await Promise.all([
+        api.get('/metrics'),
+        api.get('/metrics/alerts?limit=10')
+      ]);
+
+      if (metricsResponse.data.success) {
+        setMetrics(metricsResponse.data.data);
+      }
+
+      if (alertsResponse.data.success) {
+        setMetricsAlerts(alertsResponse.data.data.alerts || []);
+      }
+    } catch (err) {
+      console.error('Error loading metrics:', err);
+      const message = err.response?.data?.message || 'Không thể tải dữ liệu metrics';
+      setMetricsError(message);
+      if (!silent) {
+        toast.error(message);
+      }
+    } finally {
+      setMetricsLoading(false);
+    }
+  };
+
+  // Format bytes helper
+  const formatBytes = (bytes) => {
+    if (!bytes || bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i];
+  };
+
+  // Format percentage helper
+  const formatPercentage = (value) => {
+    if (value === null || value === undefined) return 'N/A';
+    return `${Math.round(value)}%`;
+  };
+
+  // Get alert color helper
+  const getAlertColor = (level) => {
+    switch (level) {
+      case 'critical':
+        return 'bg-red-100 text-red-800 border-red-200';
+      case 'high':
+        return 'bg-orange-100 text-orange-800 border-orange-200';
+      case 'medium':
+        return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+      default:
+        return 'bg-blue-100 text-blue-800 border-blue-200';
+    }
+  };
+
+  // Get usage color helper
+  const getUsageColor = (percentage) => {
+    if (percentage >= 90) return 'text-red-600';
+    if (percentage >= 70) return 'text-yellow-600';
+    return 'text-green-600';
   };
 
   return (
@@ -448,6 +541,256 @@ const Settings = () => {
                 </label>
               </div>
             </div>
+          </div>
+
+          {/* System Metrics Section */}
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+            {/* Collapsible Header */}
+            <button
+              onClick={() => {
+                if (!showMetricsSection) {
+                  loadMetrics(); // Load metrics when opening
+                }
+                setShowMetricsSection(!showMetricsSection);
+              }}
+              className="w-full flex items-center justify-between p-6 hover:bg-gray-50 transition-colors rounded-lg"
+            >
+              <div className="flex items-center gap-3">
+                <Activity className="w-6 h-6 text-blue-600" />
+                <div className="text-left">
+                  <h2 className="text-xl font-semibold text-gray-900">System Metrics</h2>
+                  <p className="text-sm text-gray-500">Theo dõi hiệu suất và tình trạng hệ thống</p>
+                </div>
+              </div>
+              {showMetricsSection ? (
+                <ChevronUp className="w-5 h-5 text-gray-400" />
+              ) : (
+                <ChevronDown className="w-5 h-5 text-gray-400" />
+              )}
+            </button>
+
+            {showMetricsSection && (
+              <div className="p-6 border-t border-gray-200 space-y-6">
+                {/* Controls */}
+                <div className="flex justify-end gap-2">
+                  <button
+                    onClick={() => setAutoRefresh(!autoRefresh)}
+                    className={`px-4 py-2 rounded-md text-sm font-medium ${
+                      autoRefresh
+                        ? 'bg-green-500 text-white hover:bg-green-600'
+                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                    }`}
+                  >
+                    {autoRefresh ? 'Tự động làm mới: BẬT' : 'Tự động làm mới: TẮT'}
+                  </button>
+                  <button
+                    onClick={() => loadMetrics()}
+                    disabled={metricsLoading}
+                    className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 text-sm font-medium flex items-center gap-2 disabled:opacity-50"
+                  >
+                    <RefreshCw className={`w-4 h-4 ${metricsLoading ? 'animate-spin' : ''}`} />
+                    Làm mới
+                  </button>
+                </div>
+
+                {/* Error Message */}
+                {metricsError && (
+                  <div className="bg-red-50 border border-red-200 rounded-md p-4">
+                    <div className="flex">
+                      <AlertTriangle className="h-5 w-5 text-red-400 mr-3" />
+                      <div>
+                        <h3 className="text-sm font-medium text-red-800">Lỗi</h3>
+                        <div className="mt-2 text-sm text-red-700">
+                          <p>{metricsError}</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Summary Cards */}
+                {metrics?.summary && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    {/* CPU Usage */}
+                    <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-medium text-gray-500">CPU Usage</p>
+                          <p className={`text-2xl font-semibold mt-2 ${getUsageColor(metrics.summary.cpu?.usage || 0)}`}>
+                            {formatPercentage(metrics.summary.cpu?.usage)}
+                          </p>
+                        </div>
+                        <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                          <Cpu className="w-5 h-5 text-blue-600" />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Memory Usage */}
+                    <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-medium text-gray-500">Memory Usage</p>
+                          <p className={`text-2xl font-semibold mt-2 ${getUsageColor(metrics.summary.memory?.usage || 0)}`}>
+                            {formatPercentage(metrics.summary.memory?.usage)}
+                          </p>
+                          {metrics.summary.memory && (
+                            <p className="text-xs text-gray-500 mt-1">
+                              {formatBytes(metrics.summary.memory.used)} / {formatBytes(metrics.summary.memory.total)}
+                            </p>
+                          )}
+                        </div>
+                        <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
+                          <Database className="w-5 h-5 text-green-600" />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Disk Usage */}
+                    <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-medium text-gray-500">Disk Usage</p>
+                          <p className={`text-2xl font-semibold mt-2 ${getUsageColor(metrics.summary.disk?.usage || 0)}`}>
+                            {formatPercentage(metrics.summary.disk?.usage)}
+                          </p>
+                          {metrics.summary.disk && (
+                            <p className="text-xs text-gray-500 mt-1">
+                              {formatBytes(metrics.summary.disk.used)} / {formatBytes(metrics.summary.disk.total)}
+                            </p>
+                          )}
+                        </div>
+                        <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
+                          <HardDrive className="w-5 h-5 text-purple-600" />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Uptime */}
+                    <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-medium text-gray-500">Uptime</p>
+                          <p className="text-2xl font-semibold mt-2 text-gray-900">
+                            {metrics.summary.uptime ? `${Math.floor(metrics.summary.uptime / 3600)}h` : 'N/A'}
+                          </p>
+                        </div>
+                        <div className="w-10 h-10 bg-yellow-100 rounded-lg flex items-center justify-center">
+                          <Clock className="w-5 h-5 text-yellow-600" />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Performance & System Info */}
+                {metrics?.full && (
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    {/* Performance Metrics */}
+                    <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                      <h3 className="text-lg font-semibold text-gray-900 flex items-center mb-4">
+                        <TrendingUp className="w-5 h-5 mr-2 text-blue-600" />
+                        Performance Metrics
+                      </h3>
+                      {metrics.full.performance ? (
+                        <div className="space-y-3">
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm text-gray-600">Request Rate</span>
+                            <span className="font-medium text-gray-900">
+                              {metrics.full.performance.requestRate ? `${metrics.full.performance.requestRate.toFixed(2)} req/s` : 'N/A'}
+                            </span>
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm text-gray-600">Response Time (avg)</span>
+                            <span className="font-medium text-gray-900">
+                              {metrics.full.performance.responseTime ? `${metrics.full.performance.responseTime.toFixed(2)} ms` : 'N/A'}
+                            </span>
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm text-gray-600">Error Rate</span>
+                            <span className={`font-medium ${metrics.full.performance.errorRate > 5 ? 'text-red-600' : 'text-gray-900'}`}>
+                              {formatPercentage(metrics.full.performance.errorRate)}
+                            </span>
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm text-gray-600">Total Requests</span>
+                            <span className="font-medium text-gray-900">
+                              {metrics.full.performance.totalRequests ? metrics.full.performance.totalRequests.toLocaleString() : 'N/A'}
+                            </span>
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="text-gray-500 text-center py-4">Chưa có dữ liệu performance</p>
+                      )}
+                    </div>
+
+                    {/* System Information */}
+                    <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                      <h3 className="text-lg font-semibold text-gray-900 flex items-center mb-4">
+                        <Server className="w-5 h-5 mr-2 text-green-600" />
+                        System Information
+                      </h3>
+                      {metrics.full.system ? (
+                        <div className="space-y-3">
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm text-gray-600">Platform</span>
+                            <span className="font-medium text-gray-900">{metrics.full.system.platform || 'N/A'}</span>
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm text-gray-600">Node Version</span>
+                            <span className="font-medium text-gray-900">{metrics.full.system.nodeVersion || 'N/A'}</span>
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm text-gray-600">Environment</span>
+                            <span className="font-medium text-gray-900">{metrics.full.system.env || 'N/A'}</span>
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="text-gray-500 text-center py-4">Chưa có dữ liệu system</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Alerts */}
+                <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                  <h3 className="text-lg font-semibold text-gray-900 flex items-center mb-4">
+                    <AlertTriangle className="w-5 h-5 mr-2 text-red-600" />
+                    Recent Alerts
+                  </h3>
+                  {metricsAlerts.length > 0 ? (
+                    <div className="space-y-2">
+                      {metricsAlerts.map((alert, index) => (
+                        <div
+                          key={index}
+                          className={`border rounded-lg p-3 ${getAlertColor(alert.level)}`}
+                        >
+                          <div className="flex justify-between items-start">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className="font-semibold uppercase text-xs">{alert.level}</span>
+                                <span className="text-xs opacity-75">
+                                  {alert.timestamp ? new Date(alert.timestamp).toLocaleString('vi-VN') : 'N/A'}
+                                </span>
+                              </div>
+                              <p className="font-medium text-sm">{alert.message || alert.title}</p>
+                              {alert.details && (
+                                <p className="text-xs mt-1 opacity-90">{alert.details}</p>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-4">
+                      <CheckCircle className="w-8 h-8 text-green-500 mx-auto mb-2" />
+                      <p className="text-gray-600 text-sm">Không có cảnh báo nào</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Action Buttons */}
