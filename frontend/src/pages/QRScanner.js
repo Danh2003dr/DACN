@@ -16,7 +16,7 @@ import {
   Database,
   Hash
 } from 'lucide-react';
-import { BrowserMultiFormatReader } from '@zxing/library';
+import { BrowserMultiFormatReader, DecodeHintType } from '@zxing/library';
 import { drugAPI } from '../utils/api';
 import { useAuth } from '../contexts/AuthContext';
 import toast from 'react-hot-toast';
@@ -40,13 +40,28 @@ const QRScanner = () => {
   const videoRef = useRef(null);
   const fileInputRef = useRef(null);
   const codeReader = useRef(null);
+  const streamRef = useRef(null); // Lưu stream để cleanup
+  const scanIntervalRef = useRef(null); // Ref để lưu scan interval
+  const canvasRef = useRef(null); // Canvas để xử lý image trước khi decode
 
-  // Initialize QR code reader
+  // Initialize QR code reader với hints để xử lý QR code từ màn hình sáng
   useEffect(() => {
-    codeReader.current = new BrowserMultiFormatReader();
+    const hints = new Map();
+    // Hints để xử lý QR code từ màn hình sáng/chói
+    hints.set(DecodeHintType.TRY_HARDER, true); // Cố gắng quét kỹ hơn
+    hints.set(DecodeHintType.CHARACTER_SET, 'UTF-8');
+    // Tăng độ chính xác khi quét từ màn hình
+    hints.set(DecodeHintType.ASSUME_GS1, false);
+    
+    codeReader.current = new BrowserMultiFormatReader(hints);
+    
     return () => {
       if (codeReader.current) {
-        codeReader.current.reset();
+        try {
+          codeReader.current.reset();
+        } catch (e) {
+          console.warn('Error resetting codeReader on init cleanup:', e);
+        }
       }
     };
   }, []);
@@ -62,10 +77,51 @@ const QRScanner = () => {
   // Stop camera when component unmounts or mode changes
   useEffect(() => {
     return () => {
-      if (codeReader.current && scanMode === 'camera') {
-        codeReader.current.reset();
-        setIsScanning(false);
+      // Dừng scan loop nếu đang chạy
+      if (scanIntervalRef.current && scanIntervalRef.current.stop) {
+        scanIntervalRef.current.stop();
+        scanIntervalRef.current = null;
       }
+      
+      // Cleanup khi component unmount hoặc mode thay đổi
+      if (codeReader.current) {
+        try {
+          codeReader.current.reset();
+        } catch (e) {
+          console.warn('Error resetting codeReader on cleanup:', e);
+        }
+      }
+      
+      // Dừng stream từ ref
+      if (streamRef.current) {
+        try {
+          streamRef.current.getTracks().forEach(track => {
+            track.stop();
+            track.enabled = false;
+          });
+          streamRef.current = null;
+        } catch (e) {
+          console.warn('Error stopping stream from ref on cleanup:', e);
+        }
+      }
+      
+      // Dừng tất cả video tracks từ video element
+      if (videoRef.current && videoRef.current.srcObject) {
+        const stream = videoRef.current.srcObject;
+        if (stream && stream.getTracks) {
+          stream.getTracks().forEach(track => {
+            try {
+              track.stop();
+              track.enabled = false;
+            } catch (e) {
+              console.warn('Error stopping track on cleanup:', e);
+            }
+          });
+        }
+        videoRef.current.srcObject = null;
+      }
+      
+      setIsScanning(false);
     };
   }, [scanMode]);
 
@@ -87,6 +143,62 @@ const QRScanner = () => {
       setError(null);
       setIsScanning(true);
 
+      // Kiểm tra xem browser có hỗ trợ MediaDevices API không
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error('Trình duyệt của bạn không hỗ trợ truy cập camera. Vui lòng sử dụng trình duyệt hiện đại hơn (Chrome, Firefox, Edge).');
+      }
+
+      // Đảm bảo dừng tất cả stream camera hiện có trước khi khởi động lại
+      if (videoRef.current && videoRef.current.srcObject) {
+        const existingStream = videoRef.current.srcObject;
+        existingStream.getTracks().forEach(track => {
+          track.stop();
+          track.enabled = false;
+        });
+        videoRef.current.srcObject = null;
+        // Đợi một chút để camera giải phóng hoàn toàn
+        await new Promise(resolve => setTimeout(resolve, 300));
+      }
+
+      // Kiểm tra quyền camera trước (không dừng stream, chỉ kiểm tra)
+      try {
+        const testStream = await navigator.mediaDevices.getUserMedia({ 
+          video: { 
+            facingMode: 'environment',
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          } 
+        });
+        // Dừng stream test ngay để codeReader có thể tự quản lý stream
+        testStream.getTracks().forEach(track => {
+          track.stop();
+          track.enabled = false;
+        });
+        // Đợi một chút để camera giải phóng
+        await new Promise(resolve => setTimeout(resolve, 200));
+      } catch (permissionError) {
+        if (permissionError.name === 'NotAllowedError' || permissionError.name === 'PermissionDeniedError') {
+          setIsScanning(false);
+          setError('Quyền truy cập camera bị từ chối. Vui lòng:\n1. Click vào biểu tượng khóa ở thanh địa chỉ\n2. Cho phép quyền truy cập camera\n3. Thử lại');
+          toast.error('Vui lòng cấp quyền truy cập camera', {
+            duration: 5000,
+            icon: '🔒'
+          });
+          return;
+        } else if (permissionError.name === 'NotFoundError' || permissionError.name === 'DevicesNotFoundError') {
+          throw new Error('Không tìm thấy camera. Vui lòng kiểm tra kết nối camera.');
+        } else if (permissionError.name === 'NotReadableError' || permissionError.name === 'TrackStartError') {
+          setIsScanning(false);
+          setError('Camera đang được sử dụng bởi ứng dụng khác. Vui lòng:\n1. Đóng tất cả ứng dụng đang sử dụng camera\n2. Làm mới trang (F5)\n3. Thử lại');
+          toast.error('Camera đang được sử dụng', {
+            duration: 5000
+          });
+          return;
+        } else {
+          throw permissionError;
+        }
+      }
+
       // Get available video input devices
       const videoInputDevices = await codeReader.current.listVideoInputDevices();
       
@@ -97,39 +209,274 @@ const QRScanner = () => {
       // Use the first available camera (usually the default)
       const selectedDeviceId = videoInputDevices[0].deviceId;
 
-      // Start scanning
-      const result = await codeReader.current.decodeFromVideoDevice(
-        selectedDeviceId,
-        videoRef.current,
-        (result, error) => {
-          if (result) {
-            handleScanResult(result.getText());
+      // Đảm bảo video element sẵn sàng
+      if (!videoRef.current) {
+        throw new Error('Video element không tồn tại');
+      }
+
+      // Set attributes cho video element
+      videoRef.current.setAttribute('playsinline', 'true');
+      videoRef.current.setAttribute('autoplay', 'true');
+      videoRef.current.setAttribute('muted', 'true');
+
+      // Lấy stream camera trước
+      try {
+        console.log('🎥 Getting camera stream with device:', selectedDeviceId);
+        
+        // Lấy stream từ camera
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            deviceId: { exact: selectedDeviceId },
+            facingMode: 'environment',
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
           }
-          if (error && error.name !== 'NotFoundException') {
-            console.error('Scan error:', error);
-          }
+        });
+
+        // Lưu stream vào ref để cleanup
+        streamRef.current = stream;
+
+        // Set stream vào video element
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          console.log('✅ Stream đã được set vào video element');
         }
-      );
+
+        // Đợi video load và play
+        await new Promise((resolve, reject) => {
+          if (!videoRef.current) {
+            reject(new Error('Video element không tồn tại'));
+            return;
+          }
+
+          const video = videoRef.current;
+          
+          const onLoadedMetadata = async () => {
+            try {
+              await video.play();
+              console.log('✅ Video đang phát');
+              video.removeEventListener('loadedmetadata', onLoadedMetadata);
+              video.removeEventListener('error', onError);
+              resolve();
+            } catch (playError) {
+              console.warn('⚠️ Video play error:', playError);
+              video.removeEventListener('loadedmetadata', onLoadedMetadata);
+              video.removeEventListener('error', onError);
+              resolve(); // Vẫn resolve để tiếp tục
+            }
+          };
+
+          const onError = (error) => {
+            console.error('❌ Video error:', error);
+            video.removeEventListener('loadedmetadata', onLoadedMetadata);
+            video.removeEventListener('error', onError);
+            reject(error);
+          };
+
+          video.addEventListener('loadedmetadata', onLoadedMetadata);
+          video.addEventListener('error', onError);
+
+          // Nếu metadata đã load sẵn
+          if (video.readyState >= 1) {
+            onLoadedMetadata();
+          }
+        });
+
+        // Đợi một chút để video hiển thị
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+        // Sử dụng decodeOnceFromVideoElement trong loop để quét liên tục
+        // Cách này đơn giản và hiệu quả hơn, tự động quét khi có QR code
+        console.log('🔍 Starting QR scan (continuous mode)...');
+        
+        let scanActive = true;
+        let scanTimeoutId = null;
+        
+        const scanLoop = async () => {
+          // Kiểm tra điều kiện dừng
+          if (!scanActive || !videoRef.current) {
+            return;
+          }
+          
+          // Kiểm tra video đã sẵn sàng
+          if (videoRef.current.readyState < 2) {
+            scanTimeoutId = setTimeout(scanLoop, 100);
+            return;
+          }
+          
+          try {
+            // Thử decode từ video element
+            const result = await codeReader.current.decodeOnceFromVideoElement(videoRef.current);
+            if (result) {
+              console.log('✅ QR Code detected:', result.getText());
+              scanActive = false;
+              if (scanTimeoutId) {
+                clearTimeout(scanTimeoutId);
+                scanTimeoutId = null;
+              }
+              setIsScanning(false);
+              if (codeReader.current) {
+                try {
+                  codeReader.current.reset();
+                } catch (e) {
+                  console.warn('Error resetting codeReader:', e);
+                }
+              }
+              handleScanResult(result.getText());
+              return;
+            }
+          } catch (error) {
+            // NotFoundException là bình thường khi chưa có QR code
+            if (error.name === 'NotFoundException') {
+              // Tiếp tục quét
+              scanTimeoutId = setTimeout(scanLoop, 150); // Quét lại sau 150ms
+              return;
+            }
+            
+            // Các lỗi khác
+            console.error('❌ Scan error:', error);
+            scanActive = false;
+            if (scanTimeoutId) {
+              clearTimeout(scanTimeoutId);
+              scanTimeoutId = null;
+            }
+            setIsScanning(false);
+            
+            if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
+              setError('Quyền truy cập camera bị từ chối. Vui lòng cấp quyền và thử lại.');
+              toast.error('Quyền camera bị từ chối');
+              stopCameraScan();
+            } else if (error.name === 'NotReadableError' || error.name === 'TrackStartError') {
+              setError('Camera đang được sử dụng bởi ứng dụng khác. Vui lòng:\n1. Đóng tất cả ứng dụng đang sử dụng camera\n2. Làm mới trang (F5)\n3. Thử lại');
+              toast.error('Camera đang được sử dụng', {
+                duration: 5000
+              });
+              stopCameraScan();
+            } else if (error.name === 'NotFoundError' || error.name === 'DevicesNotFoundError') {
+              setError('Không tìm thấy camera. Vui lòng kiểm tra kết nối camera.');
+              toast.error('Không tìm thấy camera');
+              stopCameraScan();
+            }
+            return;
+          }
+          
+          // Tiếp tục quét
+          scanTimeoutId = setTimeout(scanLoop, 150);
+        };
+        
+        // Bắt đầu quét
+        scanLoop();
+        
+        // Lưu controller để có thể dừng
+        scanIntervalRef.current = { 
+          stop: () => { 
+            scanActive = false;
+            if (scanTimeoutId) {
+              clearTimeout(scanTimeoutId);
+              scanTimeoutId = null;
+            }
+          } 
+        };
+
+        console.log('✅ QR scanning đã bắt đầu - sẽ tự động quét khi có QR code trong khung');
+        
+      } catch (scanError) {
+        console.error('❌ Failed to start scanning:', scanError);
+        setIsScanning(false);
+        
+        // Xử lý lỗi khi khởi động scan
+        if (scanError.name === 'NotReadableError' || scanError.name === 'TrackStartError') {
+          setError('Camera đang được sử dụng bởi ứng dụng khác. Vui lòng:\n1. Đóng tất cả ứng dụng đang sử dụng camera\n2. Làm mới trang (F5)\n3. Thử lại');
+          toast.error('Camera đang được sử dụng', {
+            duration: 5000
+          });
+          stopCameraScan();
+        } else if (scanError.name === 'NotAllowedError' || scanError.name === 'PermissionDeniedError') {
+          setError('Quyền truy cập camera bị từ chối. Vui lòng cấp quyền và thử lại.');
+          toast.error('Quyền camera bị từ chối');
+          stopCameraScan();
+        } else {
+          setError(scanError.message || 'Không thể khởi động camera. Vui lòng thử lại.');
+          toast.error(scanError.message || 'Lỗi khi khởi động camera');
+          stopCameraScan();
+          throw scanError;
+        }
+      }
 
     } catch (error) {
       console.error('Camera scan error:', error);
       setIsScanning(false);
-      setError(error.message || 'Không thể truy cập camera. Vui lòng cho phép quyền truy cập camera.');
-      toast.error(error.message || 'Lỗi khi khởi động camera');
+      
+      // Xử lý các loại lỗi cụ thể
+      let errorMessage = 'Không thể truy cập camera.';
+      if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
+        errorMessage = 'Quyền truy cập camera bị từ chối. Vui lòng:\n1. Click vào biểu tượng khóa/camera ở thanh địa chỉ\n2. Cho phép quyền truy cập camera\n3. Làm mới trang và thử lại';
+      } else if (error.name === 'NotFoundError' || error.name === 'DevicesNotFoundError') {
+        errorMessage = 'Không tìm thấy camera. Vui lòng kiểm tra kết nối camera.';
+      } else if (error.name === 'NotReadableError' || error.name === 'TrackStartError') {
+        errorMessage = 'Camera đang được sử dụng bởi ứng dụng khác. Vui lòng đóng ứng dụng khác và thử lại.';
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
+      setError(errorMessage);
+      toast.error(errorMessage, {
+        duration: 6000
+      });
     }
   };
 
   // Stop camera scanning
   const stopCameraScan = () => {
-    if (codeReader.current) {
-      codeReader.current.reset();
+    setIsScanning(false);
+    
+    // Dừng scan loop
+    if (scanIntervalRef.current && scanIntervalRef.current.stop) {
+      scanIntervalRef.current.stop();
+      scanIntervalRef.current = null;
     }
+    
+    // Dừng codeReader trước
+    if (codeReader.current) {
+      try {
+        codeReader.current.reset();
+      } catch (e) {
+        console.warn('Error resetting codeReader:', e);
+      }
+    }
+    
+    // Dừng stream từ ref
+    if (streamRef.current) {
+      try {
+        streamRef.current.getTracks().forEach(track => {
+          track.stop();
+          track.enabled = false;
+        });
+        streamRef.current = null;
+      } catch (e) {
+        console.warn('Error stopping stream from ref:', e);
+      }
+    }
+    
+    // Dừng tất cả video tracks từ video element
+    if (videoRef.current && videoRef.current.srcObject) {
+      const stream = videoRef.current.srcObject;
+      if (stream && stream.getTracks) {
+        stream.getTracks().forEach(track => {
+          try {
+            track.stop();
+            track.enabled = false;
+          } catch (e) {
+            console.warn('Error stopping track:', e);
+          }
+        });
+      }
+      videoRef.current.srcObject = null;
+    }
+    
     setIsScanning(false);
     setScanMode(null);
     setShowScanner(false);
-    if (videoRef.current) {
-      videoRef.current.srcObject = null;
-    }
   };
 
   // Handle scan result
@@ -586,7 +933,10 @@ const QRScanner = () => {
               <video
                 ref={videoRef}
                 className="w-full h-auto rounded-lg bg-black"
-                style={{ maxHeight: '500px' }}
+                style={{ 
+                  maxHeight: '500px'
+                  // Không dùng CSS filter, sẽ xử lý bằng canvas để không ảnh hưởng đến decode
+                }}
               />
               {isScanning && (
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
@@ -620,11 +970,47 @@ const QRScanner = () => {
       {/* Error */}
       {error && (
         <div className="bg-white rounded-lg shadow p-6">
-          <div className="flex items-center space-x-3 text-red-600">
-            <AlertTriangle className="h-6 w-6" />
+          <div className="flex items-start space-x-3 text-red-600">
+            <AlertTriangle className="h-6 w-6 flex-shrink-0 mt-1" />
             <div className="flex-1">
-              <h3 className="font-semibold">Lỗi khi quét QR</h3>
-              <p className="text-gray-600">{error}</p>
+              <h3 className="font-semibold mb-2">Lỗi khi quét QR</h3>
+              <div className="text-gray-600 whitespace-pre-line mb-4">{error}</div>
+              
+              {/* Hướng dẫn cấp quyền camera nếu là lỗi permission */}
+              {(error.includes('Quyền truy cập camera') || error.includes('Permission denied') || error.includes('NotAllowedError')) && (
+                <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                  <h4 className="font-semibold text-blue-900 mb-2">Hướng dẫn cấp quyền camera:</h4>
+                  <ol className="list-decimal list-inside space-y-2 text-sm text-blue-800">
+                    <li>Tìm biểu tượng khóa 🔒 hoặc camera 📷 ở đầu thanh địa chỉ (bên trái URL)</li>
+                    <li>Click vào biểu tượng đó</li>
+                    <li>Chọn "Cho phép" (Allow) cho quyền Camera</li>
+                    <li>Làm mới trang (F5) và thử lại</li>
+                  </ol>
+                  <div className="mt-3 flex gap-2">
+                    <button
+                      onClick={() => {
+                        setError(null);
+                        startCameraScan();
+                      }}
+                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
+                    >
+                      Thử lại
+                    </button>
+                    <button
+                      onClick={() => {
+                        setError(null);
+                        setShowScanner(false);
+                        setScanMode(null);
+                        setIsScanning(false);
+                      }}
+                      className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 text-sm"
+                    >
+                      Đóng
+                    </button>
+                  </div>
+                </div>
+              )}
+              
               {process.env.NODE_ENV === 'development' && scanResult && (
                 <div className="mt-3 p-3 bg-gray-50 rounded text-xs space-y-2">
                   <div>
@@ -990,3 +1376,4 @@ const QRScanner = () => {
 };
 
 export default QRScanner;
+

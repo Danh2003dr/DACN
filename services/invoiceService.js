@@ -22,6 +22,21 @@ const createInvoiceFromOrder = async (orderId, user, req = null) => {
       throw new Error('Không tìm thấy đơn hàng.');
     }
 
+    // Debug logging
+    console.log('📋 Creating invoice from order:', {
+      orderNumber: order.orderNumber,
+      itemsCount: order.items?.length || 0,
+      orderSubtotal: order.subtotal,
+      orderTotalAmount: order.totalAmount,
+      items: order.items?.map(item => ({
+        drugName: item.drugName,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        finalPrice: item.finalPrice,
+        totalPrice: item.totalPrice
+      })) || []
+    });
+
     // Kiểm tra xem đã có invoice chưa
     const existingInvoice = await Invoice.findOne({ order: orderId });
     if (existingInvoice) {
@@ -35,29 +50,65 @@ const createInvoiceFromOrder = async (orderId, user, req = null) => {
     let subtotal = 0;
     const invoiceItems = [];
 
-    for (const item of order.items) {
-      const itemSubtotal = item.finalPrice || (item.quantity * item.unitPrice * (1 - (item.discount || 0) / 100));
-      const itemTax = itemSubtotal * 0.1; // 10% VAT
-      const itemTotal = itemSubtotal + itemTax;
+    // Kiểm tra nếu order.items có dữ liệu
+    if (order.items && order.items.length > 0) {
+      for (const item of order.items) {
+        // Đảm bảo item có đầy đủ thông tin
+        const itemQuantity = item.quantity || 0;
+        const itemUnitPrice = item.unitPrice || 0;
+        const itemDiscount = item.discount || 0;
+        const itemFinalPrice = item.finalPrice || (itemQuantity * itemUnitPrice * (1 - itemDiscount / 100));
+        
+        const itemSubtotal = itemFinalPrice;
+        const itemTax = itemSubtotal * 0.1; // 10% VAT
+        const itemTotal = itemSubtotal + itemTax;
 
-      subtotal += itemSubtotal;
+        subtotal += itemSubtotal;
 
+        invoiceItems.push({
+          drugId: item.drugId || '',
+          drugName: item.drugName || 'Sản phẩm',
+          batchNumber: item.batchNumber || '',
+          quantity: itemQuantity,
+          unit: item.unit || 'đơn vị',
+          unitPrice: itemUnitPrice,
+          discount: itemDiscount,
+          taxRate: 10,
+          subtotal: itemSubtotal,
+          tax: itemTax,
+          total: itemTotal
+        });
+      }
+    } else {
+      // Nếu không có items hoặc items rỗng, sử dụng giá trị từ order trực tiếp
+      console.warn(`⚠️ Order ${order.orderNumber} không có items, sử dụng giá trị từ order.subtotal`);
+      subtotal = order.subtotal || 0;
+      
+      // Tạo một item tổng hợp từ order
       invoiceItems.push({
-        drugId: item.drugId,
-        drugName: item.drugName,
-        batchNumber: item.batchNumber,
-        quantity: item.quantity,
-        unit: item.unit,
-        unitPrice: item.unitPrice,
-        discount: item.discount || 0,
+        drugId: '',
+        drugName: `Đơn hàng ${order.orderNumber}`,
+        batchNumber: '',
+        quantity: order.totalQuantity || 1,
+        unit: 'đơn vị',
+        unitPrice: subtotal / (order.totalQuantity || 1),
+        discount: 0,
         taxRate: 10,
-        subtotal: itemSubtotal,
-        tax: itemTax,
-        total: itemTotal
+        subtotal: subtotal,
+        tax: subtotal * 0.1,
+        total: subtotal * 1.1
       });
     }
 
-    // Tính tổng
+    // Tính tổng - nếu subtotal = 0 và order có totalAmount, sử dụng totalAmount
+    if (subtotal === 0 && order.totalAmount && order.totalAmount > 0) {
+      // Nếu order đã có totalAmount, tính ngược lại subtotal (trừ tax và shipping)
+      const shippingFee = order.shippingFee || 0;
+      const totalWithShipping = order.totalAmount - shippingFee;
+      subtotal = totalWithShipping / 1.1; // Trừ VAT 10%
+      console.log(`📊 Sử dụng order.totalAmount: ${order.totalAmount}, tính lại subtotal: ${subtotal}`);
+    }
+
     const tax = subtotal * 0.1; // 10% VAT
     const shippingFee = order.shippingFee || 0;
     const totalAmount = subtotal + tax + shippingFee;
@@ -192,6 +243,23 @@ const recordPayment = async (invoiceId, paymentData, user, req = null) => {
     }
     
     await invoice.save();
+
+    // Cập nhật trạng thái thanh toán của order nếu có
+    if (invoice.order) {
+      const Order = require('../models/Order');
+      const order = await Order.findById(invoice.order);
+      if (order) {
+        if (invoice.paidAmount >= invoice.totalAmount) {
+          order.paymentStatus = 'paid';
+          order.paidAmount = invoice.paidAmount;
+          order.paidDate = invoice.paidDate;
+        } else if (invoice.paidAmount > 0) {
+          order.paymentStatus = 'partial';
+          order.paidAmount = invoice.paidAmount;
+        }
+        await order.save();
+      }
+    }
 
     // Ghi audit log
     await auditService.createAuditLog({

@@ -58,7 +58,13 @@ api.interceptors.response.use(
     return response;
   },
   (error) => {
-    // Log error để debug
+    // Cho phép bỏ qua xử lý lỗi toàn cục cho một số request (ví dụ: quét QR, empty data)
+    // Kiểm tra skipErrorHandler TRƯỚC để tránh log và toast không cần thiết
+    if (error.config && error.config.skipErrorHandler) {
+      return Promise.reject(error);
+    }
+
+    // Log error để debug (chỉ khi không có skipErrorHandler)
     if (error.code === 'ECONNABORTED') {
       console.error('⏱️ Request timeout:', error.config?.url);
     } else if (error.code === 'ERR_NETWORK' || error.message?.includes('Network Error')) {
@@ -79,11 +85,6 @@ api.interceptors.response.use(
       });
     } else {
       console.error('❌ Request error:', error);
-    }
-
-    // Cho phép bỏ qua xử lý lỗi toàn cục cho một số request (ví dụ: quét QR, empty data)
-    if (error.config && error.config.skipErrorHandler) {
-      return Promise.reject(error);
     }
 
     const { response, config } = error;
@@ -121,7 +122,10 @@ api.interceptors.response.use(
           break;
 
         case 403:
-          toast.error(message || 'Bạn không có quyền truy cập tài nguyên này.');
+          // Chỉ hiển thị toast cho lỗi 403 nếu không có skipErrorHandler
+          if (!config.skipErrorHandler) {
+            toast.error(message || 'Bạn không có quyền truy cập tài nguyên này.');
+          }
           break;
 
         case 404:
@@ -273,8 +277,8 @@ export const authAPI = {
 // User API
 export const userAPI = {
   // Lấy danh sách users
-  getUsers: async (params = {}) => {
-    const response = await api.get('/users', { params });
+  getUsers: async (params = {}, config = {}) => {
+    const response = await api.get('/users', { params, ...config });
     return response.data;
   },
   
@@ -317,6 +321,12 @@ export const userAPI = {
   // Lấy users theo tổ chức
   getUsersByOrganization: async (organizationId) => {
     const response = await api.get(`/users/organization/${organizationId}`);
+    return response.data;
+  },
+
+  // Lấy danh sách tổ chức công khai (cho tạo đánh giá)
+  getOrganizations: async (params = {}, config = {}) => {
+    const response = await api.get('/users/organizations', { params, ...config });
     return response.data;
   },
   
@@ -761,6 +771,12 @@ export const reviewAPI = {
   // Get top rated targets
   getTopRatedTargets: async (targetType, limit = 10) => {
     const response = await api.get(`/reviews/top-rated/${targetType}?limit=${limit}`);
+    return response.data;
+  },
+
+  // Get public reviews (approved only)
+  getPublicReviews: async (params = '') => {
+    const response = await api.get(`/reviews/public?${params}`);
     return response.data;
   },
 
@@ -1265,6 +1281,27 @@ export const invoiceAPI = {
 
 // Payments API
 export const paymentAPI = {
+  // Tạo payment request với MoMo
+  createMomoPayment: async (data) => {
+    try {
+      const response = await api.post('/payments/momo/create', data);
+      return response.data;
+    } catch (error) {
+      console.error('Error creating MoMo payment:', error);
+      throw error;
+    }
+  },
+
+  // Kiểm tra trạng thái thanh toán MoMo
+  checkMomoPaymentStatus: async (paymentId) => {
+    try {
+      const response = await api.get(`/payments/momo/status/${paymentId}`);
+      return response.data;
+    } catch (error) {
+      console.error('Error checking MoMo payment status:', error);
+      throw error;
+    }
+  },
   // Get payments
   getPayments: async (params = {}) => {
     const response = await api.get('/payments', { params });

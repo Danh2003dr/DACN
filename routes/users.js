@@ -10,7 +10,8 @@ const {
   toggleUserLock,
   resetUserPassword,
   getUserStats,
-  getUsersByOrganization
+  getUsersByOrganization,
+  getOrganizations
 } = require('../controllers/userController');
 
 // Import middleware
@@ -48,6 +49,14 @@ router.get('/stats',
   authenticate,
   authorize('admin'),
   getUserStats
+);
+
+// @route   GET /api/users/organizations
+// @desc    Lấy danh sách tổ chức công khai (cho tạo đánh giá)
+// @access  Private (Tất cả user đã đăng nhập)
+router.get('/organizations',
+  authenticate,
+  getOrganizations
 );
 
 // @route   GET /api/users/organization/:organizationId

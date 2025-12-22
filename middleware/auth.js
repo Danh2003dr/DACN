@@ -226,6 +226,19 @@ const checkOwnership = (req, res, next) => {
   
   const resourceUserId = req.params.userId || req.params.id;
   
+  // Bỏ qua kiểm tra nếu route là các route đặc biệt không cần check ownership
+  // (ví dụ: /organizations, /stats, etc.)
+  const specialRoutes = ['organizations', 'stats', 'organization'];
+  if (resourceUserId && specialRoutes.includes(resourceUserId)) {
+    return next();
+  }
+  
+  // Bỏ qua kiểm tra nếu không có ID hoặc ID không phải là ObjectId hợp lệ
+  // (ví dụ: route /organizations, /stats, etc.)
+  if (!resourceUserId || !/^[0-9a-fA-F]{24}$/.test(resourceUserId)) {
+    return next();
+  }
+  
   // Admin có thể truy cập tất cả
   if (req.user.role === USER_ROLES.ADMIN) {
     return next();

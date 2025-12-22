@@ -75,6 +75,42 @@ const createReview = async (req, res) => {
       }
 
       resolvedTargetId = drug._id;
+    } else if (['manufacturer', 'distributor', 'hospital'].includes(targetType)) {
+      // Kiểm tra tổ chức có tồn tại không
+      if (!targetId) {
+        return res.status(400).json({
+          success: false,
+          message: 'ID tổ chức là bắt buộc'
+        });
+      }
+
+      // Kiểm tra targetId có phải là ObjectId hợp lệ không
+      if (!mongoose.Types.ObjectId.isValid(targetId)) {
+        return res.status(400).json({
+          success: false,
+          message: 'ID tổ chức không hợp lệ'
+        });
+      }
+
+      const organization = await User.findOne({
+        _id: targetId,
+        role: targetType,
+        isActive: true
+      });
+
+      if (!organization) {
+        return res.status(404).json({
+          success: false,
+          message: `Không tìm thấy ${targetType === 'manufacturer' ? 'nhà sản xuất' : targetType === 'distributor' ? 'nhà phân phối' : 'bệnh viện'} hoặc ID không hợp lệ`
+        });
+      }
+
+      resolvedTargetId = organization._id;
+    } else {
+      return res.status(400).json({
+        success: false,
+        message: 'Loại đối tượng không hợp lệ'
+      });
     }
 
     // Tạo đánh giá
@@ -546,6 +582,75 @@ const getTopRatedTargets = async (req, res) => {
   }
 };
 
+// @desc    Lấy danh sách đánh giá công khai (đã duyệt)
+// @route   GET /api/reviews/public
+// @access  Public
+const getPublicReviews = async (req, res) => {
+  try {
+    const {
+      page = 1,
+      limit = 20,
+      targetType,
+      minRating,
+      maxRating,
+      search
+    } = req.query;
+
+    const skip = (page - 1) * limit;
+    
+    // Chỉ lấy reviews đã được duyệt
+    const filter = {
+      status: 'approved'
+    };
+    
+    if (targetType) {
+      filter.targetType = targetType;
+    }
+    
+    if (minRating || maxRating) {
+      filter.overallRating = {};
+      if (minRating) filter.overallRating.$gte = parseInt(minRating);
+      if (maxRating) filter.overallRating.$lte = parseInt(maxRating);
+    }
+    
+    if (search) {
+      filter.$or = [
+        { title: { $regex: search, $options: 'i' } },
+        { content: { $regex: search, $options: 'i' } },
+        { targetName: { $regex: search, $options: 'i' } }
+      ];
+    }
+
+    const reviews = await Review.find(filter)
+      .populate('reviewer', 'fullName email role')
+      .populate('response.respondedBy', 'fullName email role')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit));
+
+    const total = await Review.countDocuments(filter);
+
+    res.status(200).json({
+      success: true,
+      data: {
+        reviews,
+        pagination: {
+          current: parseInt(page),
+          pages: Math.ceil(total / limit),
+          total
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Get public reviews error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Lỗi server khi lấy danh sách đánh giá công khai'
+    });
+  }
+};
+
 // @desc    Quản lý đánh giá (Admin)
 // @route   GET /api/reviews/admin
 // @access  Private (Admin only)
@@ -778,6 +883,7 @@ module.exports = {
   addResponse,
   reportReview,
   getTopRatedTargets,
+  getPublicReviews,
   getReviewsForAdmin,
   updateReviewReportStatus,
   updateReviewStatus,

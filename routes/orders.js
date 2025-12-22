@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { authenticate } = require('../middleware/auth');
+const { authenticate, authorize } = require('../middleware/auth');
 const {
   createOrder,
   getOrders,
@@ -14,22 +14,23 @@ const {
   reorder
 } = require('../controllers/orderController');
 
-// Tất cả routes yêu cầu authentication
+// Tất cả routes yêu cầu authentication và chỉ cho phép admin, manufacturer, distributor, hospital
 router.use(authenticate);
+router.use(authorize('admin', 'manufacturer', 'distributor', 'hospital'));
 
 // @route   GET /api/orders/stats
 // @desc    Lấy thống kê đơn hàng
-// @access  Private
+// @access  Private (Admin, Manufacturer, Distributor, Hospital)
 router.get('/stats', getOrderStats);
 
 // @route   GET /api/orders
 // @desc    Lấy danh sách đơn hàng
-// @access  Private
+// @access  Private (Admin, Manufacturer, Distributor, Hospital)
 router.get('/', getOrders);
 
 // @route   POST /api/orders
 // @desc    Tạo đơn hàng mới
-// @access  Private
+// @access  Private (Admin, Manufacturer, Distributor, Hospital)
 router.post('/', createOrder);
 
 // @route   GET /api/orders/:id

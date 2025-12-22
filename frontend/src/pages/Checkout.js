@@ -130,9 +130,23 @@ const Checkout = () => {
       return acc; // Skip nếu không có manufacturerId
     }
     
-    const manufacturerIdStr = typeof manufacturerId === 'object' && manufacturerId?.toString
-      ? manufacturerId.toString()
-      : String(manufacturerId);
+    // Convert manufacturerId thành string - xử lý cả trường hợp char array
+    let manufacturerIdStr;
+    if (typeof manufacturerId === 'object' && manufacturerId !== null) {
+      // Kiểm tra xem có phải là char array không
+      const keys = Object.keys(manufacturerId);
+      if (keys.length > 0 && keys.every(k => /^\d+$/.test(k))) {
+        // Char array: { '0': '6', '1': '9', ... }
+        manufacturerIdStr = keys.sort((a, b) => parseInt(a) - parseInt(b)).map(k => manufacturerId[k]).join('');
+      } else if (typeof manufacturerId.toString === 'function') {
+        const str = manufacturerId.toString();
+        manufacturerIdStr = (str && str !== '[object Object]') ? str : String(manufacturerId);
+      } else {
+        manufacturerIdStr = String(manufacturerId);
+      }
+    } else {
+      manufacturerIdStr = String(manufacturerId);
+    }
     
     if (!acc[manufacturerIdStr]) {
       const manufacturerName = drug.manufacturerId?.organizationInfo?.name ||
@@ -531,6 +545,18 @@ const Checkout = () => {
                     className="text-blue-600 focus:ring-blue-500"
                   />
                   <span className="flex-1">Tiền mặt</span>
+                </label>
+                
+                <label className="flex items-center gap-3 p-3 border border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50">
+                  <input
+                    type="radio"
+                    name="paymentMethod"
+                    value="momo"
+                    checked={paymentMethod === 'momo'}
+                    onChange={(e) => setPaymentMethod(e.target.value)}
+                    className="text-blue-600 focus:ring-blue-500"
+                  />
+                  <span className="flex-1">MoMo</span>
                 </label>
                 
                 <label className="flex items-center gap-3 p-3 border border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50">

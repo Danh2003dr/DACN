@@ -144,20 +144,12 @@ const Reviews = () => {
 
       let response;
       if (activeTab === 'public') {
-        // Ưu tiên top-rated; chỉ fallback sang danh sách admin nếu user là admin
-        response = await reviewAPI.getTopRatedTargets('drug', '10');
-        if (response.success && (response.data?.topRated?.length || 0) > 0) {
-          setReviews(response.data.topRated);
-          setPagination({ current: 1, pages: 1, total: response.data.topRated.length });
-        } else if (hasRole && hasRole('admin')) {
-          // Chỉ admin mới gọi API danh sách quản trị
-          const adminList = await reviewAPI.getReviewsForAdmin(`status=approved&${params.toString()}`);
-          if (adminList.success) {
-            setReviews(adminList.data.reviews);
-            setPagination(adminList.data.pagination || { current: 1, pages: 1, total: 0 });
-          }
+        // Hiển thị danh sách đánh giá đã được duyệt (approved)
+        response = await reviewAPI.getPublicReviews(params.toString());
+        if (response.success) {
+          setReviews(response.data.reviews);
+          setPagination(response.data.pagination || { current: 1, pages: 1, total: 0 });
         } else {
-          // Người dùng thường: không có dữ liệu, tránh gọi API admin
           setReviews([]);
           setPagination({ current: 1, pages: 1, total: 0 });
         }
@@ -166,15 +158,21 @@ const Reviews = () => {
         // Dùng endpoint riêng cho "của tôi" (không cần quyền admin)
         response = await reviewAPI.getMyReviews(params.toString());
         if (response.success) {
-          setReviews(response.data.reviews);
+          setReviews(response.data.reviews || []);
           setPagination(response.data.pagination || { current: 1, pages: 1, total: 0 });
+        } else {
+          setReviews([]);
+          setPagination({ current: 1, pages: 1, total: 0 });
         }
       } else {
         // Tab "Quản lý đánh giá" (admin)
         response = await reviewAPI.getReviewsForAdmin(params.toString());
         if (response.success) {
-          setReviews(response.data.reviews);
+          setReviews(response.data.reviews || []);
           setPagination(response.data.pagination || { current: 1, pages: 1, total: 0 });
+        } else {
+          setReviews([]);
+          setPagination({ current: 1, pages: 1, total: 0 });
         }
       }
     } catch (error) {
@@ -193,12 +191,47 @@ const Reviews = () => {
   const onCreateReview = async (data) => {
     try {
       setLoading(true);
+      
+      console.log('📝 Form data before validation:', data);
+      
+      // Validate trước khi gửi
+      if (!data.targetType) {
+        toast.error('Vui lòng chọn loại đối tượng');
+        setLoading(false);
+        return;
+      }
+      
+      if (!data.targetId || data.targetId.trim() === '') {
+        toast.error('Vui lòng chọn đối tượng để đánh giá');
+        console.error('❌ targetId is missing or empty:', data.targetId);
+        setLoading(false);
+        return;
+      }
+      
+      if (!data.targetName || data.targetName.trim() === '') {
+        toast.error('Tên đối tượng là bắt buộc');
+        console.error('❌ targetName is missing or empty:', data.targetName);
+        setLoading(false);
+        return;
+      }
+      
+      if (!data.overallRating) {
+        toast.error('Vui lòng chọn điểm đánh giá');
+        setLoading(false);
+        return;
+      }
+      
       const payload = {
         ...data,
+        targetId: data.targetId.trim(),
+        targetName: data.targetName.trim(),
         overallRating: Number(data.overallRating),
         isAnonymous: data.isAnonymous ?? true,
         reviewType: data.reviewType || 'usage'
       };
+      
+      console.log('📤 Sending payload:', payload);
+      
       const response = await reviewAPI.createReview(payload);
       
       if (response.success) {
@@ -706,7 +739,7 @@ const Reviews = () => {
 
 // Create Review Modal Component
 const CreateReviewModal = ({ onSubmit, onClose, loading }) => {
-  const { register, handleSubmit, formState: { errors }, watch, setValue, trigger, control } = useForm({
+  const { register, handleSubmit, formState: { errors }, watch, setValue, trigger, control, reset } = useForm({
     defaultValues: {
       targetType: '',
       overallRating: '',
@@ -750,7 +783,7 @@ const CreateReviewModal = ({ onSubmit, onClose, loading }) => {
             setDrugs(response.data.drugs);
           }
         } else if (['manufacturer', 'distributor', 'hospital'].includes(selectedTargetType)) {
-          // Load danh sách tổ chức theo role
+          // Load danh sách tổ chức theo role - sử dụng endpoint mới cho phép patient truy cập
           const roleMap = {
             manufacturer: 'manufacturer',
             distributor: 'distributor',
@@ -761,14 +794,24 @@ const CreateReviewModal = ({ onSubmit, onClose, loading }) => {
           if (searchTerm && searchTerm.trim()) {
             params.search = searchTerm.trim();
           }
-          const response = await userAPI.getUsers(params);
+          // Sử dụng endpoint mới getOrganizations - cho phép tất cả user đã đăng nhập
+          const response = await userAPI.getOrganizations(params);
           if (response.success && response.data?.users) {
             setOrganizations(response.data.users);
           }
         }
       } catch (error) {
         console.error('Error loading options:', error);
-        toast.error('Lỗi khi tải danh sách');
+        // Xử lý lỗi 403 (Forbidden) một cách thân thiện - không hiển thị toast
+        // vì đây là hành vi dự kiến khi patient không có quyền truy cập
+        if (error.response?.status === 403) {
+          console.warn('User không có quyền truy cập danh sách tổ chức. Để trống danh sách.');
+          // Không hiển thị toast lỗi, chỉ để dropdown trống
+          setOrganizations([]);
+        } else {
+          // Chỉ hiển thị toast cho các lỗi khác (network, server, etc.)
+          toast.error('Lỗi khi tải danh sách');
+        }
       } finally {
         setLoadingOptions(false);
       }
@@ -845,11 +888,15 @@ const CreateReviewModal = ({ onSubmit, onClose, loading }) => {
       const displayTargetIdStr = String(meta.displayId || '').trim();
       const targetNameStr = String(meta.name || '').trim();
 
+      console.log('✅ Using meta data:', { submitTargetIdStr, displayTargetIdStr, targetNameStr, meta });
+
       setDisplayTargetId(displayTargetIdStr);
       setDisplayTargetName(targetNameStr);
 
       if (!submitTargetIdStr) {
+        console.error('❌ submitTargetIdStr is empty!', { meta, value });
         toast.error('Không lấy được ID hợp lệ để lưu đánh giá');
+        return;
       }
 
       setValue('targetId', submitTargetIdStr, {
@@ -928,7 +975,7 @@ const CreateReviewModal = ({ onSubmit, onClose, loading }) => {
         
         console.log('✅ Updated form - targetId:', submitTargetIdStr, 'targetName:', targetNameStr);
       } else {
-        console.warn('Drug not found for value:', value);
+        console.warn('❌ Drug not found for value:', value);
         console.warn('Available drugs:', drugs.map((d, idx) => {
           const drugId = normalizeId(d._id);
           const safeId = drugId && drugId !== '[object Object]' && drugId.trim() !== '' 
@@ -936,6 +983,7 @@ const CreateReviewModal = ({ onSubmit, onClose, loading }) => {
             : `drug-fallback-${idx}`;
           return { safeId, name: d.name, drugId: d.drugId };
         }));
+        toast.error('Không tìm thấy thuốc được chọn. Vui lòng chọn lại.');
       }
     } else if (['manufacturer', 'distributor', 'hospital'].includes(selectedTargetType)) {
       const selectedOrg = organizations.find(org => {
@@ -956,6 +1004,13 @@ const CreateReviewModal = ({ onSubmit, onClose, loading }) => {
         const displayTargetIdStr = String(displayId || '').trim();
         const orgNameStr = String(orgName || '').trim();
         
+        // Kiểm tra ObjectId hợp lệ
+        if (!submitTargetIdStr || !/^[0-9a-fA-F]{24}$/.test(submitTargetIdStr)) {
+          console.error('❌ Invalid ObjectId for organization:', { normalizedId, submitTargetIdStr, selectedOrg });
+          toast.error('ID tổ chức không hợp lệ. Vui lòng chọn lại.');
+          return;
+        }
+        
         console.log('🔍 Selected organization found:', {
           value,
           normalizedId: submitTargetIdStr,
@@ -968,9 +1023,6 @@ const CreateReviewModal = ({ onSubmit, onClose, loading }) => {
         setDisplayTargetName(orgNameStr);
         
         // Sau đó cập nhật form values
-        if (!submitTargetIdStr) {
-          toast.error('Không lấy được ID tổ chức hợp lệ để lưu đánh giá');
-        }
         setValue('targetId', submitTargetIdStr, { shouldValidate: true, shouldDirty: true, shouldTouch: true });
         setValue('targetName', orgNameStr, { shouldValidate: true, shouldDirty: true, shouldTouch: true });
         
@@ -980,7 +1032,15 @@ const CreateReviewModal = ({ onSubmit, onClose, loading }) => {
         
         console.log('✅ Updated form - targetId:', submitTargetIdStr, 'targetName:', orgNameStr);
       } else {
-        console.warn('Organization not found for value:', value);
+        console.warn('❌ Organization not found for value:', value);
+        console.warn('Available organizations:', organizations.map((org, idx) => {
+          const orgId = normalizeId(org._id);
+          const safeId = orgId && orgId !== '[object Object]' && orgId.trim() !== ''
+            ? orgId
+            : `org-fallback-${idx}`;
+          return { safeId, name: org.organizationInfo?.name || org.fullName, orgId };
+        }));
+        toast.error('Không tìm thấy tổ chức được chọn. Vui lòng chọn lại.');
       }
     }
   };
@@ -1077,13 +1137,15 @@ const CreateReviewModal = ({ onSubmit, onClose, loading }) => {
                     onChange={(e) => {
                       const selectedValue = e.target.value;
                       const opt = e.target.selectedOptions?.[0];
+                      // Lấy data attributes - sử dụng cả dataset và getAttribute để đảm bảo
                       const meta = opt
                         ? {
-                            submitId: opt.dataset.submitId || '',
-                            displayId: opt.dataset.displayId || '',
-                            name: opt.dataset.name || ''
+                            submitId: opt.dataset.submitId || opt.getAttribute('data-submit-id') || '',
+                            displayId: opt.dataset.displayId || opt.getAttribute('data-display-id') || '',
+                            name: opt.dataset.name || opt.getAttribute('data-name') || ''
                           }
                         : null;
+                      console.log('🔍 Select onChange:', { selectedValue, meta, opt });
                       handleTargetSelect(selectedValue, meta);
                     }}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
@@ -1108,11 +1170,21 @@ const CreateReviewModal = ({ onSubmit, onClose, loading }) => {
                       const submitId = normalizeId(drug._id);
                       const displayId = drug.drugId || submitId || '';
                       const targetName = drug.name || drug.drugId || submitId || '';
+                      
+                      // Đảm bảo submitId là ObjectId hợp lệ (24 ký tự hex)
+                      const validSubmitId = submitId && submitId.length === 24 && /^[0-9a-fA-F]{24}$/.test(submitId) 
+                        ? submitId 
+                        : '';
+                      
+                      if (!validSubmitId && submitId) {
+                        console.warn('⚠️ Invalid submitId for drug:', { drugId, submitId, drugName: drug.name });
+                      }
+                      
                       return (
                         <option
                           key={uniqueKey}
                           value={safeId}
-                          data-submit-id={submitId}
+                          data-submit-id={validSubmitId}
                           data-display-id={displayId}
                           data-name={targetName}
                         >
@@ -1134,11 +1206,21 @@ const CreateReviewModal = ({ onSubmit, onClose, loading }) => {
                       const uniqueKey = `org-opt-${idx}-${safeId}-${orgName}`;
                       const submitId = normalizeId(org._id);
                       const displayId = org.organizationId || submitId || '';
+                      
+                      // Đảm bảo submitId là ObjectId hợp lệ (24 ký tự hex)
+                      const validSubmitId = submitId && submitId.length === 24 && /^[0-9a-fA-F]{24}$/.test(submitId) 
+                        ? submitId 
+                        : '';
+                      
+                      if (!validSubmitId && submitId) {
+                        console.warn('⚠️ Invalid submitId for organization:', { orgId, submitId, orgName });
+                      }
+                      
                       return (
                         <option
                           key={uniqueKey}
                           value={safeId}
-                          data-submit-id={submitId}
+                          data-submit-id={validSubmitId}
                           data-display-id={displayId}
                           data-name={orgName}
                         >
@@ -1277,7 +1359,16 @@ const CreateReviewModal = ({ onSubmit, onClose, loading }) => {
           <div className="flex justify-end space-x-3">
             <button
               type="button"
-              onClick={onClose}
+              onClick={() => {
+                reset();
+                setDisplayTargetId('');
+                setDisplayTargetName('');
+                setSelectedOptionValue('');
+                setSearchTerm('');
+                setDrugs([]);
+                setOrganizations([]);
+                onClose();
+              }}
               className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
             >
               Hủy

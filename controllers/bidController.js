@@ -353,7 +353,7 @@ const getBids = async (req, res) => {
     }
     
     const bids = await Bid.find(query)
-      .populate('drugId', 'name batchNumber imageUrl')
+      .populate('drugId', '_id name batchNumber imageUrl')
       .populate('bidderId', 'fullName email organizationInfo')
       .populate('manufacturerId', 'fullName email organizationInfo')
       .sort({ createdAt: -1 })
@@ -392,7 +392,7 @@ const getBidById = async (req, res) => {
     const { id } = req.params;
     
     const bid = await Bid.findById(id)
-      .populate('drugId', 'name batchNumber imageUrl')
+      .populate('drugId', '_id name batchNumber imageUrl')
       .populate('bidderId', 'fullName email organizationInfo')
       .populate('manufacturerId', 'fullName email organizationInfo');
     
@@ -448,7 +448,7 @@ const getMyBids = async (req, res) => {
     // #endregion
     
     const bids = await Bid.find(query)
-      .populate('drugId', 'name batchNumber imageUrl')
+      .populate('drugId', '_id name batchNumber imageUrl')
       .populate('manufacturerId', 'fullName email organizationInfo')
       .sort({ createdAt: -1 })
       .skip(parseInt(skip))
@@ -530,7 +530,7 @@ const getManufacturerBids = async (req, res) => {
     console.log('🔍 User ID:', req.user._id);
     
     const bids = await Bid.find(query)
-      .populate('drugId', 'name batchNumber imageUrl')
+      .populate('drugId', '_id name batchNumber imageUrl')
       .populate('bidderId', 'fullName email organizationInfo')
       .populate('manufacturerId', 'fullName email organizationInfo')
       .sort({ createdAt: -1 })
@@ -721,12 +721,20 @@ const acceptBid = async (req, res) => {
         billingAddress: {}
       };
       
-      // Tạo order thông qua service (sẽ set status = 'draft', sau đó có thể change status to 'processing')
+      // Tạo order thông qua service
       const orderResult = await orderService.createOrder(orderData, req.user, req);
       
-      // Chuyển order sang trạng thái 'processing' ngay sau khi tạo từ bid
+      // Chuyển order sang trạng thái 'pending' ngay sau khi tạo từ bid (thay vì 'draft')
+      // Vì bid đã được accept nên order nên ở trạng thái pending để chờ xác nhận
       if (orderResult.order) {
-        await orderResult.order.changeStatus('processing', req.user._id, req.user.fullName || req.user.username, 'Đơn hàng tự động tạo từ đấu thầu đã được chấp nhận');
+        try {
+          await orderResult.order.changeStatus('pending', req.user._id, req.user.fullName || req.user.username, 'Đơn hàng tự động tạo từ đấu thầu đã được chấp nhận');
+        } catch (statusError) {
+          console.warn('Could not change order status, setting directly:', statusError);
+          // Fallback: set trực tiếp nếu changeStatus không hoạt động
+          orderResult.order.status = 'pending';
+          await orderResult.order.save();
+        }
       }
       
       // Populate lại để trả về đầy đủ thông tin

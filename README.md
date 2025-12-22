@@ -17,6 +17,8 @@ Hệ thống được phát triển để giải quyết vấn đề nghiêm tr�
 - ⚙️ **Hướng dẫn nhanh triển khai & deploy smart contract**: xem file `QUICK_START_BLOCKCHAIN.md`
 - 🧠 **Mô tả kiến trúc & nghiệp vụ hệ thống**: xem file `MO_TA_HE_THONG.md`
 - 📥 **[IMPORT_GUIDE.md](./IMPORT_GUIDE.md)** - Hướng dẫn import dữ liệu từ PDF/CSV/Excel
+- 💳 **[MOMO_PAYMENT_SETUP.md](./MOMO_PAYMENT_SETUP.md)** - Hướng dẫn cấu hình thanh toán MoMo ⭐ NEW
+- ⚡ **[MOMO_QUICK_START.md](./MOMO_QUICK_START.md)** - Hướng dẫn nhanh cấu hình MoMo (5 phút) ⭐ NEW
 
 ## Tính năng chính
 

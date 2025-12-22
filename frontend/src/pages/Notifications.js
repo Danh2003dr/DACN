@@ -656,19 +656,6 @@ const Notifications = () => {
         )}
       </div>
 
-      {/* Mark All as Read Button */}
-      {activeTab === 'received' && stats.unread > 0 && (
-        <div className="flex justify-center">
-          <button
-            onClick={markAllAsRead}
-            className="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700 flex items-center space-x-2"
-          >
-            <CheckCircle className="h-5 w-5" />
-            <span>Đánh dấu tất cả đã đọc ({stats.unread})</span>
-          </button>
-        </div>
-      )}
-
       {/* Create Notification Modal */}
       {showCreateModal && (
         <CreateNotificationModal

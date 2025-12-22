@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { inventoryAPI } from '../utils/api';
+import { inventoryAPI, drugAPI, supplierAPI } from '../utils/api';
 import { useAuth } from '../contexts/AuthContext';
 import {
   Package,
@@ -31,6 +31,10 @@ const Inventory = () => {
   const [stats, setStats] = useState(null);
   const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, pages: 0 });
   const [locations, setLocations] = useState([]);
+  const [drugs, setDrugs] = useState([]); // Danh sách thuốc để chọn
+  const [loadingDrugs, setLoadingDrugs] = useState(false);
+  const [suppliers, setSuppliers] = useState([]); // Danh sách nhà cung ứng
+  const [loadingSuppliers, setLoadingSuppliers] = useState(false);
   
   // Modal states
   const [showStockInModal, setShowStockInModal] = useState(false);
@@ -96,6 +100,19 @@ const Inventory = () => {
     notes: ''
   });
 
+  // Lịch sử + danh sách mặc định người nhận/đơn vị nhận (autocomplete)
+  const RECIPIENT_HISTORY_KEY = 'inventory_recipient_history';
+  const DEFAULT_RECIPIENTS = [
+    'Khách lẻ',
+    'Bệnh viện Bạch Mai',
+    'Bệnh viện Chợ Rẫy',
+    'Trung tâm phân phối miền Bắc',
+    'Trung tâm phân phối TP.HCM',
+    'Nhà thuốc Trung tâm',
+    'Đại lý sỉ'
+  ];
+  const [recipientOptions, setRecipientOptions] = useState(DEFAULT_RECIPIENTS);
+
   const [adjustForm, setAdjustForm] = useState({
     drugId: '',
     locationId: '',
@@ -103,6 +120,45 @@ const Inventory = () => {
     reason: 'adjustment',
     notes: ''
   });
+
+  // Lịch sử người nhận/đơn vị nhận (autocomplete)
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(RECIPIENT_HISTORY_KEY);
+      let merged = [...DEFAULT_RECIPIENTS];
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed)) {
+          // Gộp danh sách mặc định + lịch sử (ưu tiên lịch sử lên đầu)
+          merged = [...parsed, ...DEFAULT_RECIPIENTS].filter((item, idx, arr) =>
+            arr.findIndex((v) => v.toLowerCase() === item.toLowerCase()) === idx
+          );
+        }
+      }
+      setRecipientOptions(merged);
+    } catch (e) {
+      setRecipientOptions(DEFAULT_RECIPIENTS);
+    }
+  }, []);
+
+  const saveRecipientHistory = (name) => {
+    if (!name || !name.trim()) return;
+    const trimmed = name.trim();
+    const exists = recipientOptions.find((r) => r.toLowerCase() === trimmed.toLowerCase());
+    let next = [];
+    if (exists) {
+      next = [trimmed, ...recipientOptions.filter((r) => r.toLowerCase() !== trimmed.toLowerCase())];
+    } else {
+      next = [trimmed, ...recipientOptions];
+    }
+    next = next.slice(0, 20); // giới hạn 20 mục gần nhất
+    setRecipientOptions(next);
+    try {
+      localStorage.setItem(RECIPIENT_HISTORY_KEY, JSON.stringify(next));
+    } catch (e) {
+      // Ignore localStorage errors
+    }
+  };
 
   // Load data
   const loadInventory = async (page = 1) => {
@@ -244,6 +300,10 @@ const Inventory = () => {
       
       if (response && response.success) {
         toast.success(`Xuất kho thành công: ${quantity} ${selectedItem?.unit || 'viên'}`);
+        // Lưu lịch sử người nhận nếu có
+        if (stockOutForm.recipientName) {
+          saveRecipientHistory(stockOutForm.recipientName);
+        }
       setShowStockOutModal(false);
       setStockOutForm({
         drugId: '',
@@ -333,6 +393,77 @@ const Inventory = () => {
       }
     } catch (error) {
       console.error('Error loading locations:', error);
+    }
+  };
+
+  // Helper function to normalize MongoDB ObjectId
+  const normalizeId = (id, fallback = '') => {
+    if (!id) return fallback;
+    if (typeof id === 'string') return id.trim();
+    if (typeof id === 'object' && id !== null) {
+      if (id._id !== undefined) return normalizeId(id._id, fallback);
+      if (id.id !== undefined) return normalizeId(id.id, fallback);
+      // Tránh trả về [object Object]
+      if (id.toString && typeof id.toString === 'function') {
+        const str = String(id.toString()).trim();
+        if (str && str !== '[object Object]') return str;
+      }
+    }
+    const str = String(id).trim();
+    return (str && str !== '[object Object]') ? str : fallback;
+  };
+
+  // Load drugs for dropdown
+  const loadDrugs = async () => {
+    try {
+      setLoadingDrugs(true);
+      // API có giới hạn tối đa 100, nên chỉ lấy 100 thuốc đầu tiên
+      const response = await drugAPI.getDrugs({ limit: 100, page: 1 });
+      if (response && response.success) {
+        setDrugs(response.data.drugs || []);
+        if (response.data.pagination && response.data.pagination.total > 100) {
+          const total = response.data.pagination.total;
+          console.warn(`Có ${total} thuốc trong hệ thống, chỉ hiển thị 100 thuốc đầu tiên.`);
+          toast(`Có ${total} thuốc trong hệ thống, chỉ hiển thị 100 thuốc đầu tiên.`, { 
+            duration: 3000,
+            icon: '⚠️'
+          });
+        }
+      } else {
+        setDrugs([]);
+        // Chỉ hiển thị toast nếu có message cụ thể
+        if (response?.message) {
+          toast.error(response.message);
+        }
+      }
+    } catch (error) {
+      console.error('Error loading drugs:', error);
+      setDrugs([]);
+      // Chỉ hiển thị toast cho lỗi không phải 403 (403 có thể là do quyền truy cập)
+      if (error.response?.status !== 403) {
+        const errorMessage = error.response?.data?.message || error.message || 'Lỗi khi tải danh sách thuốc';
+        toast.error(errorMessage);
+      }
+    } finally {
+      setLoadingDrugs(false);
+    }
+  };
+
+  // Load suppliers for dropdown
+  const loadSuppliers = async () => {
+    try {
+      setLoadingSuppliers(true);
+      const response = await supplierAPI.getSuppliers({ limit: 100, page: 1 });
+      if (response && response.success) {
+        setSuppliers(response.data.suppliers || response.data || []);
+      } else {
+        setSuppliers([]);
+      }
+    } catch (error) {
+      console.error('Error loading suppliers:', error);
+      setSuppliers([]);
+    } finally {
+      setLoadingSuppliers(false);
     }
   };
 
@@ -626,7 +757,14 @@ const Inventory = () => {
           {hasAnyRole(['admin', 'manufacturer', 'distributor', 'hospital']) && (
             <>
               <button
-                onClick={() => setShowStockInModal(true)}
+                onClick={async () => {
+                  await Promise.all([
+                    loadDrugs(), // Load danh sách thuốc khi mở modal
+                    loadLocations(), // Load danh sách địa điểm khi mở modal
+                    loadSuppliers() // Load danh sách nhà cung ứng khi mở modal
+                  ]);
+                  setShowStockInModal(true);
+                }}
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition flex items-center gap-2"
               >
                 <Plus className="w-4 h-4" />
@@ -658,7 +796,19 @@ const Inventory = () => {
                 Điều chỉnh
               </button>
               <button
-                onClick={() => setShowStocktakeModal(true)}
+                onClick={async () => {
+                  await Promise.all([
+                    loadDrugs(), // Load danh sách thuốc khi mở modal
+                    loadLocations(), // Load danh sách địa điểm khi mở modal
+                    // Load tất cả items để có dữ liệu cho dropdown
+                    inventoryAPI.getInventory({ page: 1, limit: 1000 }).then(response => {
+                      if (response && response.success) {
+                        setItems(response.data.items || []);
+                      }
+                    }).catch(err => console.error('Error loading inventory:', err))
+                  ]);
+                  setShowStocktakeModal(true);
+                }}
                 className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition flex items-center gap-2"
               >
                 <ClipboardCheck className="w-4 h-4" />
@@ -967,13 +1117,76 @@ const Inventory = () => {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Mã thuốc *</label>
-                  <input
-                    type="text"
-                    value={stockInForm.drugId}
-                    onChange={(e) => setStockInForm({ ...stockInForm, drugId: e.target.value })}
-                    required
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                  />
+                  {loadingDrugs ? (
+                    <div className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50">
+                      <span className="text-sm text-gray-500">Đang tải danh sách thuốc...</span>
+                    </div>
+                  ) : (
+                    <select
+                      value={(() => {
+                        // Tìm normalizedId từ drugId hiện tại để hiển thị đúng trong select
+                        if (!stockInForm.drugId) return '';
+                        for (let idx = 0; idx < drugs.length; idx++) {
+                          const d = drugs[idx];
+                          if (d.drugId === stockInForm.drugId || d._id === stockInForm.drugId) {
+                            return normalizeId(d._id, `drug-${idx}`);
+                          }
+                        }
+                        return '';
+                      })()}
+                      onChange={(e) => {
+                        const selectedNormalizedId = e.target.value;
+                        if (!selectedNormalizedId) {
+                          // Chọn "-- Chọn thuốc --"
+                          setStockInForm({ 
+                            ...stockInForm, 
+                            drugId: '',
+                            batchNumber: '',
+                            expiryDate: '',
+                            productionDate: ''
+                          });
+                          return;
+                        }
+                        
+                        // Tìm drug dựa trên normalizedId (value của option)
+                        let selectedDrug = null;
+                        for (let idx = 0; idx < drugs.length; idx++) {
+                          const d = drugs[idx];
+                          const normalizedId = normalizeId(d._id, `drug-${idx}`);
+                          if (normalizedId === selectedNormalizedId) {
+                            selectedDrug = d;
+                            break;
+                          }
+                        }
+                        
+                        // Nếu tìm thấy drug, điền thông tin tự động
+                        // Lưu ý: Lưu drugId thực tế (drug.drugId) để gửi lên server
+                        if (selectedDrug) {
+                          setStockInForm({ 
+                            ...stockInForm, 
+                            drugId: selectedDrug.drugId || selectedDrug._id.toString(), // Dùng drugId thực tế để gửi lên server
+                            batchNumber: selectedDrug.batchNumber || '',
+                            expiryDate: selectedDrug.expiryDate ? new Date(selectedDrug.expiryDate).toISOString().split('T')[0] : '',
+                            productionDate: selectedDrug.productionDate ? new Date(selectedDrug.productionDate).toISOString().split('T')[0] : ''
+                          });
+                        }
+                      }}
+                      required
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    >
+                      <option value="">-- Chọn thuốc --</option>
+                      {drugs.map((drug, idx) => {
+                        const normalizedId = normalizeId(drug._id, `drug-${idx}`);
+                        // Đảm bảo key luôn unique bằng cách kết hợp index
+                        const uniqueKey = `drug-option-${idx}-${normalizedId}`;
+                        return (
+                          <option key={uniqueKey} value={normalizedId}>
+                            {drug.drugId} - {drug.name} {drug.batchNumber ? `(Lô: ${drug.batchNumber})` : ''}
+                          </option>
+                        );
+                      })}
+                    </select>
+                  )}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Số lô</label>
@@ -985,14 +1198,43 @@ const Inventory = () => {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Location ID *</label>
-                  <input
-                    type="text"
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Địa điểm *</label>
+                  <select
                     value={stockInForm.locationId}
-                    onChange={(e) => setStockInForm({ ...stockInForm, locationId: e.target.value })}
+                    onChange={(e) => {
+                      const selectedLocationId = e.target.value;
+                      const selectedLocation = locations.find(loc => loc.locationId === selectedLocationId);
+                      if (selectedLocation) {
+                        setStockInForm({
+                          ...stockInForm,
+                          locationId: selectedLocation.locationId,
+                          locationName: selectedLocation.locationName || '',
+                          locationType: selectedLocation.locationType || 'warehouse'
+                        });
+                      } else {
+                        setStockInForm({
+                          ...stockInForm,
+                          locationId: selectedLocationId,
+                          locationName: '',
+                          locationType: 'warehouse'
+                        });
+                      }
+                    }}
                     required
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                  />
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  >
+                    <option value="">-- Chọn địa điểm --</option>
+                    {locations.map((location, idx) => (
+                      <option key={`location-${idx}-${location.locationId}`} value={location.locationId}>
+                        {location.locationName} ({location.locationId})
+                      </option>
+                    ))}
+                  </select>
+                  {stockInForm.locationId && !locations.find(loc => loc.locationId === stockInForm.locationId) && (
+                    <p className="text-xs text-yellow-600 mt-1">
+                      ⚠️ Location ID không có trong danh sách. Bạn có thể nhập thủ công.
+                    </p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Tên địa điểm *</label>
@@ -1002,6 +1244,7 @@ const Inventory = () => {
                     onChange={(e) => setStockInForm({ ...stockInForm, locationName: e.target.value })}
                     required
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    placeholder="Tự động điền khi chọn địa điểm"
                   />
                 </div>
                 <div>
@@ -1049,6 +1292,76 @@ const Inventory = () => {
                     onChange={(e) => setStockInForm({ ...stockInForm, expiryDate: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                   />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Nhà cung ứng</label>
+                  {loadingSuppliers ? (
+                    <div className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50">
+                      <span className="text-sm text-gray-500">Đang tải danh sách nhà cung ứng...</span>
+                    </div>
+                  ) : (
+                    <select
+                      value={(() => {
+                        if (!stockInForm.supplierId) return '';
+                        // Tìm supplier hiện tại để hiển thị đúng
+                        for (let idx = 0; idx < suppliers.length; idx++) {
+                          const s = suppliers[idx];
+                          const normalizedId = normalizeId(s._id, `supplier-${idx}`);
+                          const supplierCode = s.supplierCode || '';
+                          if (normalizeId(s._id, '') === stockInForm.supplierId || 
+                              supplierCode === stockInForm.supplierId ||
+                              String(s._id) === stockInForm.supplierId) {
+                            return normalizedId;
+                          }
+                        }
+                        return '';
+                      })()}
+                      onChange={(e) => {
+                        const selectedNormalizedId = e.target.value;
+                        if (!selectedNormalizedId) {
+                          setStockInForm({
+                            ...stockInForm,
+                            supplierId: '',
+                            supplierName: ''
+                          });
+                          return;
+                        }
+                        
+                        // Tìm supplier dựa trên normalizedId
+                        let selectedSupplier = null;
+                        for (let idx = 0; idx < suppliers.length; idx++) {
+                          const s = suppliers[idx];
+                          const normalizedId = normalizeId(s._id, `supplier-${idx}`);
+                          if (normalizedId === selectedNormalizedId) {
+                            selectedSupplier = s;
+                            break;
+                          }
+                        }
+                        
+                        if (selectedSupplier) {
+                          // Lưu supplierCode hoặc _id tùy theo backend yêu cầu
+                          const supplierId = selectedSupplier.supplierCode || selectedSupplier._id?.toString() || '';
+                          setStockInForm({
+                            ...stockInForm,
+                            supplierId: supplierId,
+                            supplierName: selectedSupplier.name || ''
+                          });
+                        }
+                      }}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    >
+                      <option value="">-- Chọn nhà cung ứng (tùy chọn) --</option>
+                      {suppliers.map((supplier, idx) => {
+                        const normalizedId = normalizeId(supplier._id, `supplier-${idx}`);
+                        const uniqueKey = `supplier-option-${idx}-${normalizedId}`;
+                        return (
+                          <option key={uniqueKey} value={normalizedId}>
+                            {supplier.supplierCode || 'N/A'} - {supplier.name}
+                          </option>
+                        );
+                      })}
+                    </select>
+                  )}
                 </div>
               </div>
               <div>
@@ -1224,8 +1537,29 @@ const Inventory = () => {
                   value={stockOutForm.recipientName}
                   onChange={(e) => setStockOutForm({ ...stockOutForm, recipientName: e.target.value })}
                   placeholder="Tên người nhận hoặc đơn vị (tùy chọn)"
+                  list="recipient-options"
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
                 />
+                <datalist id="recipient-options">
+                  {recipientOptions.map((name, idx) => (
+                    <option key={`recipient-${idx}-${name}`} value={name} />
+                  ))}
+                </datalist>
+                {recipientOptions.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mt-2 text-xs text-gray-600">
+                    <span className="font-medium text-gray-700">Gợi ý gần đây:</span>
+                    {recipientOptions.map((name, idx) => (
+                      <button
+                        key={`recipient-chip-${idx}-${name}`}
+                        type="button"
+                        onClick={() => setStockOutForm({ ...stockOutForm, recipientName: name })}
+                        className="px-2 py-1 border border-orange-200 text-orange-700 bg-orange-50 rounded-full hover:bg-orange-100"
+                      >
+                        {name}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
               
               <div>
@@ -1613,11 +1947,14 @@ const Inventory = () => {
                       <option value="">-- Chọn kho đích --</option>
                       {locations
                         .filter(loc => loc.locationId !== transferForm.fromLocationId)
-                        .map((location) => (
-                          <option key={location.locationId} value={location.locationId}>
-                            {location.locationName} ({location.locationId})
-                          </option>
-                        ))}
+                        .map((location, idx) => {
+                          const locationKey = location.locationId || `location-${idx}`;
+                          return (
+                            <option key={`transfer-location-${idx}-${locationKey}`} value={location.locationId}>
+                              {location.locationName} ({location.locationId})
+                            </option>
+                          );
+                        })}
                     </select>
                     <p className="text-xs text-gray-500 mt-1">
                       Chọn từ {locations.length} kho có sẵn
@@ -1740,26 +2077,46 @@ const Inventory = () => {
       {showStocktakeModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center gap-2 mb-4">
-              <ClipboardCheck className="w-6 h-6 text-green-600" />
-              <h2 className="text-2xl font-bold">Kiểm kê kho</h2>
-            </div>
-            
+            <h2 className="text-2xl font-bold mb-4">Kiểm kê kho</h2>
             <form onSubmit={handleStocktake} className="space-y-4">
               {/* Location và Date */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Location ID *
+                    Địa điểm *
                   </label>
-                  <input
-                    type="text"
+                  <select
                     value={stocktakeForm.locationId}
-                    onChange={(e) => setStocktakeForm({ ...stocktakeForm, locationId: e.target.value })}
+                    onChange={async (e) => {
+                      const selectedLocationId = e.target.value;
+                      setStocktakeForm({ ...stocktakeForm, locationId: selectedLocationId });
+                      
+                      // Reload inventory items khi chọn location để có dữ liệu mới nhất
+                      if (selectedLocationId) {
+                        try {
+                          const response = await inventoryAPI.getInventory({
+                            page: 1,
+                            limit: 1000, // Load nhiều items để có đủ dữ liệu
+                            locationId: selectedLocationId
+                          });
+                          if (response && response.success) {
+                            setItems(response.data.items || []);
+                          }
+                        } catch (error) {
+                          console.error('Error loading inventory for location:', error);
+                        }
+                      }
+                    }}
                     required
-                    placeholder="VD: WH001, DIST001, HOSP001"
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
-                  />
+                  >
+                    <option value="">-- Chọn địa điểm --</option>
+                    {locations.map((location, idx) => (
+                      <option key={`stocktake-location-${idx}-${location.locationId}`} value={location.locationId}>
+                        {location.locationName} ({location.locationId})
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -1778,8 +2135,7 @@ const Inventory = () => {
               {/* Items List */}
               <div className="border-t pt-4">
                 <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
-                    <Package className="w-5 h-5 text-green-600" />
+                  <h3 className="text-lg font-semibold text-gray-800">
                     Danh sách hàng hóa kiểm kê
                   </h3>
                   <button
@@ -1808,16 +2164,94 @@ const Inventory = () => {
                         <div className="grid grid-cols-12 gap-3 items-start">
                           <div className="col-span-4">
                             <label className="block text-sm font-medium text-gray-700 mb-1">
-                              Mã thuốc / ID thuốc *
+                              Mã thuốc *
                             </label>
-                            <input
-                              type="text"
-                              value={item.drugId}
-                              onChange={(e) => updateStocktakeItem(index, 'drugId', e.target.value)}
-                              required
-                              placeholder="Nhập mã thuốc"
-                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 text-sm"
-                            />
+                            {loadingDrugs ? (
+                              <div className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-sm">
+                                <span className="text-gray-500">Đang tải danh sách thuốc...</span>
+                              </div>
+                            ) : (
+                              <select
+                                value={(() => {
+                                  if (!item.drugId) return '';
+                                  for (let idx = 0; idx < drugs.length; idx++) {
+                                    const d = drugs[idx];
+                                    if (d.drugId === item.drugId || d._id === item.drugId) {
+                                      return normalizeId(d._id, `drug-${idx}`);
+                                    }
+                                  }
+                                  return '';
+                                })()}
+                                onChange={(e) => {
+                                  const selectedNormalizedId = e.target.value;
+                                  if (!selectedNormalizedId) {
+                                    updateStocktakeItem(index, 'drugId', '');
+                                    updateStocktakeItem(index, 'actualQuantity', '');
+                                    return;
+                                  }
+                                  
+                                  if (stocktakeForm.locationId) {
+                                    // Tìm trong inventory items nếu đã chọn location
+                                    const filteredItems = items.filter(i => i.location?.locationId === stocktakeForm.locationId);
+                                    const inventoryItem = filteredItems.find((i, idx) => {
+                                      const normalizedId = normalizeId(i.drug?._id || i.drugId, `drug-${idx}`);
+                                      return normalizedId === selectedNormalizedId;
+                                    });
+                                    
+                                    if (inventoryItem) {
+                                      const drugId = inventoryItem.drugId || inventoryItem.drug?._id;
+                                      updateStocktakeItem(index, 'drugId', drugId?.toString() || '');
+                                      // Tự động điền số lượng thực tế = số lượng hiện tại
+                                      if (inventoryItem.quantity !== undefined) {
+                                        updateStocktakeItem(index, 'actualQuantity', inventoryItem.quantity.toString());
+                                      }
+                                    }
+                                  } else {
+                                    // Tìm trong drugs nếu chưa chọn location
+                                    let selectedDrug = null;
+                                    for (let idx = 0; idx < drugs.length; idx++) {
+                                      const d = drugs[idx];
+                                      const normalizedId = normalizeId(d._id, `drug-${idx}`);
+                                      if (normalizedId === selectedNormalizedId) {
+                                        selectedDrug = d;
+                                        break;
+                                      }
+                                    }
+                                    
+                                    if (selectedDrug) {
+                                      updateStocktakeItem(index, 'drugId', selectedDrug.drugId || selectedDrug._id.toString());
+                                    }
+                                  }
+                                }}
+                                required
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 text-sm"
+                              >
+                                <option value="">-- Chọn thuốc --</option>
+                                {stocktakeForm.locationId ? (
+                                  // Lọc thuốc theo location đã chọn
+                                  items
+                                    .filter(i => i.location?.locationId === stocktakeForm.locationId)
+                                    .length > 0 ? (
+                                    items
+                                      .filter(i => i.location?.locationId === stocktakeForm.locationId)
+                                      .map((inventoryItem, idx) => {
+                                        const drugId = inventoryItem.drugId || inventoryItem.drug?._id;
+                                        const normalizedId = normalizeId(inventoryItem.drug?._id || inventoryItem.drugId, `drug-${idx}`);
+                                        const uniqueKey = `stocktake-drug-option-${index}-${idx}-${normalizedId}`;
+                                        return (
+                                          <option key={uniqueKey} value={normalizedId}>
+                                            {inventoryItem.drugId || inventoryItem.drug?.drugId} - {inventoryItem.drugName || inventoryItem.drug?.name} {inventoryItem.batchNumber ? `(Lô: ${inventoryItem.batchNumber})` : ''}
+                                          </option>
+                                        );
+                                      })
+                                  ) : (
+                                    <option value="" disabled>Không có thuốc trong kho này</option>
+                                  )
+                                ) : (
+                                  <option value="" disabled>Vui lòng chọn địa điểm trước</option>
+                                )}
+                              </select>
+                            )}
                             {inventoryItem && (
                               <p className="text-xs text-gray-500 mt-1">
                                 {inventoryItem.drugName} (Lô: {inventoryItem.batchNumber})
@@ -1937,21 +2371,7 @@ const Inventory = () => {
                 />
               </div>
 
-              {/* Info Box */}
-              <div className="bg-green-50 border border-green-200 rounded-lg p-3">
-                <p className="text-sm text-green-800">
-                  <strong>Lưu ý:</strong> Hệ thống sẽ tự động:
-                </p>
-                <ul className="text-sm text-green-700 mt-2 list-disc list-inside space-y-1">
-                  <li>So sánh số lượng thực tế với số lượng trong hệ thống</li>
-                  <li>Chỉ điều chỉnh các items có chênh lệch</li>
-                  <li>Ghi lại transaction history cho mỗi điều chỉnh</li>
-                  <li>Cập nhật số lượng tồn kho real-time</li>
-                  <li>Ghi audit log cho toàn bộ quá trình kiểm kê</li>
-                </ul>
-              </div>
-              
-              <div className="flex justify-end gap-2 pt-4 border-t">
+              <div className="flex justify-end gap-2">
                 <button
                   type="button"
                   onClick={() => {
@@ -1963,26 +2383,16 @@ const Inventory = () => {
                       notes: ''
                     });
                   }}
-                  className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
+                  className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
                 >
                   Hủy
                 </button>
                 <button
                   type="submit"
                   disabled={loading || stocktakeForm.items.filter(i => i.drugId && i.actualQuantity).length === 0}
-                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {loading ? (
-                    <>
-                      <RefreshCw className="w-4 h-4 animate-spin" />
-                      Đang xử lý...
-                    </>
-                  ) : (
-                    <>
-                      <ClipboardCheck className="w-4 h-4" />
-                      Xác nhận kiểm kê
-                    </>
-                  )}
+                  Kiểm kê
                 </button>
               </div>
             </form>

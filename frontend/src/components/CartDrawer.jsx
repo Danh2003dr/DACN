@@ -1,11 +1,14 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { X, Plus, Minus, Trash2, ShoppingCart, Package } from 'lucide-react';
 import { useCart } from '../contexts/CartContext';
+import { useAuth } from '../contexts/AuthContext';
+import { bidAPI } from '../utils/api';
 import toast from 'react-hot-toast';
 
 const CartDrawer = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const {
     items,
     isOpen,
@@ -14,7 +17,9 @@ const CartDrawer = () => {
     updateQuantity,
     getTotalItems,
     getTotalPrice,
+    clearCart,
   } = useCart();
+  const [isRequestingQuote, setIsRequestingQuote] = useState(false);
 
   const handleQuantityChange = (drugId, newQuantity) => {
     if (newQuantity < 1) {
@@ -34,13 +39,84 @@ const CartDrawer = () => {
     toast.success(`Đã xóa ${name} khỏi giỏ hàng`);
   };
 
-  const handleRequestQuote = () => {
+  const handleRequestQuote = async () => {
     if (items.length === 0) {
       toast.error('Giỏ hàng trống');
       return;
     }
-    // TODO: Implement request quote functionality
-    toast.success('Yêu cầu báo giá đã được gửi!');
+
+    if (!user) {
+      toast.error('Vui lòng đăng nhập để yêu cầu báo giá');
+      return;
+    }
+
+    try {
+      setIsRequestingQuote(true);
+
+      // Tạo bid cho từng item trong cart
+      const bidPromises = items.map(async (item) => {
+        // Normalize drugId để đảm bảo là string
+        let drugIdStr = item.drugId;
+        if (typeof drugIdStr === 'object' && drugIdStr !== null) {
+          if (drugIdStr._id) {
+            drugIdStr = typeof drugIdStr._id === 'string' ? drugIdStr._id : String(drugIdStr._id);
+          } else {
+            drugIdStr = String(drugIdStr);
+          }
+        } else {
+          drugIdStr = String(drugIdStr);
+        }
+
+        // Normalize manufacturerId
+        let manufacturerIdStr = item.manufacturerId;
+        if (typeof manufacturerIdStr === 'object' && manufacturerIdStr !== null) {
+          if (manufacturerIdStr._id) {
+            manufacturerIdStr = typeof manufacturerIdStr._id === 'string' ? manufacturerIdStr._id : String(manufacturerIdStr._id);
+          } else {
+            manufacturerIdStr = String(manufacturerIdStr);
+          }
+        } else {
+          manufacturerIdStr = String(manufacturerIdStr);
+        }
+
+        const bidData = {
+          drugId: drugIdStr,
+          drugName: item.name || 'Không có tên',
+          drugBatchNumber: item.batchNumber || '',
+          manufacturerId: manufacturerIdStr,
+          manufacturerName: item.manufacturerName || 'Nhà sản xuất',
+          bidPrice: item.wholesalePrice || item.price || item.unitPrice || 0,
+          quantity: item.quantity || 1,
+          notes: `Yêu cầu báo giá từ giỏ hàng - Số lượng: ${item.quantity}`,
+        };
+
+        return bidAPI.createBid(bidData);
+      });
+
+      const results = await Promise.allSettled(bidPromises);
+      
+      // Đếm số bid thành công và thất bại
+      const successful = results.filter(r => r.status === 'fulfilled').length;
+      const failed = results.filter(r => r.status === 'rejected').length;
+
+      if (successful > 0) {
+        toast.success(`Đã gửi ${successful} yêu cầu báo giá thành công!`);
+        // Xóa giỏ hàng sau khi gửi thành công
+        clearCart();
+        closeCart();
+        // Chuyển đến trang Bids để xem các yêu cầu đã gửi
+        navigate('/bids');
+      }
+
+      if (failed > 0) {
+        toast.error(`${failed} yêu cầu báo giá thất bại. Vui lòng thử lại.`);
+      }
+    } catch (error) {
+      console.error('Error requesting quote:', error);
+      toast.error('Lỗi khi gửi yêu cầu báo giá. Vui lòng thử lại.');
+    } finally {
+      setIsRequestingQuote(false);
+    }
   };
 
   const handleCheckout = () => {
@@ -198,9 +274,10 @@ const CartDrawer = () => {
             <div className="flex gap-3">
               <button
                 onClick={handleRequestQuote}
-                className="flex-1 px-4 py-3 bg-gray-100 text-gray-700 font-semibold rounded-lg hover:bg-gray-200 transition-colors"
+                disabled={isRequestingQuote}
+                className="flex-1 px-4 py-3 bg-gray-100 text-gray-700 font-semibold rounded-lg hover:bg-gray-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Yêu cầu báo giá
+                {isRequestingQuote ? 'Đang gửi...' : 'Yêu cầu báo giá'}
               </button>
               <button
                 onClick={handleCheckout}

@@ -363,9 +363,12 @@ const Bids = () => {
         ) : (
           <>
             <div className="space-y-4">
-              {bids.map((bid) => (
+              {bids.map((bid) => {
+                // Convert _id to string để tránh lỗi key trùng
+                const bidKey = extractBidId(bid) || extractBidId(bid._id) || JSON.stringify(bid._id) || Math.random();
+                return (
                 <div
-                  key={bid._id}
+                  key={bidKey}
                   className="bg-white rounded-lg shadow-md border border-gray-200 p-6 hover:shadow-lg transition-shadow"
                 >
                   <div className="flex flex-col md:flex-row gap-6">
@@ -593,7 +596,8 @@ const Bids = () => {
                     </div>
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
 
             {/* Pagination */}

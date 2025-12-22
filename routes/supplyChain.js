@@ -37,9 +37,10 @@ router.post('/',
 
 // @route   GET /api/supply-chain
 // @desc    Lấy danh sách hành trình
-// @access  Private
+// @access  Private (Admin, Manufacturer, Distributor, Hospital)
 router.get('/',
   authenticate,
+  authorize('admin', 'manufacturer', 'distributor', 'hospital'),
   validateQuery(paginationSchema),
   getSupplyChains
 );

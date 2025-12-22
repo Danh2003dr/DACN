@@ -13,43 +13,44 @@ const auditService = require('./auditService');
  * Trả về { session, useTransaction }
  * Tự động phát hiện và bỏ qua transactions nếu MongoDB không hỗ trợ (standalone)
  */
+// MongoDB đang chạy standalone -> không dùng transaction để tránh lỗi
 const createSession = async () => {
-  let session = null;
-  let useTransaction = false;
-  
-  try {
-    // Thử tạo session và start transaction
-    // Nếu MongoDB không hỗ trợ (standalone), sẽ throw error
-    session = await Inventory.startSession();
-    await session.startTransaction();
-    useTransaction = true;
-  } catch (error) {
-    // Nếu có lỗi (thường là "Transaction numbers are only allowed on a replica set member or mongos")
-    // Không dùng transactions, tiếp tục bình thường
-    useTransaction = false;
-    if (session) {
-      try {
-        session.endSession();
-      } catch (e) {
-        // Ignore
-      }
-      session = null;
-    }
-    // Không log warning để tránh spam console
-  }
-  
-  return { session, useTransaction };
+  return { session: null, useTransaction: false };
 };
 
 /**
  * Helper function để commit transaction
  */
 const commitSession = async (session, useTransaction) => {
-  if (useTransaction && session) {
+  if (!session || !useTransaction) {
+    // Nếu không có session hoặc không dùng transaction, không làm gì
+    if (session && !useTransaction) {
+      // Nếu có session nhưng không dùng transaction, đóng session
+      try {
+        session.endSession();
+      } catch (e) {
+        // Ignore errors khi end session
+      }
+    }
+    return;
+  }
+  
+  try {
     await session.commitTransaction();
-    session.endSession();
-  } else if (session) {
-    session.endSession();
+  } catch (error) {
+    // Nếu có lỗi khi commit (có thể do transaction không được start đúng cách)
+    // Thử abort thay vì commit, nhưng không throw error
+    try {
+      await session.abortTransaction();
+    } catch (abortError) {
+      // Ignore abort errors - đặc biệt là lỗi "Transaction numbers are only allowed"
+    }
+  } finally {
+    try {
+      session.endSession();
+    } catch (e) {
+      // Ignore errors khi end session
+    }
   }
 };
 
@@ -57,11 +58,21 @@ const commitSession = async (session, useTransaction) => {
  * Helper function để abort transaction
  */
 const abortSession = async (session, useTransaction) => {
-  if (useTransaction && session) {
-    await session.abortTransaction();
-    session.endSession();
-  } else if (session) {
-    session.endSession();
+  if (!session) return;
+  
+  try {
+    if (useTransaction) {
+      await session.abortTransaction();
+    }
+  } catch (error) {
+    // Ignore errors khi abort transaction (có thể transaction chưa được start)
+    // Đặc biệt là lỗi "Transaction numbers are only allowed on a replica set member or mongos"
+  } finally {
+    try {
+      session.endSession();
+    } catch (e) {
+      // Ignore errors khi end session
+    }
   }
 };
 
@@ -69,7 +80,20 @@ const abortSession = async (session, useTransaction) => {
  * Nhập kho
  */
 const stockIn = async (data, user, req = null) => {
-  const { session, useTransaction } = await createSession();
+  // Tạo session và bắt mọi lỗi transaction
+  let session = null;
+  let useTransaction = false;
+  
+  try {
+    const sessionResult = await createSession();
+    session = sessionResult.session;
+    useTransaction = sessionResult.useTransaction;
+  } catch (sessionError) {
+    // Nếu có lỗi khi tạo session, không dùng transaction
+    console.warn('Warning: Could not create session, continuing without transactions:', sessionError.message);
+    session = null;
+    useTransaction = false;
+  }
 
   try {
     const {
@@ -90,24 +114,74 @@ const stockIn = async (data, user, req = null) => {
       notes
     } = data;
 
+    // Chuẩn hóa supplierId để tránh cast lỗi khi rỗng/undefined
+    const normalizedSupplierId = (() => {
+      if (!supplierId) return null;
+      const str = String(supplierId).trim();
+      return str ? str : null;
+    })();
+
+    // Validation cơ bản
+    if (!drugId) {
+      throw new Error('Mã thuốc là bắt buộc.');
+    }
+    if (!locationId) {
+      throw new Error('Location ID là bắt buộc.');
+    }
+    if (!locationName) {
+      throw new Error('Tên địa điểm là bắt buộc.');
+    }
+    if (!quantity || quantity <= 0) {
+      throw new Error('Số lượng phải lớn hơn 0.');
+    }
+
+    // Validation cơ bản
+    if (!drugId) {
+      throw new Error('Mã thuốc là bắt buộc.');
+    }
+    if (!locationId) {
+      throw new Error('Location ID là bắt buộc.');
+    }
+    if (!locationName) {
+      throw new Error('Tên địa điểm là bắt buộc.');
+    }
+    if (!quantity || quantity <= 0) {
+      throw new Error('Số lượng phải lớn hơn 0.');
+    }
+
     // Kiểm tra drug tồn tại
     const drug = await Drug.findOne({ drugId });
     if (!drug) {
-      throw new Error('Không tìm thấy thuốc với mã này.');
+      throw new Error(`Không tìm thấy thuốc với mã: ${drugId}`);
     }
 
     // Tìm hoặc tạo inventory item
+    // Chỉ sử dụng session nếu useTransaction là true và session tồn tại
     let inventory;
-    if (useTransaction && session) {
-      inventory = await Inventory.findOne({
-        drugId,
-        'location.locationId': locationId
-      }).session(session);
-    } else {
-      inventory = await Inventory.findOne({
-        drugId,
-        'location.locationId': locationId
-      });
+    try {
+      if (useTransaction && session) {
+        inventory = await Inventory.findOne({
+          drugId,
+          'location.locationId': locationId
+        }).session(session);
+      } else {
+        inventory = await Inventory.findOne({
+          drugId,
+          'location.locationId': locationId
+        });
+      }
+    } catch (queryError) {
+      // Nếu có lỗi khi query với session (có thể là transaction error), thử lại không dùng session
+      if (queryError.message && queryError.message.includes('Transaction numbers are only allowed')) {
+        console.warn('Transaction error in query, retrying without session');
+        useTransaction = false;
+        inventory = await Inventory.findOne({
+          drugId,
+          'location.locationId': locationId
+        });
+      } else {
+        throw queryError;
+      }
     }
 
     if (!inventory) {
@@ -130,21 +204,42 @@ const stockIn = async (data, user, req = null) => {
         expiryDate: expiryDate || drug.expiryDate,
         productionDate: productionDate || drug.productionDate,
         unitPrice: unitPrice || 0,
-        supplier: supplierId,
+        supplier: normalizedSupplierId || undefined, // Chỉ gán nếu supplierId có giá trị
         supplierName: supplierName || '',
         createdBy: user._id
       }];
       
-      if (useTransaction && session) {
-        inventory = await Inventory.create(createData, { session });
-      } else {
-        inventory = await Inventory.create(createData);
+      // Chỉ sử dụng session nếu useTransaction là true và session tồn tại
+      try {
+        if (useTransaction && session) {
+          inventory = await Inventory.create(createData, { session });
+        } else {
+          inventory = await Inventory.create(createData);
+        }
+      } catch (createError) {
+        // Nếu có lỗi khi create với session (có thể là transaction error), thử lại không dùng session
+        if (createError.message && createError.message.includes('Transaction numbers are only allowed')) {
+          console.warn('Transaction error in create, retrying without session');
+          useTransaction = false;
+          inventory = await Inventory.create(createData);
+        } else {
+          throw createError;
+        }
       }
       inventory = inventory[0];
     }
 
     // Thêm vào kho
-    const result = await inventory.addStock(quantity, user._id, notes);
+    let result;
+    try {
+      result = await inventory.addStock(quantity, user._id, notes);
+    } catch (addStockError) {
+      console.error('Error in addStock:', {
+        message: addStockError.message,
+        stack: addStockError.stack
+      });
+      throw addStockError;
+    }
 
     // Cập nhật thông tin nếu có
     if (unitPrice) {
@@ -153,14 +248,31 @@ const stockIn = async (data, user, req = null) => {
     if (expiryDate) {
       inventory.expiryDate = expiryDate;
     }
-    if (supplierId) {
-      inventory.supplier = supplierId;
-      inventory.supplierName = supplierName;
+    // Chỉ cập nhật supplier nếu supplierId có giá trị hợp lệ
+    if (normalizedSupplierId) {
+      inventory.supplier = normalizedSupplierId;
+      inventory.supplierName = supplierName || '';
+    } else if (supplierId === '' || supplierId === null || supplierId === undefined) {
+      // Nếu supplierId là rỗng, set về undefined để không có validation error
+      inventory.supplier = undefined;
+      inventory.supplierName = supplierName || '';
     }
-    if (useTransaction && session) {
-      await inventory.save({ session });
-    } else {
-      await inventory.save();
+    // Chỉ sử dụng session nếu useTransaction là true và session tồn tại
+    try {
+      if (useTransaction && session) {
+        await inventory.save({ session });
+      } else {
+        await inventory.save();
+      }
+    } catch (saveError) {
+      // Nếu có lỗi khi save với session (có thể là transaction error), thử lại không dùng session
+      if (saveError.message && saveError.message.includes('Transaction numbers are only allowed')) {
+        console.warn('Transaction error in save, retrying without session');
+        useTransaction = false;
+        await inventory.save();
+      } else {
+        throw saveError;
+      }
     }
 
     // Tạo transaction record
@@ -187,30 +299,54 @@ const stockIn = async (data, user, req = null) => {
       status: 'completed'
     }];
     
+    // Chỉ sử dụng session nếu useTransaction là true và session tồn tại
     let transaction;
-    if (useTransaction && session) {
-      transaction = await InventoryTransaction.create(transactionData, { session });
-    } else {
-      transaction = await InventoryTransaction.create(transactionData);
+    try {
+      if (useTransaction && session) {
+        transaction = await InventoryTransaction.create(transactionData, { session });
+      } else {
+        transaction = await InventoryTransaction.create(transactionData);
+      }
+    } catch (transactionError) {
+      // Nếu có lỗi khi create transaction với session (có thể là transaction error), thử lại không dùng session
+      if (transactionError.message && transactionError.message.includes('Transaction numbers are only allowed')) {
+        console.warn('Transaction error in create transaction, retrying without session');
+        useTransaction = false;
+        transaction = await InventoryTransaction.create(transactionData);
+      } else {
+        throw transactionError;
+      }
     }
 
-    // Ghi audit log
-    await auditService.createAuditLog({
-      user,
-      action: 'inventory_stock_in',
-      module: 'inventory',
-      entityType: 'Inventory',
-      entityId: inventory._id,
-      description: `Nhập kho: ${drug.name} - Số lượng: ${quantity} ${inventory.unit} tại ${locationName}`,
-      afterData: {
-        drugId,
-        locationId,
-        quantity: result.newQuantity
-      },
-      severity: 'medium'
-    }, req);
+    // Ghi audit log - không throw error nếu có lỗi
+    try {
+      await auditService.createAuditLog({
+        user,
+        action: 'inventory_stock_in',
+        module: 'inventory',
+        entityType: 'Inventory',
+        entityId: inventory._id,
+        description: `Nhập kho: ${drug.name} - Số lượng: ${quantity} ${inventory.unit} tại ${locationName}`,
+        afterData: {
+          drugId,
+          locationId,
+          quantity: result.newQuantity
+        },
+        severity: 'medium'
+      }, req);
+    } catch (auditError) {
+      // Log lỗi audit nhưng không throw - dữ liệu đã được lưu thành công
+      console.warn('Warning: Error creating audit log (data still saved):', auditError.message);
+    }
 
-    await commitSession(session, useTransaction);
+    // Commit session - không throw error nếu có lỗi transaction
+    try {
+      await commitSession(session, useTransaction);
+    } catch (commitError) {
+      // Nếu có lỗi khi commit (thường là transaction error), log nhưng không throw
+      // Vì dữ liệu đã được lưu thành công (không dùng transaction)
+      console.warn('Warning: Error committing session (data may still be saved):', commitError.message);
+    }
 
     return {
       success: true,
@@ -219,7 +355,27 @@ const stockIn = async (data, user, req = null) => {
       result
     };
   } catch (error) {
-    await abortSession(session, useTransaction);
+    // Đảm bảo session được đóng ngay cả khi có lỗi
+    try {
+      await abortSession(session, useTransaction);
+    } catch (abortError) {
+      // Ignore errors khi abort session
+    }
+    
+    // Log chi tiết lỗi để debug
+    console.error('Error in stockIn service:', {
+      message: error.message,
+      stack: error.stack,
+      name: error.name
+    });
+    
+    // Nếu lỗi liên quan đến transaction, không throw lại
+    if (error.message && error.message.includes('Transaction numbers are only allowed')) {
+      // Đã xử lý transaction error, nhưng có thể có lỗi khác
+      // Throw lại với message rõ ràng hơn
+      throw new Error('Lỗi khi xử lý nhập kho. Vui lòng thử lại.');
+    }
+    
     throw error;
   }
 };
@@ -228,7 +384,9 @@ const stockIn = async (data, user, req = null) => {
  * Xuất kho
  */
 const stockOut = async (data, user, req = null) => {
-  const { session, useTransaction } = await createSession();
+  // Không dùng transaction trên MongoDB standalone
+  const session = null;
+  const useTransaction = false;
 
   try {
     const {
