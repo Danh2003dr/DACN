@@ -466,10 +466,19 @@ const stockIn = async (req, res) => {
       data: result
     });
   } catch (error) {
-    console.error('Error stocking in:', error);
+    console.error('Error stocking in:', {
+      message: error.message,
+      stack: error.stack,
+      name: error.name,
+      body: req.body
+    });
+    
+    // Trả về message lỗi rõ ràng hơn
+    const errorMessage = error.message || 'Lỗi khi nhập kho. Vui lòng kiểm tra lại thông tin.';
+    
     res.status(400).json({
       success: false,
-      message: error.message || 'Lỗi khi nhập kho.',
+      message: errorMessage,
       error: error.message
     });
   }

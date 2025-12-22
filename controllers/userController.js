@@ -504,6 +504,72 @@ const getUsersByOrganization = async (req, res) => {
   }
 };
 
+// @desc    Lấy danh sách tổ chức công khai (cho tạo đánh giá)
+// @route   GET /api/users/organizations
+// @access  Private (Tất cả user đã đăng nhập)
+const getOrganizations = async (req, res) => {
+  try {
+    const role = req.query.role?.trim();
+    const search = req.query.search?.trim();
+    const limit = parseInt(req.query.limit) || 100;
+    
+    // Tạo filter - chỉ lấy các tổ chức (manufacturer, distributor, hospital)
+    const filter = {
+      role: { $in: ['manufacturer', 'distributor', 'hospital'] },
+      isActive: true // Chỉ lấy tổ chức đang hoạt động
+    };
+    
+    // Filter theo role nếu có
+    if (role && ['manufacturer', 'distributor', 'hospital'].includes(role)) {
+      filter.role = role;
+    }
+    
+    // Filter theo search nếu có
+    if (search && search.trim() !== '') {
+      filter.$or = [
+        { fullName: { $regex: search, $options: 'i' } },
+        { 'organizationInfo.name': { $regex: search, $options: 'i' } },
+        { organizationId: { $regex: search, $options: 'i' } }
+      ];
+    }
+    
+    // Query users - chỉ lấy các field công khai
+    const users = await User.find(filter)
+      .select('_id fullName role organizationId organizationInfo')
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .lean();
+    
+    // Format dữ liệu trả về - chỉ trả về thông tin công khai
+    const organizations = users.map(user => ({
+      _id: String(user._id),
+      id: String(user._id),
+      fullName: user.fullName,
+      role: user.role,
+      organizationId: user.organizationId || '',
+      organizationInfo: {
+        name: user.organizationInfo?.name || user.fullName || ''
+      }
+    }));
+    
+    res.status(200).json({
+      success: true,
+      data: {
+        users: organizations,
+        total: organizations.length
+      }
+    });
+    
+  } catch (error) {
+    console.error('Error in getOrganizations:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Lỗi khi lấy danh sách tổ chức.',
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
   getAllUsers,
   getUserById,
@@ -512,5 +578,6 @@ module.exports = {
   toggleUserLock,
   resetUserPassword,
   getUserStats,
-  getUsersByOrganization
+  getUsersByOrganization,
+  getOrganizations
 };

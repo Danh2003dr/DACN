@@ -13,6 +13,7 @@ const {
   addResponse,
   reportReview,
   getTopRatedTargets,
+  getPublicReviews,
   getReviewsForAdmin,
   updateReviewReportStatus,
   updateReviewStatus,
@@ -22,7 +23,8 @@ const {
 // Import middleware
 const { authenticate, authorize } = require('../middleware/auth');
 
-// Public routes
+// Public routes - đặt các route cố định trước route động
+router.get('/public', getPublicReviews);
 router.get('/target/:targetType/:targetId', getReviewsByTarget);
 router.get('/stats/:targetType/:targetId', getReviewStats);
 router.get('/top-rated/:targetType', getTopRatedTargets);

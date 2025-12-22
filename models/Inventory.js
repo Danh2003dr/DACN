@@ -198,7 +198,7 @@ const inventorySchema = new mongoose.Schema({
   lastTransaction: {
     type: {
       type: String,
-      enum: ['in', 'out', 'adjustment', 'transfer']
+      enum: ['in', 'out', 'adjustment', 'transfer', 'stocktake']
     },
     date: Date,
     quantity: Number,

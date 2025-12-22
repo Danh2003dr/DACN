@@ -34,11 +34,14 @@ router.get('/test', (req, res) => {
   res.json({ success: true, message: 'Bids routes are working!' });
 });
 
+// Tất cả routes yêu cầu authentication
+router.use(authenticate);
+
 // @route   POST /api/bids
 // @desc    Tạo bid mới
-// @access  Private
+// @access  Private (Admin, Manufacturer, Distributor, Hospital)
 router.post('/',
-  authenticate,
+  authorize('admin', 'manufacturer', 'distributor', 'hospital'),
   // #region agent log
   (req, res, next) => {
     try {
@@ -58,7 +61,7 @@ router.post('/',
 
 // @route   GET /api/bids/my-bids
 // @desc    Lấy bids của user hiện tại
-// @access  Private
+// @access  Private (Admin, Manufacturer, Distributor, Hospital)
 // QUAN TRỌNG: Route cụ thể phải đặt TRƯỚC route dynamic /:id
 router.get('/my-bids',
   // #region agent log
@@ -67,17 +70,16 @@ router.get('/my-bids',
     next();
   },
   // #endregion
-  authenticate,
+  authorize('admin', 'manufacturer', 'distributor', 'hospital'),
   validateQuery(paginationSchema),
   getMyBids
 );
 
 // @route   GET /api/bids/manufacturer-bids
 // @desc    Lấy bids cho manufacturer (bids nhận được)
-// @access  Private (Manufacturer)
+// @access  Private (Manufacturer, Admin)
 // QUAN TRỌNG: Route cụ thể phải đặt TRƯỚC route dynamic /:id
 router.get('/manufacturer-bids',
-  authenticate,
   authorize('manufacturer', 'admin'),
   validateQuery(paginationSchema),
   getManufacturerBids
@@ -85,53 +87,51 @@ router.get('/manufacturer-bids',
 
 // @route   GET /api/bids
 // @desc    Lấy danh sách bids (với filters)
-// @access  Private
+// @access  Private (Admin, Manufacturer, Distributor, Hospital)
 router.get('/',
-  authenticate,
+  authorize('admin', 'manufacturer', 'distributor', 'hospital'),
   validateQuery(paginationSchema),
   getBids
 );
 
 // @route   GET /api/bids/:id
 // @desc    Lấy bid theo ID
-// @access  Private
+// @access  Private (Admin, Manufacturer, Distributor, Hospital)
 // Route dynamic phải đặt SAU các route cụ thể
 router.get('/:id',
-  authenticate,
+  authorize('admin', 'manufacturer', 'distributor', 'hospital'),
   getBidById
 );
 
 // @route   PUT /api/bids/:id/counter-offer
 // @desc    Gửi counter offer (Manufacturer gửi giá đối ứng)
-// @access  Private (Manufacturer)
+// @access  Private (Manufacturer, Admin)
 router.put('/:id/counter-offer',
-  authenticate,
   authorize('manufacturer', 'admin'),
   counterOffer
 );
 
 // @route   PUT /api/bids/:id/accept
 // @desc    Chấp nhận bid (Manufacturer accept bidder's bid, hoặc Bidder accept counter offer)
-// @access  Private
+// @access  Private (Admin, Manufacturer, Distributor, Hospital)
 router.put('/:id/accept',
-  authenticate,
+  authorize('admin', 'manufacturer', 'distributor', 'hospital'),
   acceptBid
 );
 
 // @route   PUT /api/bids/:id/reject
 // @desc    Từ chối bid
-// @access  Private (Manufacturer)
+// @access  Private (Manufacturer, Admin)
 router.put('/:id/reject',
-  authenticate,
   authorize('manufacturer', 'admin'),
   rejectBid
 );
 
 // @route   PUT /api/bids/:id/cancel
 // @desc    Hủy bid (chỉ người đấu thầu)
-// @access  Private
+// @access  Private (Admin, Manufacturer, Distributor, Hospital)
 router.put('/:id/cancel',
-  authenticate,
+  authorize('admin', 'manufacturer', 'distributor', 'hospital'),
   cancelBid
 );
 

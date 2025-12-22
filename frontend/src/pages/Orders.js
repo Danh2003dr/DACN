@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { orderAPI, drugAPI, userAPI } from '../utils/api';
+import { orderAPI, drugAPI, userAPI, invoiceAPI } from '../utils/api';
 import { useAuth } from '../contexts/AuthContext';
 import {
   ShoppingCart,
@@ -14,9 +14,17 @@ import {
   AlertCircle,
   Eye,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  FileText,
+  Download
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import pdfMake from 'pdfmake/build/pdfmake';
+
+// Khởi tạo vfs rỗng - sẽ load fonts khi cần
+if (!pdfMake.vfs) {
+  pdfMake.vfs = {};
+}
 
 const Orders = () => {
   const { user } = useAuth();
@@ -657,6 +665,318 @@ const Orders = () => {
     if (!dateString) return '';
     const date = new Date(dateString);
     return date.toLocaleDateString('vi-VN');
+  };
+
+  // Format date time for invoice
+  const formatDateTime = (dateString) => {
+    if (!dateString) return '';
+    const date = new Date(dateString);
+    return date.toLocaleString('vi-VN', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+  // Generate Invoice PDF
+  const generateInvoicePDF = (order) => {
+    try {
+      // Đảm bảo fonts đã được load
+      if (!pdfMake.vfs || Object.keys(pdfMake.vfs).length === 0) {
+        try {
+          const pdfFonts = require('pdfmake/build/vfs_fonts');
+          if (pdfFonts && pdfFonts.pdfMake && pdfFonts.pdfMake.vfs) {
+            pdfMake.vfs = pdfFonts.pdfMake.vfs;
+          } else if (pdfFonts && pdfFonts.vfs) {
+            pdfMake.vfs = pdfFonts.vfs;
+          }
+        } catch (e) {
+          console.warn('Could not load pdfmake fonts:', e);
+          // Tạo vfs rỗng nếu không load được
+          if (!pdfMake.vfs) {
+            pdfMake.vfs = {};
+          }
+        }
+      }
+
+      // Định nghĩa document structure cho pdfmake
+      const docDefinition = {
+        content: [
+          // Header
+          {
+            text: 'HÓA ĐƠN ĐIỆN TỬ',
+            style: 'header',
+            alignment: 'center',
+            margin: [0, 0, 0, 5]
+          },
+          {
+            text: 'Hệ thống Quản lý Nguồn gốc Thuốc',
+            style: 'subheader',
+            alignment: 'center',
+            margin: [0, 0, 0, 20]
+          },
+          
+          // Thông tin đơn hàng
+          {
+            text: 'Thông tin đơn hàng',
+            style: 'sectionTitle',
+            margin: [0, 0, 0, 10]
+          },
+          {
+            columns: [
+              {
+                width: '*',
+                text: [
+                  { text: 'Mã đơn hàng: ', bold: true },
+                  { text: order.orderNumber || 'N/A' }
+                ]
+              },
+              {
+                width: '*',
+                text: [
+                  { text: 'Loại đơn: ', bold: true },
+                  { text: order.orderType === 'purchase' ? 'Mua hàng' : order.orderType === 'sales' ? 'Bán hàng' : 'Chuyển kho' }
+                ]
+              }
+            ],
+            margin: [0, 0, 0, 5]
+          },
+          {
+            columns: [
+              {
+                width: '*',
+                text: [
+                  { text: 'Ngày đặt: ', bold: true },
+                  { text: formatDateTime(order.orderDate) }
+                ]
+              },
+              {
+                width: '*',
+                text: [
+                  { text: 'Trạng thái: ', bold: true },
+                  { text: order.status }
+                ]
+              }
+            ],
+            margin: [0, 0, 0, 15]
+          },
+
+          // Thông tin người mua/bán
+          {
+            text: 'Thông tin bên mua / bên bán',
+            style: 'sectionTitle',
+            margin: [0, 0, 0, 10]
+          },
+          ...(order.buyerName ? [{
+            text: [
+              { text: 'Người mua: ', bold: true },
+              { text: order.buyerName }
+            ],
+            margin: [0, 0, 0, 5]
+          }] : []),
+          ...(order.buyerOrganization ? [{
+            text: [
+              { text: 'Tổ chức: ', bold: true },
+              { text: order.buyerOrganization }
+            ],
+            margin: [0, 0, 0, 5]
+          }] : []),
+          ...(order.sellerName ? [{
+            text: [
+              { text: 'Người bán: ', bold: true },
+              { text: order.sellerName }
+            ],
+            margin: [0, 0, 0, 5]
+          }] : []),
+          ...(order.sellerOrganization ? [{
+            text: [
+              { text: 'Tổ chức: ', bold: true },
+              { text: order.sellerOrganization }
+            ],
+            margin: [0, 0, 0, 15]
+          }] : []),
+
+          // Địa chỉ giao hàng
+          ...(order.shippingAddress ? [{
+            text: 'Địa chỉ giao hàng',
+            style: 'sectionTitle',
+            margin: [0, 0, 0, 10]
+          },
+          {
+            text: [
+              ...(order.shippingAddress.name ? [{ text: order.shippingAddress.name + '\n', bold: true }] : []),
+              ...(order.shippingAddress.address ? [{ text: order.shippingAddress.address + '\n' }] : []),
+              {
+                text: [
+                  order.shippingAddress.city,
+                  order.shippingAddress.province,
+                  order.shippingAddress.postalCode
+                ].filter(Boolean).join(', ') + '\n'
+              },
+              ...(order.shippingAddress.phone ? [{ text: 'Điện thoại: ' + order.shippingAddress.phone }] : [])
+            ],
+            margin: [0, 0, 0, 15]
+          }] : []),
+
+          // Chi tiết sản phẩm
+          ...(order.items && order.items.length > 0 ? [{
+            text: 'Chi tiết sản phẩm',
+            style: 'sectionTitle',
+            margin: [0, 0, 0, 10]
+          },
+          {
+            table: {
+              headerRows: 1,
+              widths: ['auto', '*', 'auto', 'auto', 'auto'],
+              body: [
+                [
+                  { text: 'STT', style: 'tableHeader', bold: true },
+                  { text: 'Tên sản phẩm', style: 'tableHeader', bold: true },
+                  { text: 'SL', style: 'tableHeader', bold: true },
+                  { text: 'Đơn giá', style: 'tableHeader', bold: true },
+                  { text: 'Thành tiền', style: 'tableHeader', bold: true }
+                ],
+                ...order.items.map((item, index) => {
+                  const quantity = item.quantity || 0;
+                  const unitPrice = item.unitPrice || 0;
+                  const discount = item.discount || 0;
+                  const itemTotal = unitPrice * quantity * (1 - discount / 100);
+                  
+                  return [
+                    { text: String(index + 1), alignment: 'center' },
+                    { text: item.drugName || item.drugId || 'Không có tên' },
+                    { text: `${quantity} ${item.unit || ''}`, alignment: 'center' },
+                    { text: new Intl.NumberFormat('vi-VN').format(unitPrice) + ' đ', alignment: 'right' },
+                    { text: new Intl.NumberFormat('vi-VN').format(itemTotal) + ' đ', alignment: 'right' }
+                  ];
+                })
+              ]
+            },
+            margin: [0, 0, 0, 15]
+          }] : []),
+
+          // Tổng giá trị
+          {
+            text: 'Tổng giá trị',
+            style: 'sectionTitle',
+            margin: [0, 0, 0, 10]
+          },
+          ...(order.subtotal ? [{
+            columns: [
+              { text: 'Tạm tính:', width: 'auto' },
+              { text: new Intl.NumberFormat('vi-VN').format(order.subtotal) + ' đ', alignment: 'right', width: '*' }
+            ],
+            margin: [0, 0, 0, 5]
+          }] : []),
+          ...(order.tax && order.tax > 0 ? [{
+            columns: [
+              { text: 'Thuế VAT:', width: 'auto' },
+              { text: new Intl.NumberFormat('vi-VN').format(order.tax) + ' đ', alignment: 'right', width: '*' }
+            ],
+            margin: [0, 0, 0, 5]
+          }] : []),
+          ...(order.shippingFee && order.shippingFee > 0 ? [{
+            columns: [
+              { text: 'Phí vận chuyển:', width: 'auto' },
+              { text: new Intl.NumberFormat('vi-VN').format(order.shippingFee) + ' đ', alignment: 'right', width: '*' }
+            ],
+            margin: [0, 0, 0, 5]
+          }] : []),
+          {
+            canvas: [{ type: 'line', x1: 0, y1: 0, x2: 515, y2: 0, lineWidth: 0.5 }],
+            margin: [0, 10, 0, 10]
+          },
+          {
+            columns: [
+              { text: 'TỔNG CỘNG:', style: 'totalLabel', bold: true, width: 'auto' },
+              { text: new Intl.NumberFormat('vi-VN').format(order.totalAmount || 0) + ' đ', style: 'totalAmount', alignment: 'right', width: '*' }
+            ],
+            margin: [0, 0, 0, 15]
+          },
+
+          // Phương thức thanh toán
+          ...(order.paymentMethod ? [{
+            text: [
+              { text: 'Phương thức thanh toán: ', bold: true },
+              {
+                text: order.paymentMethod === 'bank_transfer' ? 'Chuyển khoản ngân hàng' :
+                      order.paymentMethod === 'cash' ? 'Tiền mặt' :
+                      order.paymentMethod === 'credit_card' ? 'Thẻ tín dụng' :
+                      order.paymentMethod === 'momo' ? 'MoMo' :
+                      order.paymentMethod === 'check' ? 'Séc' :
+                      order.paymentMethod
+              }
+            ],
+            margin: [0, 0, 0, 10]
+          }] : []),
+
+          // Ghi chú
+          ...(order.notes ? [{
+            text: [
+              { text: 'Ghi chú: ', bold: true },
+              { text: order.notes }
+            ],
+            margin: [0, 0, 0, 20]
+          }] : []),
+
+          // Footer
+          {
+            text: 'Hóa đơn điện tử được tạo tự động bởi hệ thống',
+            style: 'footer',
+            alignment: 'center',
+            margin: [0, 20, 0, 5]
+          },
+          {
+            text: `Ngày xuất: ${formatDateTime(new Date())}`,
+            style: 'footer',
+            alignment: 'center'
+          }
+        ],
+        styles: {
+          header: {
+            fontSize: 20,
+            bold: true
+          },
+          subheader: {
+            fontSize: 12
+          },
+          sectionTitle: {
+            fontSize: 14,
+            bold: true
+          },
+          tableHeader: {
+            fillColor: '#eeeeee',
+            alignment: 'center'
+          },
+          totalLabel: {
+            fontSize: 12
+          },
+          totalAmount: {
+            fontSize: 12,
+            bold: true
+          },
+          footer: {
+            fontSize: 8,
+            italics: true
+          }
+        },
+        defaultStyle: {
+          fontSize: 10,
+          font: 'Roboto'
+        }
+      };
+
+      // Tạo và tải PDF
+      const fileName = `HoaDon_${order.orderNumber}_${new Date().toISOString().split('T')[0]}.pdf`;
+      pdfMake.createPdf(docDefinition).download(fileName);
+      
+      toast.success('Đã xuất hóa đơn điện tử thành công!');
+    } catch (error) {
+      console.error('Error generating invoice PDF:', error);
+      toast.error('Lỗi khi xuất hóa đơn. Vui lòng thử lại.');
+    }
   };
 
   // Get status color
@@ -1714,11 +2034,12 @@ const Orders = () => {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto">
             <h2 className="text-2xl font-bold mb-4">Chi tiết đơn hàng: {selectedOrder.orderNumber}</h2>
-            <div className="space-y-4">
+            <div className="space-y-6">
+              {/* Thông tin cơ bản */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <p className="text-sm text-gray-600">Loại đơn hàng</p>
-                  <p className="font-medium">{selectedOrder.orderType}</p>
+                  <p className="font-medium">{selectedOrder.orderType === 'purchase' ? 'Mua hàng' : selectedOrder.orderType === 'sales' ? 'Bán hàng' : 'Chuyển kho'}</p>
                 </div>
                 <div>
                   <p className="text-sm text-gray-600">Trạng thái</p>
@@ -1730,29 +2051,220 @@ const Orders = () => {
                   <p className="text-sm text-gray-600">Ngày đặt</p>
                   <p className="font-medium">{formatDate(selectedOrder.orderDate)}</p>
                 </div>
-                <div>
-                  <p className="text-sm text-gray-600">Tổng giá trị</p>
-                  <p className="font-medium">{new Intl.NumberFormat('vi-VN').format(selectedOrder.totalAmount || 0)} đ</p>
+                {selectedOrder.requiredDate && (
+                  <div>
+                    <p className="text-sm text-gray-600">Ngày yêu cầu giao hàng</p>
+                    <p className="font-medium">{formatDate(selectedOrder.requiredDate)}</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Thông tin người mua/bán */}
+              <div className="border-t pt-4">
+                <h3 className="text-lg font-semibold mb-3">Thông tin người mua/bán</h3>
+                <div className="grid grid-cols-2 gap-4">
+                  {selectedOrder.buyerName && (
+                    <div>
+                      <p className="text-sm text-gray-600">Người mua</p>
+                      <p className="font-medium">{selectedOrder.buyerName}</p>
+                      {selectedOrder.buyerOrganization && (
+                        <p className="text-sm text-gray-500">{selectedOrder.buyerOrganization}</p>
+                      )}
+                    </div>
+                  )}
+                  {selectedOrder.sellerName && (
+                    <div>
+                      <p className="text-sm text-gray-600">Người bán</p>
+                      <p className="font-medium">{selectedOrder.sellerName}</p>
+                      {selectedOrder.sellerOrganization && (
+                        <p className="text-sm text-gray-500">{selectedOrder.sellerOrganization}</p>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
-              
+
+              {/* Địa chỉ giao hàng */}
+              {selectedOrder.shippingAddress && (
+                <div className="border-t pt-4">
+                  <h3 className="text-lg font-semibold mb-3">Địa chỉ giao hàng</h3>
+                  <div className="bg-gray-50 rounded-lg p-4">
+                    <p className="font-medium">{selectedOrder.shippingAddress.name}</p>
+                    <p className="text-sm text-gray-600">{selectedOrder.shippingAddress.address}</p>
+                    <p className="text-sm text-gray-600">
+                      {[selectedOrder.shippingAddress.city, selectedOrder.shippingAddress.province, selectedOrder.shippingAddress.postalCode].filter(Boolean).join(', ')}
+                    </p>
+                    {selectedOrder.shippingAddress.phone && (
+                      <p className="text-sm text-gray-600">Điện thoại: {selectedOrder.shippingAddress.phone}</p>
+                    )}
+                    {selectedOrder.shippingAddress.email && (
+                      <p className="text-sm text-gray-600">Email: {selectedOrder.shippingAddress.email}</p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Địa chỉ thanh toán */}
+              {selectedOrder.billingAddress && !selectedOrder.billingAddress.sameAsShipping && (
+                <div className="border-t pt-4">
+                  <h3 className="text-lg font-semibold mb-3">Địa chỉ thanh toán</h3>
+                  <div className="bg-gray-50 rounded-lg p-4">
+                    <p className="font-medium">{selectedOrder.billingAddress.name}</p>
+                    <p className="text-sm text-gray-600">{selectedOrder.billingAddress.address}</p>
+                    <p className="text-sm text-gray-600">
+                      {[selectedOrder.billingAddress.city, selectedOrder.billingAddress.province, selectedOrder.billingAddress.postalCode].filter(Boolean).join(', ')}
+                    </p>
+                    {selectedOrder.billingAddress.phone && (
+                      <p className="text-sm text-gray-600">Điện thoại: {selectedOrder.billingAddress.phone}</p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Chi tiết sản phẩm */}
               {selectedOrder.items && selectedOrder.items.length > 0 && (
-                <div>
-                  <p className="text-sm font-medium text-gray-700 mb-2">Items:</p>
+                <div className="border-t pt-4">
+                  <h3 className="text-lg font-semibold mb-3">Chi tiết sản phẩm</h3>
                   <div className="space-y-2">
                     {selectedOrder.items.map((item, index) => (
-                      <div key={`order-detail-item-${index}-${item.drugId || item.drugName || ''}`} className="border rounded p-2">
-                        <p className="font-medium">{item.drugName || item.drugId}</p>
-                        <p className="text-sm text-gray-600">
-                          Số lượng: {item.quantity} {item.unit} - Giá: {new Intl.NumberFormat('vi-VN').format(item.unitPrice || 0)} đ
-                        </p>
+                      <div key={`order-detail-item-${index}-${item.drugId || item.drugName || ''}`} className="border rounded-lg p-4 bg-gray-50">
+                        <p className="font-medium mb-2">{item.drugName || item.drugId || 'Không có tên'}</p>
+                        <div className="grid grid-cols-2 gap-2 text-sm">
+                          <div>
+                            <span className="text-gray-600">Số lượng: </span>
+                            <span className="font-medium">{item.quantity} {item.unit || 'đơn vị'}</span>
+                          </div>
+                          <div>
+                            <span className="text-gray-600">Đơn giá: </span>
+                            <span className="font-medium">{new Intl.NumberFormat('vi-VN').format(item.unitPrice || 0)} đ</span>
+                          </div>
+                          {item.discount && item.discount > 0 && (
+                            <div>
+                              <span className="text-gray-600">Giảm giá: </span>
+                              <span className="font-medium text-red-600">-{item.discount}%</span>
+                            </div>
+                          )}
+                          <div>
+                            <span className="text-gray-600">Thành tiền: </span>
+                            <span className="font-medium text-blue-600">
+                              {new Intl.NumberFormat('vi-VN').format((item.unitPrice || 0) * (item.quantity || 0) * (1 - (item.discount || 0) / 100))} đ
+                            </span>
+                          </div>
+                        </div>
+                        {item.notes && (
+                          <p className="text-sm text-gray-500 mt-2 italic">Ghi chú: {item.notes}</p>
+                        )}
                       </div>
                     ))}
                   </div>
                 </div>
               )}
 
-              <div className="flex justify-end">
+              {/* Tổng giá trị */}
+              <div className="border-t pt-4">
+                <h3 className="text-lg font-semibold mb-3">Tổng giá trị</h3>
+                <div className="bg-gray-50 rounded-lg p-4 space-y-2">
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Tạm tính:</span>
+                    <span className="font-medium">{new Intl.NumberFormat('vi-VN').format(selectedOrder.subtotal || 0)} đ</span>
+                  </div>
+                  {selectedOrder.tax > 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Thuế VAT:</span>
+                      <span className="font-medium">{new Intl.NumberFormat('vi-VN').format(selectedOrder.tax || 0)} đ</span>
+                    </div>
+                  )}
+                  {selectedOrder.shippingFee > 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Phí vận chuyển:</span>
+                      <span className="font-medium">{new Intl.NumberFormat('vi-VN').format(selectedOrder.shippingFee || 0)} đ</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between border-t pt-2 mt-2">
+                    <span className="text-lg font-semibold">Tổng cộng:</span>
+                    <span className="text-lg font-bold text-blue-600">{new Intl.NumberFormat('vi-VN').format(selectedOrder.totalAmount || 0)} đ</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Phương thức thanh toán và vận chuyển */}
+              <div className="grid grid-cols-2 gap-4 border-t pt-4">
+                <div>
+                  <p className="text-sm text-gray-600 mb-1">Phương thức thanh toán</p>
+                  <p className="font-medium">
+                    {selectedOrder.paymentMethod === 'bank_transfer' ? 'Chuyển khoản ngân hàng' :
+                     selectedOrder.paymentMethod === 'cash' ? 'Tiền mặt' :
+                     selectedOrder.paymentMethod === 'credit_card' ? 'Thẻ tín dụng' :
+                     selectedOrder.paymentMethod === 'momo' ? 'MoMo' :
+                     selectedOrder.paymentMethod === 'check' ? 'Séc' :
+                     selectedOrder.paymentMethod || 'Chưa chọn'}
+                  </p>
+                  {selectedOrder.paymentStatus && (
+                    <p className="text-sm text-gray-500 mt-1">
+                      Trạng thái: <span className="font-medium">{selectedOrder.paymentStatus}</span>
+                    </p>
+                  )}
+                </div>
+                {selectedOrder.shipping && selectedOrder.shipping.method && (
+                  <div>
+                    <p className="text-sm text-gray-600 mb-1">Phương thức vận chuyển</p>
+                    <p className="font-medium">
+                      {selectedOrder.shipping.method === 'standard' ? 'Tiêu chuẩn' :
+                       selectedOrder.shipping.method === 'express' ? 'Nhanh' :
+                       selectedOrder.shipping.method === 'overnight' ? 'Qua đêm' :
+                       selectedOrder.shipping.method === 'pickup' ? 'Tự lấy' :
+                       selectedOrder.shipping.method}
+                    </p>
+                    {selectedOrder.shipping.trackingNumber && (
+                      <p className="text-sm text-gray-500 mt-1">
+                        Mã vận đơn: <span className="font-medium">{selectedOrder.shipping.trackingNumber}</span>
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Ghi chú */}
+              {selectedOrder.notes && (
+                <div className="border-t pt-4">
+                  <h3 className="text-lg font-semibold mb-2">Ghi chú</h3>
+                  <p className="text-sm text-gray-700 bg-gray-50 rounded-lg p-3">{selectedOrder.notes}</p>
+                </div>
+              )}
+
+              <div className="flex justify-end gap-3 border-t pt-4">
+                {/* Nút tạo hóa đơn - chỉ hiện khi order đã confirmed và chưa có invoice */}
+                {selectedOrder.status === 'confirmed' || selectedOrder.status === 'processing' || selectedOrder.status === 'shipped' ? (
+                  <button
+                    onClick={async () => {
+                      try {
+                        const response = await invoiceAPI.createInvoiceFromOrder(selectedOrder._id);
+                        if (response.success) {
+                          toast.success('Đã tạo hóa đơn thành công!');
+                          setShowDetailModal(false);
+                          setSelectedOrder(null);
+                          loadOrders(pagination.page);
+                        } else {
+                          toast.error(response.message || 'Không thể tạo hóa đơn');
+                        }
+                      } catch (error) {
+                        console.error('Error creating invoice:', error);
+                        toast.error('Lỗi khi tạo hóa đơn: ' + (error.response?.data?.message || error.message));
+                      }
+                    }}
+                    className="inline-flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                  >
+                    <FileText className="w-4 h-4 mr-2" />
+                    Tạo hóa đơn
+                  </button>
+                ) : null}
+                <button
+                  onClick={() => generateInvoicePDF(selectedOrder)}
+                  className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  <Download className="w-4 h-4 mr-2" />
+                  Xuất hóa đơn PDF
+                </button>
                 <button
                   onClick={() => {
                     setShowDetailModal(false);

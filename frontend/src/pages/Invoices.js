@@ -92,6 +92,32 @@ const Invoices = () => {
   };
 
   const handleRecordPayment = async () => {
+    // Nếu là MoMo, tạo payment request và redirect
+    if (paymentData.method === 'momo') {
+      try {
+        setLoading(true);
+        const response = await paymentAPI.createMomoPayment({
+          invoiceId: selectedInvoice._id,
+          amount: parseFloat(paymentData.amount)
+        });
+
+        if (response.success && response.data.paymentUrl) {
+          toast.success('Đang chuyển đến trang thanh toán MoMo...');
+          // Redirect đến MoMo payment page
+          window.location.href = response.data.paymentUrl;
+        } else {
+          toast.error('Không thể tạo yêu cầu thanh toán MoMo');
+        }
+      } catch (error) {
+        console.error('Error creating MoMo payment:', error);
+        toast.error(error.response?.data?.message || 'Lỗi khi tạo thanh toán MoMo');
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
+    // Các phương thức thanh toán khác (cash, bank_transfer, etc.)
     try {
       if (!selectedInvoice || !paymentData.amount) {
         toast.error('Vui lòng nhập đầy đủ thông tin');
@@ -295,6 +321,7 @@ const Invoices = () => {
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Số HĐ</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Mã ĐH</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Loại</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Người mua</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Ngày phát hành</th>
@@ -308,13 +335,13 @@ const Invoices = () => {
             <tbody className="bg-white divide-y divide-gray-200">
               {loading ? (
                 <tr>
-                  <td colSpan="9" className="px-6 py-4 text-center text-gray-500">
+                  <td colSpan="10" className="px-6 py-4 text-center text-gray-500">
                     Đang tải...
                   </td>
                 </tr>
               ) : invoices.length === 0 ? (
                 <tr>
-                  <td colSpan="9" className="px-6 py-4 text-center text-gray-500">
+                  <td colSpan="10" className="px-6 py-4 text-center text-gray-500">
                     Không có dữ liệu
                   </td>
                 </tr>
@@ -323,6 +350,13 @@ const Invoices = () => {
                   <tr key={getUniqueKey(invoice, idx)} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                       {invoice.invoiceNumber}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {invoice.orderNumber ? (
+                        <span className="text-blue-600 hover:text-blue-800 cursor-pointer" title="Xem đơn hàng">
+                          {invoice.orderNumber}
+                        </span>
+                      ) : '-'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {invoice.invoiceType === 'sales' ? 'Bán hàng' : invoice.invoiceType === 'purchase' ? 'Mua hàng' : 'Khác'}
@@ -446,6 +480,7 @@ const Invoices = () => {
                   <option value="cash">Tiền mặt</option>
                   <option value="bank_transfer">Chuyển khoản</option>
                   <option value="credit_card">Thẻ tín dụng</option>
+                  <option value="momo">MoMo</option>
                   <option value="check">Séc</option>
                 </select>
               </div>
