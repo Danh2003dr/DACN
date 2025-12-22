@@ -60,7 +60,13 @@ const sanitizeLocation = (loc) => {
 // @access  Private (Manufacturer, Admin)
 const createSupplyChain = async (req, res) => {
   try {
-    const { drugId, drugBatchNumber, metadata, participants = [] } = req.body;
+    let { drugId, drugBatchNumber, metadata, participants = [] } = req.body;
+    
+    // Sanitize input
+    drugId = sanitizeInput(drugId);
+    drugBatchNumber = sanitizeInput(drugBatchNumber);
+    metadata = sanitizeInput(metadata);
+    participants = Array.isArray(participants) ? participants.map(p => sanitizeInput(p)) : [];
     
     // Kiểm tra quyền (chỉ manufacturer và admin)
     if (!['admin', 'manufacturer'].includes(req.user.role)) {
@@ -75,6 +81,14 @@ const createSupplyChain = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: 'Vui lòng cung cấp đầy đủ thông tin: drugId và drugBatchNumber'
+      });
+    }
+    
+    // Validate drugBatchNumber length để tránh DoS
+    if (drugBatchNumber.length > 100) {
+      return res.status(400).json({
+        success: false,
+        message: 'Số lô thuốc quá dài (tối đa 100 ký tự)'
       });
     }
     
@@ -180,33 +194,42 @@ const createSupplyChain = async (req, res) => {
     
     await supplyChain.save();
     
-    // Ghi lên blockchain
+    // Ghi lên blockchain với retry mechanism
     try {
-      const blockchainResult = await blockchainService.recordSupplyChainStep({
+      const blockchainResult = await recordToBlockchainWithRetry({
         supplyChainId: supplyChain._id,
         drugBatchNumber,
         step: initialStep,
-        actor: req.user
+        actor: req.user,
+        operation: 'create'
       });
       
-      supplyChain.blockchain = {
-        contractAddress: blockchainResult.contractAddress,
-        blockchainId: blockchainResult.blockchainId,
-        isOnBlockchain: true,
-        lastBlockchainUpdate: new Date()
-      };
-      
-      initialStep.blockchain = {
-        transactionHash: blockchainResult.transactionHash,
-        blockNumber: blockchainResult.blockNumber,
-        gasUsed: blockchainResult.gasUsed,
-        timestamp: new Date()
-      };
-      
-      await supplyChain.save();
+      if (blockchainResult) {
+        supplyChain.blockchain = {
+          contractAddress: blockchainResult.contractAddress,
+          blockchainId: blockchainResult.blockchainId,
+          isOnBlockchain: true,
+          lastBlockchainUpdate: new Date()
+        };
+        
+        initialStep.blockchain = {
+          transactionHash: blockchainResult.transactionHash,
+          blockNumber: blockchainResult.blockNumber,
+          gasUsed: blockchainResult.gasUsed,
+          timestamp: new Date()
+        };
+        
+        await supplyChain.save();
+      }
     } catch (blockchainError) {
-      console.error('Blockchain error:', blockchainError);
-      // Vẫn lưu vào database dù blockchain lỗi
+      console.error('Blockchain error (final):', blockchainError);
+      // Vẫn lưu vào database dù blockchain lỗi, nhưng đánh dấu chưa sync
+      supplyChain.blockchain = {
+        ...supplyChain.blockchain,
+        isOnBlockchain: false,
+        syncError: blockchainError.message || 'Blockchain sync failed'
+      };
+      await supplyChain.save();
     }
     
     emitSupplyChainEvent('supplyChain:created', {
@@ -216,6 +239,13 @@ const createSupplyChain = async (req, res) => {
       drugBatchNumber,
       actors: supplyChain.actors
     });
+    
+    // Gửi thông báo cho các actors liên quan
+    try {
+      await sendSupplyChainNotifications(supplyChain, 'created', req.user);
+    } catch (notifError) {
+      console.error('Notification error (non-blocking):', notifError);
+    }
     
     // Populate before sending response
     const populatedSupplyChain = await SupplyChain.findById(supplyChain._id)
@@ -258,13 +288,30 @@ const createSupplyChain = async (req, res) => {
 const addSupplyChainStep = async (req, res) => {
   try {
     const { id } = req.params;
-    const { action, location, conditions, metadata, qualityChecks, handover } = req.body;
+    let { action, location, conditions, metadata, qualityChecks, handover } = req.body;
+    
+    // Sanitize input
+    action = sanitizeInput(action);
+    location = sanitizeInput(location);
+    conditions = sanitizeInput(conditions);
+    metadata = sanitizeInput(metadata);
+    qualityChecks = sanitizeInput(qualityChecks);
+    handover = sanitizeInput(handover);
     
     // Validate input
     if (!action) {
       return res.status(400).json({
         success: false,
         message: 'Hành động là bắt buộc'
+      });
+    }
+    
+    // Validate action enum
+    const validActions = ['created', 'shipped', 'received', 'stored', 'dispensed', 'recalled', 'quality_check', 'handover', 'reported', 'consumed'];
+    if (!validActions.includes(action)) {
+      return res.status(400).json({
+        success: false,
+        message: `Hành động không hợp lệ. Các hành động hợp lệ: ${validActions.join(', ')}`
       });
     }
     
@@ -290,6 +337,15 @@ const addSupplyChainStep = async (req, res) => {
       return res.status(403).json({
         success: false,
         message: 'Không có quyền thực hiện hành động này'
+      });
+    }
+    
+    // Validate sequence của steps - đảm bảo logic nghiệp vụ
+    const sequenceError = validateStepSequence(supplyChain, action, req.user.role);
+    if (sequenceError) {
+      return res.status(400).json({
+        success: false,
+        message: sequenceError
       });
     }
     
@@ -339,10 +395,44 @@ const addSupplyChainStep = async (req, res) => {
     };
     
     if (handover) {
+      // Validate handover token nếu có
+      if (handover.token) {
+        const token = sanitizeInput(handover.token);
+        // Token phải là string hợp lệ, không rỗng
+        if (!token || token.trim().length === 0) {
+          return res.status(400).json({
+            success: false,
+            message: 'Token bàn giao không hợp lệ'
+          });
+        }
+        
+        // Kiểm tra token có tồn tại trong handoverLogs không (nếu là xác nhận)
+        if (handover.isConfirmation) {
+          const existingHandover = supplyChain.handoverLogs?.find(
+            log => log.token === token && !log.confirmedAt
+          );
+          if (!existingHandover) {
+            return res.status(400).json({
+              success: false,
+              message: 'Token bàn giao không tồn tại hoặc đã được xác nhận'
+            });
+          }
+        }
+      }
+      
+      // Validate toRole
+      const validRoles = ['manufacturer', 'distributor', 'dealer', 'pharmacy', 'hospital', 'patient', 'admin'];
+      if (handover.toRole && !validRoles.includes(handover.toRole)) {
+        return res.status(400).json({
+          success: false,
+          message: `Vai trò người nhận không hợp lệ. Các vai trò hợp lệ: ${validRoles.join(', ')}`
+        });
+      }
+      
       newStep.handover = {
         fromRole: handover.fromRole || req.user.role,
         toRole: handover.toRole,
-        token: handover.token,
+        token: handover.token ? sanitizeInput(handover.token) : null,
         confirmedBy: req.user._id
       };
       
@@ -352,8 +442,9 @@ const addSupplyChainStep = async (req, res) => {
         toRole: newStep.handover.toRole,
         fromActor: req.user._id,
         toActor: handover.toActorId || null,
-        token: handover.token,
-        confirmedAt: handover.confirmedAt || new Date()
+        token: newStep.handover.token,
+        confirmedAt: handover.confirmedAt || (handover.isConfirmation ? new Date() : null),
+        createdAt: new Date()
       });
     }
     
@@ -393,26 +484,38 @@ const addSupplyChainStep = async (req, res) => {
     
     await supplyChain.save();
     
-    // Ghi lên blockchain
+    // Ghi lên blockchain với retry mechanism
     try {
-      const blockchainResult = await blockchainService.recordSupplyChainStep({
+      const blockchainResult = await recordToBlockchainWithRetry({
         supplyChainId: supplyChain._id,
         drugBatchNumber: supplyChain.drugBatchNumber,
         step: newStep,
-        actor: req.user
+        actor: req.user,
+        operation: 'addStep'
       });
       
-      newStep.blockchain = {
-        transactionHash: blockchainResult.transactionHash,
-        blockNumber: blockchainResult.blockNumber,
-        gasUsed: blockchainResult.gasUsed,
-        timestamp: new Date()
-      };
-      
-      supplyChain.blockchain.lastBlockchainUpdate = new Date();
-      await supplyChain.save();
+      if (blockchainResult) {
+        newStep.blockchain = {
+          transactionHash: blockchainResult.transactionHash,
+          blockNumber: blockchainResult.blockNumber,
+          gasUsed: blockchainResult.gasUsed,
+          timestamp: new Date()
+        };
+        
+        supplyChain.blockchain = supplyChain.blockchain || {};
+        supplyChain.blockchain.lastBlockchainUpdate = new Date();
+        supplyChain.blockchain.isOnBlockchain = true;
+        if (supplyChain.blockchain.syncError) {
+          delete supplyChain.blockchain.syncError;
+        }
+        await supplyChain.save();
+      }
     } catch (blockchainError) {
-      console.error('Blockchain error:', blockchainError);
+      console.error('Blockchain error (final):', blockchainError);
+      // Đánh dấu lỗi nhưng không block operation
+      supplyChain.blockchain = supplyChain.blockchain || {};
+      supplyChain.blockchain.syncError = blockchainError.message || 'Blockchain sync failed';
+      await supplyChain.save();
     }
     
     // Ghi log truy cập
@@ -429,6 +532,13 @@ const addSupplyChainStep = async (req, res) => {
       currentLocation: supplyChain.currentLocation,
       status: supplyChain.status
     });
+    
+    // Gửi thông báo cho các actors liên quan
+    try {
+      await sendSupplyChainNotifications(supplyChain, 'step_added', req.user, { step: newStep });
+    } catch (notifError) {
+      console.error('Notification error (non-blocking):', notifError);
+    }
     
     // Populate before sending response
     const populatedSupplyChain = await SupplyChain.findById(supplyChain._id)
@@ -558,7 +668,26 @@ const getSupplyChain = async (req, res) => {
 // @access  Public
 const getSupplyChainByQR = async (req, res) => {
   try {
-    const { batchNumber } = req.params;
+    let { batchNumber } = req.params;
+    
+    // Sanitize input
+    batchNumber = sanitizeInput(batchNumber);
+    
+    // Validate batchNumber
+    if (!batchNumber || batchNumber.trim().length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Số lô thuốc không hợp lệ'
+      });
+    }
+    
+    // Giới hạn độ dài để tránh DoS
+    if (batchNumber.length > 100) {
+      return res.status(400).json({
+        success: false,
+        message: 'Số lô thuốc quá dài'
+      });
+    }
     
     const supplyChain = await SupplyChain.findOne({ drugBatchNumber: batchNumber })
       .populate({
@@ -710,7 +839,12 @@ const getSupplyChains = async (req, res) => {
 const recallSupplyChain = async (req, res) => {
   try {
     const { id } = req.params;
-    const { reason, action, affectedUnits } = req.body;
+    let { reason, action, affectedUnits } = req.body;
+    
+    // Sanitize input
+    reason = sanitizeInput(reason);
+    action = sanitizeInput(action);
+    affectedUnits = Array.isArray(affectedUnits) ? affectedUnits.map(u => sanitizeInput(u)) : [];
     
     // Kiểm tra quyền
     if (!['admin', 'manufacturer'].includes(req.user.role)) {
@@ -725,6 +859,14 @@ const recallSupplyChain = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: 'Lý do thu hồi phải có ít nhất 10 ký tự'
+      });
+    }
+    
+    // Giới hạn độ dài để tránh DoS
+    if (reason.length > 1000) {
+      return res.status(400).json({
+        success: false,
+        message: 'Lý do thu hồi quá dài (tối đa 1000 ký tự)'
       });
     }
     
@@ -757,16 +899,39 @@ const recallSupplyChain = async (req, res) => {
     
     await supplyChain.save();
     
-    // Ghi lên blockchain
+    // Ghi lên blockchain với retry mechanism
     try {
-      await blockchainService.recordRecall({
+      await recordToBlockchainWithRetry({
         supplyChainId: supplyChain._id,
         drugBatchNumber: supplyChain.drugBatchNumber,
         recallData: supplyChain.recall,
-        actor: req.user
+        actor: req.user,
+        operation: 'recall'
       });
+      
+      // Cập nhật blockchain status nếu thành công
+      supplyChain.blockchain = supplyChain.blockchain || {};
+      supplyChain.blockchain.lastBlockchainUpdate = new Date();
+      if (supplyChain.blockchain.syncError) {
+        delete supplyChain.blockchain.syncError;
+      }
+      await supplyChain.save();
     } catch (blockchainError) {
-      console.error('Blockchain error:', blockchainError);
+      console.error('Blockchain error (final):', blockchainError);
+      // Đánh dấu lỗi nhưng không block recall operation
+      supplyChain.blockchain = supplyChain.blockchain || {};
+      supplyChain.blockchain.syncError = blockchainError.message || 'Blockchain sync failed';
+      await supplyChain.save();
+    }
+    
+    // Gửi thông báo cho tất cả actors trong supply chain
+    try {
+      await sendSupplyChainNotifications(supplyChain, 'recalled', req.user, { 
+        recallReason: reason,
+        recallAction: action 
+      });
+    } catch (notifError) {
+      console.error('Notification error (non-blocking):', notifError);
     }
     
     res.status(200).json({
@@ -859,6 +1024,218 @@ const filterPublicInfo = (supplyChain, user) => {
   }
   
   return filtered;
+};
+
+// Validate sequence của steps - đảm bảo logic nghiệp vụ
+const validateStepSequence = (supplyChain, newAction, userRole) => {
+  const steps = supplyChain.steps || [];
+  if (steps.length === 0) {
+    // Bước đầu tiên phải là 'created'
+    if (newAction !== 'created') {
+      return 'Bước đầu tiên phải là "created" (tạo hành trình)';
+    }
+    return null;
+  }
+  
+  const lastStep = steps[steps.length - 1];
+  const lastAction = lastStep.action;
+  
+  // Định nghĩa các sequence hợp lệ
+  const validSequences = {
+    'created': ['shipped', 'stored', 'quality_check', 'handover'],
+    'shipped': ['received', 'stored', 'quality_check'],
+    'received': ['stored', 'shipped', 'dispensed', 'quality_check', 'handover', 'consumed'],
+    'stored': ['shipped', 'dispensed', 'quality_check', 'handover'],
+    'dispensed': ['consumed', 'reported'],
+    'quality_check': ['shipped', 'received', 'stored', 'dispensed', 'handover'],
+    'handover': ['received', 'stored', 'shipped', 'dispensed'],
+    'reported': ['recalled', 'quality_check'],
+    'consumed': ['reported'],
+    'recalled': [] // Sau khi recalled, không thể thêm step nào nữa
+  };
+  
+  // Kiểm tra nếu đã bị thu hồi
+  if (supplyChain.status === 'recalled' || supplyChain.recall?.isRecalled) {
+    if (newAction !== 'reported') {
+      return 'Không thể thêm bước mới sau khi thuốc đã bị thu hồi. Chỉ có thể báo cáo.';
+    }
+  }
+  
+  // Kiểm tra sequence hợp lệ
+  const allowedActions = validSequences[lastAction] || [];
+  if (!allowedActions.includes(newAction)) {
+    return `Không thể thực hiện "${newAction}" sau "${lastAction}". Các hành động hợp lệ tiếp theo: ${allowedActions.join(', ')}`;
+  }
+  
+  // Kiểm tra logic đặc biệt
+  if (newAction === 'received' && lastAction !== 'shipped' && lastAction !== 'handover') {
+    return 'Chỉ có thể "received" sau khi đã "shipped" hoặc "handover"';
+  }
+  
+  if (newAction === 'dispensed' && !['received', 'stored'].includes(lastAction)) {
+    return 'Chỉ có thể "dispensed" sau khi đã "received" hoặc "stored"';
+  }
+  
+  if (newAction === 'consumed' && lastAction !== 'dispensed') {
+    return 'Chỉ có thể "consumed" sau khi đã "dispensed"';
+  }
+  
+  return null;
+};
+
+// Helper function để ghi blockchain với retry mechanism
+const recordToBlockchainWithRetry = async (params, maxRetries = 3, delay = 1000) => {
+  const { operation, ...blockchainParams } = params;
+  
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      let result;
+      switch (operation) {
+        case 'create':
+          result = await blockchainService.recordSupplyChainStep(blockchainParams);
+          break;
+        case 'addStep':
+          result = await blockchainService.recordSupplyChainStep(blockchainParams);
+          break;
+        case 'recall':
+          result = await blockchainService.recordRecall(blockchainParams);
+          break;
+        default:
+          throw new Error(`Unknown blockchain operation: ${operation}`);
+      }
+      return result;
+    } catch (error) {
+      console.error(`Blockchain attempt ${attempt}/${maxRetries} failed:`, error.message);
+      
+      if (attempt === maxRetries) {
+        throw error; // Throw error ở lần thử cuối
+      }
+      
+      // Exponential backoff: delay * 2^(attempt-1)
+      const waitTime = delay * Math.pow(2, attempt - 1);
+      console.log(`Retrying in ${waitTime}ms...`);
+      await new Promise(resolve => setTimeout(resolve, waitTime));
+    }
+  }
+};
+
+// Sanitize input để tránh XSS và injection
+const sanitizeInput = (input) => {
+  if (typeof input === 'string') {
+    // Loại bỏ các ký tự nguy hiểm
+    return input
+      .trim()
+      .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+      .replace(/[<>]/g, '');
+  }
+  if (typeof input === 'object' && input !== null) {
+    const sanitized = {};
+    for (const key in input) {
+      if (input.hasOwnProperty(key)) {
+        sanitized[key] = sanitizeInput(input[key]);
+      }
+    }
+    return sanitized;
+  }
+  return input;
+};
+
+// Helper function để gửi thông báo cho các actors trong supply chain
+const sendSupplyChainNotifications = async (supplyChain, eventType, triggeredBy, extraData = {}) => {
+  try {
+    const Notification = require('../models/Notification');
+    
+    // Lấy danh sách actors cần thông báo
+    const actorsToNotify = supplyChain.actors || [];
+    
+    // Tạo nội dung thông báo
+    let title = '';
+    let content = '';
+    let priority = 'medium';
+    let notificationType = 'supply_chain_update';
+    
+    switch (eventType) {
+      case 'created':
+        title = 'Hành trình chuỗi cung ứng mới được tạo';
+        content = `Hành trình cho lô thuốc ${supplyChain.drugBatchNumber} đã được tạo bởi ${triggeredBy.fullName}. Bạn là một trong những người tham gia hành trình này.`;
+        priority = 'high';
+        notificationType = 'supply_chain_update';
+        break;
+      case 'step_added':
+        const actionNames = {
+          'created': 'Tạo',
+          'shipped': 'Gửi hàng',
+          'received': 'Nhận hàng',
+          'stored': 'Lưu kho',
+          'dispensed': 'Cấp phát',
+          'quality_check': 'Kiểm tra chất lượng',
+          'handover': 'Bàn giao',
+          'reported': 'Báo cáo',
+          'consumed': 'Đã sử dụng',
+          'recalled': 'Thu hồi'
+        };
+        const actionName = actionNames[extraData.step?.action] || extraData.step?.action || 'Cập nhật';
+        title = 'Cập nhật hành trình chuỗi cung ứng';
+        content = `Bước "${actionName}" đã được thêm vào hành trình lô ${supplyChain.drugBatchNumber} bởi ${triggeredBy.fullName}.`;
+        priority = 'medium';
+        notificationType = 'supply_chain_update';
+        break;
+      case 'recalled':
+        title = '⚠️ CẢNH BÁO: Thuốc bị thu hồi';
+        content = `Lô thuốc ${supplyChain.drugBatchNumber} đã bị thu hồi bởi ${triggeredBy.fullName}.\n\nLý do: ${extraData.recallReason || 'Không xác định'}\nHành động: ${extraData.recallAction || 'Không xác định'}\n\nVui lòng kiểm tra và xử lý ngay lập tức.`;
+        priority = 'urgent';
+        notificationType = 'drug_recall';
+        break;
+      default:
+        title = 'Cập nhật chuỗi cung ứng';
+        content = `Hành trình cho lô ${supplyChain.drugBatchNumber} đã được cập nhật bởi ${triggeredBy.fullName}.`;
+    }
+    
+    // Tạo danh sách userIds để gửi thông báo
+    const userIds = actorsToNotify
+      .filter(actor => actor.actorId && actor.actorId.toString() !== triggeredBy._id.toString())
+      .map(actor => actor.actorId);
+    
+    if (userIds.length === 0) {
+      console.log('📧 [Notification] No recipients to notify');
+      return;
+    }
+    
+    // Tạo thông báo sử dụng Notification model
+    try {
+      const notificationData = {
+        title,
+        content,
+        type: notificationType,
+        priority,
+        sender: triggeredBy._id,
+        scope: 'specific_users',
+        scopeDetails: {
+          userIds: userIds
+        },
+        relatedModule: 'supply_chain',
+        relatedId: supplyChain._id,
+        isPublic: false,
+        requiresAction: eventType === 'recalled', // Yêu cầu hành động nếu là recall
+        actionUrl: eventType === 'recalled' ? `/supply-chain/${supplyChain._id}` : null,
+        actionText: eventType === 'recalled' ? 'Xem chi tiết thu hồi' : null
+      };
+      
+      const notification = await Notification.createNotification(notificationData);
+      console.log(`📧 [Notification] Created notification ${notification._id} for ${userIds.length} users`);
+    } catch (notifCreateError) {
+      console.error('Error creating notification:', notifCreateError);
+      // Fallback: chỉ log nếu không tạo được notification
+      for (const actor of actorsToNotify) {
+        if (actor.actorId && actor.actorId.toString() !== triggeredBy._id.toString()) {
+          console.log(`📧 [Notification Fallback] Should notify ${actor.actorName}: ${title} - ${content}`);
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Error sending supply chain notifications:', error);
+    // Không throw error để không block main operation
+  }
 };
 
 const buildActorProfile = async (participant = {}) => {
@@ -1200,15 +1577,48 @@ const exportSupplyChains = async (req, res) => {
     const { format = 'csv', ...queryParams } = req.query;
     const importExportService = require('../services/importExportService');
     
-    // Build filter từ query params
+    // Sanitize và validate input
+    const sanitizedFormat = sanitizeInput(format);
+    const validFormats = ['csv', 'xlsx', 'xls'];
+    if (!validFormats.includes(sanitizedFormat)) {
+      return res.status(400).json({
+        success: false,
+        message: `Định dạng không hợp lệ. Chỉ hỗ trợ: ${validFormats.join(', ')}`
+      });
+    }
+    
+    // Build filter từ query params với sanitization
     const filter = {};
-    if (queryParams.status) filter.status = queryParams.status;
-    if (queryParams.role) filter['currentLocation.actorRole'] = queryParams.role;
+    if (queryParams.status) {
+      const sanitizedStatus = sanitizeInput(queryParams.status);
+      const validStatuses = ['active', 'recalled', 'expired', 'completed', 'suspended'];
+      if (validStatuses.includes(sanitizedStatus)) {
+        filter.status = sanitizedStatus;
+      }
+    }
+    if (queryParams.role) {
+      filter['currentLocation.actorRole'] = sanitizeInput(queryParams.role);
+    }
     if (queryParams.search) {
-      filter.$or = [
-        { drugBatchNumber: { $regex: queryParams.search, $options: 'i' } },
-        { 'drugId.name': { $regex: queryParams.search, $options: 'i' } }
-      ];
+      const sanitizedSearch = sanitizeInput(queryParams.search);
+      if (sanitizedSearch && sanitizedSearch.length > 0) {
+        filter.$or = [
+          { drugBatchNumber: { $regex: sanitizedSearch, $options: 'i' } },
+          { 'drugId.name': { $regex: sanitizedSearch, $options: 'i' } }
+        ];
+      }
+    }
+    
+    // Pagination để tránh memory issues với dataset lớn
+    const limit = Math.min(parseInt(queryParams.limit) || 10000, 50000); // Max 50k records
+    const page = parseInt(queryParams.page) || 1;
+    const skip = (page - 1) * limit;
+
+    // Count total để thông báo nếu cần pagination
+    const total = await SupplyChain.countDocuments(filter);
+    
+    if (total > limit && page === 1) {
+      console.warn(`⚠️ Export request có ${total} records, chỉ export ${limit} records đầu tiên. Cần pagination.`);
     }
 
     const supplyChains = await SupplyChain.find(filter)
@@ -1227,31 +1637,43 @@ const exportSupplyChains = async (req, res) => {
         select: 'fullName role',
         options: { lean: false }
       })
-      .lean() // Convert to plain objects for export
-      .limit(parseInt(queryParams.limit) || 10000);
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean(); // Convert to plain objects for export
 
-    if (format === 'csv') {
-      const csv = await importExportService.exportSupplyChainsToCSV(supplyChains);
-      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-      res.setHeader('Content-Disposition', `attachment; filename=supply-chains-${Date.now()}.csv`);
-      res.send(Buffer.from('\ufeff' + csv, 'utf-8'));
-    } else if (format === 'xlsx' || format === 'xls') {
-      const workbook = await importExportService.exportSupplyChainsToExcel(supplyChains);
-      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-      res.setHeader('Content-Disposition', `attachment; filename=supply-chains-${Date.now()}.xlsx`);
-      await workbook.xlsx.write(res);
-      res.end();
-    } else {
-      return res.status(400).json({
+    if (supplyChains.length === 0) {
+      return res.status(404).json({
         success: false,
-        message: 'Định dạng không hợp lệ. Chỉ hỗ trợ CSV hoặc XLSX'
+        message: 'Không có dữ liệu để xuất'
+      });
+    }
+
+    try {
+      if (sanitizedFormat === 'csv') {
+        const csv = await importExportService.exportSupplyChainsToCSV(supplyChains);
+        res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+        res.setHeader('Content-Disposition', `attachment; filename=supply-chains-${Date.now()}.csv`);
+        res.send(Buffer.from('\ufeff' + csv, 'utf-8'));
+      } else if (sanitizedFormat === 'xlsx' || sanitizedFormat === 'xls') {
+        const workbook = await importExportService.exportSupplyChainsToExcel(supplyChains);
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', `attachment; filename=supply-chains-${Date.now()}.xlsx`);
+        await workbook.xlsx.write(res);
+        res.end();
+      }
+    } catch (exportError) {
+      console.error('Export processing error:', exportError);
+      return res.status(500).json({
+        success: false,
+        message: 'Lỗi khi xử lý file export: ' + (exportError.message || 'Unknown error')
       });
     }
   } catch (error) {
     console.error('Export supply chains error:', error);
     res.status(500).json({
       success: false,
-      message: 'Lỗi server khi xuất file'
+      message: 'Lỗi server khi xuất file: ' + (error.message || 'Unknown error')
     });
   }
 };

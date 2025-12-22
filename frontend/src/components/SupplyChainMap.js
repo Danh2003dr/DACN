@@ -48,6 +48,8 @@ const getIconSymbol = (type) => {
       return '📦';
     case 'delivery':
       return '🏥';
+    case 'current':
+      return '📍';
     default:
       return '📍';
   }
@@ -75,7 +77,32 @@ const FitBounds = ({ bounds, focusAddress, onFocusComplete }) => {
   useEffect(() => {
     if (bounds && bounds.length > 0) {
       const latlngs = bounds.map(b => [b.lat, b.lng]);
-      map.fitBounds(latlngs, { padding: [50, 50] });
+      
+      // Lọc các điểm nằm trong lãnh thổ Việt Nam
+      const vietnamBounds = {
+        north: 23.5,
+        south: 8.5,
+        east: 110.0,
+        west: 102.0
+      };
+      
+      const validLatlngs = latlngs.filter(([lat, lng]) => {
+        return lat >= vietnamBounds.south && 
+               lat <= vietnamBounds.north && 
+               lng >= vietnamBounds.west && 
+               lng <= vietnamBounds.east;
+      });
+      
+      if (validLatlngs.length > 0) {
+        // Fit bounds với padding và giới hạn zoom
+        map.fitBounds(validLatlngs, { 
+          padding: [50, 50],
+          maxZoom: 12 // Giới hạn zoom tối đa khi fit bounds để không zoom quá sát
+        });
+      } else {
+        // Nếu không có điểm hợp lệ, center vào Việt Nam
+        map.setView([16.0, 106.0], 6);
+      }
     }
   }, [bounds, map]);
   
@@ -104,10 +131,14 @@ const FitBounds = ({ bounds, focusAddress, onFocusComplete }) => {
             const lat = parseFloat(result.lat);
             const lng = parseFloat(result.lon);
             
-            if (!isNaN(lat) && !isNaN(lng)) {
+            // Kiểm tra xem tọa độ có nằm trong lãnh thổ Việt Nam không
+            const isInVietnam = lat >= 8.5 && lat <= 23.5 && lng >= 102.0 && lng <= 110.0;
+            
+            if (!isNaN(lat) && !isNaN(lng) && isInVietnam) {
               console.log(`📍 Focusing map on address: "${focusAddress}" -> [${lat}, ${lng}]`);
-              // Center và zoom vào địa chỉ
-              map.setView([lat, lng], 15);
+              // Center và zoom vào địa chỉ (giới hạn zoom tối đa)
+              const zoomLevel = Math.min(15, map.getMaxZoom());
+              map.setView([lat, lng], zoomLevel);
               
               // Tạo marker tạm thời để highlight
               const marker = L.marker([lat, lng], {
@@ -145,7 +176,8 @@ const FitBounds = ({ bounds, focusAddress, onFocusComplete }) => {
               
               // Scroll marker vào view sau một chút
               setTimeout(() => {
-                map.setView([lat, lng], 15);
+                const zoomLevel = Math.min(15, map.getMaxZoom());
+                map.setView([lat, lng], zoomLevel);
               }, 100);
               
               // Xóa marker sau 5 giây
@@ -227,21 +259,41 @@ const SupplyChainMap = ({ supplyChains = [], height = '600px', focusAddress = nu
         });
       }
       
-      // Xử lý currentLocation nếu không có path hoặc path rỗng
+      // Xử lý currentLocation - LUÔN thêm vào bounds nếu có coordinates
       if (chain.currentLocation?.coordinates && chain.currentLocation.coordinates.length === 2) {
         // MongoDB GeoJSON format: [longitude, latitude]
         const [lng, lat] = chain.currentLocation.coordinates;
         if (!isNaN(lat) && !isNaN(lng)) {
-          bounds.push({
-            lat: lat,
-            lng: lng,
-            chain: chain,
-            point: null
-          });
-          console.log(`  ✅ Added currentLocation: [${lat}, ${lng}] - ${chain.currentLocation.address}`);
+          // Kiểm tra xem currentLocation có trùng với điểm cuối cùng trong path không
+          let isDuplicate = false;
+          if (chain.path && chain.path.length > 0) {
+            const lastPathPoint = chain.path[chain.path.length - 1];
+            if (lastPathPoint.coordinates && Array.isArray(lastPathPoint.coordinates) && lastPathPoint.coordinates.length === 2) {
+              const [lastLng, lastLat] = lastPathPoint.coordinates;
+              // So sánh với độ chính xác 0.0001 (khoảng 10m)
+              if (Math.abs(lat - lastLat) < 0.0001 && Math.abs(lng - lastLng) < 0.0001) {
+                isDuplicate = true;
+              }
+            }
+          }
+          
+          // Chỉ thêm vào bounds nếu không trùng với điểm cuối cùng trong path
+          if (!isDuplicate) {
+            bounds.push({
+              lat: lat,
+              lng: lng,
+              chain: chain,
+              point: null,
+              isCurrentLocation: true
+            });
+            console.log(`  ✅ Added currentLocation: [${lat}, ${lng}] - ${chain.currentLocation.address}`);
+          } else {
+            console.log(`  ℹ️ CurrentLocation trùng với điểm cuối cùng trong path, bỏ qua để tránh duplicate`);
+          }
         }
-      } else if (chain.currentLocation) {
-        console.warn(`  ⚠️ CurrentLocation missing coordinates:`, chain.currentLocation);
+      } else if (chain.currentLocation?.address) {
+        console.warn(`  ⚠️ CurrentLocation có address nhưng chưa có coordinates: "${chain.currentLocation.address}"`);
+        // Có thể thêm logic geocode ở đây nếu cần
       }
     });
     
@@ -249,39 +301,64 @@ const SupplyChainMap = ({ supplyChains = [], height = '600px', focusAddress = nu
     setAllBounds(bounds);
   }, [supplyChains]);
 
-      // Tạo polyline cho mỗi chain
+      // Tạo polyline cho mỗi chain - bao gồm cả currentLocation nếu có
       const getPolylines = () => {
         const polylines = [];
         supplyChains.forEach((chain, chainIndex) => {
-          if (chain.path && chain.path.length > 1) {
-            const positions = chain.path
-              .filter(point => point.coordinates && point.coordinates.length === 2)
-              .map(point => {
+          const positions = [];
+          
+          // Thêm các điểm trong path
+          if (chain.path && chain.path.length > 0) {
+            chain.path.forEach(point => {
+              if (point.coordinates && point.coordinates.length === 2) {
                 // MongoDB GeoJSON format: [longitude, latitude]
                 // Leaflet cần [latitude, longitude]
                 const [lng, lat] = point.coordinates;
-                return [lat, lng];
-              })
-              .filter(pos => !isNaN(pos[0]) && !isNaN(pos[1]));
-        
-        if (positions.length > 1) {
-          polylines.push({
-            positions,
-            color: getIconColor(chain.path[0]?.action || 'default'),
-            chainIndex,
-            chain
-          });
-        }
-      }
-    });
-    return polylines;
-  };
+                if (!isNaN(lat) && !isNaN(lng)) {
+                  positions.push([lat, lng]);
+                }
+              }
+            });
+          }
+          
+          // Thêm currentLocation vào cuối polyline nếu có và không trùng với điểm cuối cùng
+          if (chain.currentLocation?.coordinates && chain.currentLocation.coordinates.length === 2) {
+            const [lng, lat] = chain.currentLocation.coordinates;
+            if (!isNaN(lat) && !isNaN(lng)) {
+              // Kiểm tra xem có trùng với điểm cuối cùng không
+              if (positions.length === 0 || 
+                  Math.abs(positions[positions.length - 1][0] - lat) >= 0.0001 || 
+                  Math.abs(positions[positions.length - 1][1] - lng) >= 0.0001) {
+                positions.push([lat, lng]);
+              }
+            }
+          }
+          
+          // Chỉ tạo polyline nếu có ít nhất 2 điểm
+          if (positions.length > 1) {
+            polylines.push({
+              positions,
+              color: getIconColor(chain.path?.[0]?.action || 'default'),
+              chainIndex,
+              chain
+            });
+          }
+        });
+        return polylines;
+      };
 
   const polylines = getPolylines();
 
-  // Default center (Vietnam)
+  // Default center (Vietnam - TP.HCM)
   const defaultCenter = [10.8231, 106.6297];
   const defaultZoom = 6;
+  
+  // Giới hạn bản đồ chỉ trong lãnh thổ Việt Nam
+  // Việt Nam: latitude 8.5°N - 23.5°N, longitude 102°E - 110°E
+  const vietnamBounds = [
+    [8.5, 102.0],  // Southwest corner (Tây Nam)
+    [23.5, 110.0]  // Northeast corner (Đông Bắc)
+  ];
 
   return (
     <div className="supply-chain-map-container">
@@ -291,6 +368,10 @@ const SupplyChainMap = ({ supplyChains = [], height = '600px', focusAddress = nu
           zoom={defaultZoom}
           style={{ height: '100%', width: '100%' }}
           scrollWheelZoom={true}
+          maxBounds={vietnamBounds}
+          maxBoundsViscosity={1.0} // Giữ bản đồ trong bounds, không cho pan ra ngoài
+          minZoom={5} // Zoom tối thiểu để vẫn thấy toàn bộ Việt Nam
+          maxZoom={18} // Zoom tối đa
         >
           <TileLayer
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
@@ -385,18 +466,32 @@ const SupplyChainMap = ({ supplyChains = [], height = '600px', focusAddress = nu
               });
             }
             
-            // Hiển thị vị trí hiện tại nếu không có path HOẶC có path nhưng muốn hiển thị cả currentLocation
+            // Hiển thị vị trí hiện tại - LUÔN hiển thị nếu có coordinates
+            // Kiểm tra xem currentLocation có phải là điểm cuối cùng trong path không để tránh duplicate
             if (chain.currentLocation?.coordinates && Array.isArray(chain.currentLocation.coordinates) && chain.currentLocation.coordinates.length === 2) {
               // MongoDB GeoJSON format: [longitude, latitude]
               const [lng, lat] = chain.currentLocation.coordinates;
               if (!isNaN(lat) && !isNaN(lng)) {
-                // Chỉ hiển thị currentLocation nếu không có path (để tránh duplicate)
-                if (!chain.path || chain.path.length === 0) {
+                // Kiểm tra xem currentLocation có trùng với điểm cuối cùng trong path không
+                let isDuplicate = false;
+                if (chain.path && chain.path.length > 0) {
+                  const lastPathPoint = chain.path[chain.path.length - 1];
+                  if (lastPathPoint.coordinates && Array.isArray(lastPathPoint.coordinates) && lastPathPoint.coordinates.length === 2) {
+                    const [lastLng, lastLat] = lastPathPoint.coordinates;
+                    // So sánh với độ chính xác 0.0001 (khoảng 10m)
+                    if (Math.abs(lat - lastLat) < 0.0001 && Math.abs(lng - lastLng) < 0.0001) {
+                      isDuplicate = true;
+                    }
+                  }
+                }
+                
+                // Hiển thị currentLocation nếu không trùng hoặc không có path
+                if (!isDuplicate) {
                   markers.push(
                     <Marker
                       key={`chain-${chainIndex}-current`}
                       position={[lat, lng]}
-                      icon={createCustomIcon('#10B981', 'current')}
+                      icon={createCustomIcon('#EF4444', 'current')} // Màu đỏ để phân biệt với các bước khác
                       eventHandlers={{
                         click: () => setSelectedChain({ chain, point: null, type: 'current' })
                       }}
@@ -406,6 +501,9 @@ const SupplyChainMap = ({ supplyChains = [], height = '600px', focusAddress = nu
                           <h4 className="font-semibold text-sm mb-2">
                             {chain.batchNumber || chain.drugBatchNumber}
                           </h4>
+                          <p className="text-xs text-red-600 font-semibold mb-1">
+                            📍 <strong>Vị trí hiện tại</strong>
+                          </p>
                           <p className="text-xs text-gray-600 mb-1">
                             <strong>Trạng thái:</strong> {chain.status || 'N/A'}
                           </p>
@@ -419,8 +517,18 @@ const SupplyChainMap = ({ supplyChains = [], height = '600px', focusAddress = nu
                               <strong>Tại:</strong> {chain.currentLocation.actorName}
                             </p>
                           )}
-                          {chain.drug?.name && (
+                          {chain.currentLocation.actorRole && (
+                            <p className="text-xs text-gray-600 mb-1">
+                              <strong>Vai trò:</strong> {chain.currentLocation.actorRole}
+                            </p>
+                          )}
+                          {chain.currentLocation.lastUpdated && (
                             <p className="text-xs text-gray-500">
+                              <strong>Cập nhật:</strong> {new Date(chain.currentLocation.lastUpdated).toLocaleString('vi-VN')}
+                            </p>
+                          )}
+                          {chain.drug?.name && (
+                            <p className="text-xs text-gray-500 mt-1">
                               <strong>Thuốc:</strong> {chain.drug.name}
                             </p>
                           )}
@@ -432,6 +540,12 @@ const SupplyChainMap = ({ supplyChains = [], height = '600px', focusAddress = nu
               }
             }
             
+            // Nếu currentLocation có address nhưng chưa có coordinates, thử geocode
+            if (chain.currentLocation?.address && (!chain.currentLocation.coordinates || chain.currentLocation.coordinates.length !== 2)) {
+              console.warn(`⚠️ Chain ${chainIndex}: currentLocation có address nhưng chưa có coordinates:`, chain.currentLocation.address);
+              // Có thể thêm logic geocode ở đây nếu cần
+            }
+            
             return markers;
           })}
         </MapContainer>
@@ -440,7 +554,7 @@ const SupplyChainMap = ({ supplyChains = [], height = '600px', focusAddress = nu
       {/* Legend */}
       <div className="mt-4 p-4 bg-gray-50 rounded-lg">
         <h4 className="text-sm font-semibold mb-2">Chú thích:</h4>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-xs">
           <div className="flex items-center space-x-2">
             <div className="w-4 h-4 rounded-full bg-blue-500"></div>
             <span>Sản xuất</span>
@@ -456,6 +570,10 @@ const SupplyChainMap = ({ supplyChains = [], height = '600px', focusAddress = nu
           <div className="flex items-center space-x-2">
             <div className="w-4 h-4 rounded-full bg-green-500"></div>
             <span>Giao hàng</span>
+          </div>
+          <div className="flex items-center space-x-2">
+            <div className="w-4 h-4 rounded-full bg-red-500"></div>
+            <span>Vị trí hiện tại</span>
           </div>
         </div>
       </div>

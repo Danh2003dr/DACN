@@ -1,0 +1,9 @@
+Fix: Cải thiện validation và xử lý dữ liệu cho Orders và Users
+
+- Fix validation cho OrderItem unit field (chỉ chấp nhận enum hợp lệ: viên, hộp, chai, lọ, túi, ống, gói)
+- Cải thiện xử lý ObjectId cho buyer/seller selection trong Orders
+- Normalize _id trong userController để đảm bảo luôn trả về string
+- Cải thiện logic lấy buyerId/sellerId từ user hiện tại
+- Thêm validation và normalize items trước khi submit order
+- Cải thiện error handling và logging
+- Cập nhật trust scores, reviews và các controllers khác

@@ -1,0 +1,9 @@
+﻿Fix: C├í┬║┬úi thi├í┬╗ÔÇín validation v├â┬á x├í┬╗┬¡ l├â┬¢ d├í┬╗┬» li├í┬╗ÔÇíu cho Orders v├â┬á Users
+
+- Fix validation cho OrderItem unit field (ch├í┬╗ÔÇ░ ch├í┬║┬Ñp nh├í┬║┬¡n enum h├í┬╗┬úp l├í┬╗ÔÇí: vi├â┬¬n, h├í┬╗Ôäóp, chai, l├í┬╗┬ì, t├â┬║i, ├í┬╗ÔÇÿng, g├â┬│i)
+- C├í┬║┬úi thi├í┬╗ÔÇín x├í┬╗┬¡ l├â┬¢ ObjectId cho buyer/seller selection trong Orders
+- Normalize _id trong userController ├äÔÇÿ├í┬╗ãÆ ├äÔÇÿ├í┬║┬úm b├í┬║┬úo lu├â┬┤n tr├í┬║┬ú v├í┬╗┬ü string
+- C├í┬║┬úi thi├í┬╗ÔÇín logic l├í┬║┬Ñy buyerId/sellerId t├í┬╗┬½ user hi├í┬╗ÔÇín t├í┬║┬íi
+- Th├â┬¬m validation v├â┬á normalize items tr├å┬░├í┬╗ÔÇ║c khi submit order
+- C├í┬║┬úi thi├í┬╗ÔÇín error handling v├â┬á logging
+- C├í┬║┬¡p nh├í┬║┬¡t trust scores, reviews v├â┬á c├â┬íc controllers kh├â┬íc

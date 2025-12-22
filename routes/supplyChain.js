@@ -16,7 +16,7 @@ const {
 } = require('../controllers/supplyChainController');
 
 // Import middleware
-const { authenticate, authorize } = require('../middleware/auth');
+const { authenticate, authorize, rateLimit } = require('../middleware/auth');
 const { validate, validateQuery } = require('../utils/validation');
 const { 
   createSupplyChainSchema, 
@@ -84,7 +84,9 @@ router.get('/export',
 // @desc    Truy xuất nguồn gốc qua QR code (Public)
 // @access  Public
 // QUAN TRỌNG: Phải đặt TRƯỚC route /:id để tránh conflict
-router.get('/qr/:batchNumber', getSupplyChainByQR);
+// Rate limiting: 30 requests / 1 phút / IP để tránh abuse
+const qrRateLimiter = rateLimit(60 * 1000, 30); // 30 requests per minute
+router.get('/qr/:batchNumber', qrRateLimiter, getSupplyChainByQR);
 
 // @route   GET /api/supply-chain/:id
 // @desc    Lấy thông tin hành trình chi tiết

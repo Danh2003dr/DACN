@@ -1543,7 +1543,29 @@ export const roleUpgradeAPI = {
   
   // Duyệt yêu cầu
   approveRequest: async (id, adminNotes) => {
-    const response = await api.put(`/role-upgrade/requests/${id}/approve`, {
+    // Đảm bảo ID là string hợp lệ - xử lý cả trường hợp là object
+    if (!id) {
+      throw new Error('ID yêu cầu không hợp lệ');
+    }
+    
+    // Chuyển đổi object thành string nếu cần
+    let requestId = id;
+    if (typeof requestId === 'object') {
+      if (typeof requestId.toString === 'function') {
+        requestId = requestId.toString();
+      } else if (requestId.$oid) {
+        requestId = requestId.$oid;
+      } else {
+        throw new Error('ID yêu cầu không hợp lệ (object không thể chuyển đổi)');
+      }
+    }
+    
+    requestId = String(requestId);
+    if (!requestId || requestId === 'undefined' || requestId === 'null') {
+      throw new Error('ID yêu cầu không hợp lệ');
+    }
+    
+    const response = await api.put(`/role-upgrade/requests/${requestId}/approve`, {
       adminNotes
     });
     return response.data;
@@ -1551,7 +1573,29 @@ export const roleUpgradeAPI = {
   
   // Từ chối yêu cầu
   rejectRequest: async (id, adminNotes) => {
-    const response = await api.put(`/role-upgrade/requests/${id}/reject`, {
+    // Đảm bảo ID là string hợp lệ - xử lý cả trường hợp là object
+    if (!id) {
+      throw new Error('ID yêu cầu không hợp lệ');
+    }
+    
+    // Chuyển đổi object thành string nếu cần
+    let requestId = id;
+    if (typeof requestId === 'object') {
+      if (typeof requestId.toString === 'function') {
+        requestId = requestId.toString();
+      } else if (requestId.$oid) {
+        requestId = requestId.$oid;
+      } else {
+        throw new Error('ID yêu cầu không hợp lệ (object không thể chuyển đổi)');
+      }
+    }
+    
+    requestId = String(requestId);
+    if (!requestId || requestId === 'null' || requestId === 'undefined') {
+      throw new Error('ID yêu cầu không hợp lệ');
+    }
+    
+    const response = await api.put(`/role-upgrade/requests/${requestId}/reject`, {
       adminNotes
     });
     return response.data;

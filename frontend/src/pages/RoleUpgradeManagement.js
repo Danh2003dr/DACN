@@ -78,10 +78,98 @@ const RoleUpgradeManagement = () => {
   const onApprove = async () => {
     if (!selectedRequest) return;
 
+    // Đảm bảo ID là string hợp lệ - xử lý cả trường hợp _id là object (ObjectId)
+    let requestId = selectedRequest._id || selectedRequest.id;
+    if (!requestId) {
+      toast.error('ID yêu cầu không hợp lệ');
+      console.error('Invalid request ID:', selectedRequest);
+      return;
+    }
+    
+    // Chuyển đổi object thành string nếu cần
+    if (typeof requestId === 'object' && requestId !== null) {
+      console.log('Request ID is object, attempting conversion:', requestId);
+      console.log('Object keys:', Object.keys(requestId));
+      
+      // Kiểm tra xem có phải là char array không (object với keys là số: { '0': '6', '1': '7', ... })
+      const keys = Object.keys(requestId);
+      if (keys.length > 0 && keys.every(key => /^\d+$/.test(key))) {
+        // Object có dạng { '0': '6', '1': '9', ... } - char array
+        const normalized = keys
+          .sort((a, b) => parseInt(a) - parseInt(b))
+          .map(key => requestId[key])
+          .join('');
+        if (normalized && normalized.length === 24) { // MongoDB ObjectId có 24 ký tự
+          requestId = normalized;
+          console.log('Converted from char array to string:', requestId);
+        }
+      } else {
+        // Thử các cách khác nhau để lấy string ID
+        if (typeof requestId.toString === 'function') {
+          const stringId = requestId.toString();
+          // Kiểm tra xem toString có trả về [object Object] không
+          if (stringId && stringId !== '[object Object]' && stringId !== 'null' && stringId !== 'undefined') {
+            requestId = stringId;
+            console.log('Converted using toString():', requestId);
+          } else {
+            // Thử valueOf
+            if (typeof requestId.valueOf === 'function') {
+              const valueId = requestId.valueOf();
+              if (valueId && typeof valueId === 'string') {
+                requestId = valueId;
+                console.log('Converted using valueOf():', requestId);
+              } else if (valueId && typeof valueId === 'object' && valueId.toString) {
+                requestId = valueId.toString();
+                console.log('Converted using valueOf().toString():', requestId);
+              }
+            }
+            
+            // Thử các thuộc tính phổ biến
+            if (requestId.$oid) {
+              requestId = requestId.$oid;
+              console.log('Converted using $oid:', requestId);
+            } else if (requestId.id) {
+              requestId = requestId.id;
+              console.log('Converted using .id:', requestId);
+            } else if (requestId._id) {
+              requestId = requestId._id;
+              console.log('Converted using ._id:', requestId);
+            } else if (requestId.str) {
+              requestId = requestId.str;
+              console.log('Converted using .str:', requestId);
+            } else {
+              toast.error('ID yêu cầu không hợp lệ - không thể chuyển đổi object thành string');
+              console.error('Invalid request ID object structure:', requestId);
+              return;
+            }
+          }
+        } else if (requestId.$oid) {
+          // MongoDB extended JSON format
+          requestId = requestId.$oid;
+          console.log('Converted using $oid:', requestId);
+        } else {
+          toast.error('ID yêu cầu không hợp lệ');
+          console.error('Invalid request ID object:', requestId);
+          return;
+        }
+      }
+    }
+    
+    // Đảm bảo cuối cùng là string
+    requestId = String(requestId);
+    if (!requestId || requestId === 'undefined' || requestId === 'null' || requestId === '[object Object]') {
+      toast.error('ID yêu cầu không hợp lệ');
+      console.error('Invalid request ID after conversion:', requestId);
+      console.error('Original selectedRequest:', selectedRequest);
+      return;
+    }
+    
+    console.log('Final request ID:', requestId);
+
     try {
-      setProcessingRequestId(selectedRequest._id);
+      setProcessingRequestId(requestId);
       const response = await roleUpgradeAPI.approveRequest(
-        selectedRequest._id,
+        requestId,
         adminNotes || undefined
       );
 
@@ -107,10 +195,98 @@ const RoleUpgradeManagement = () => {
       return;
     }
 
+    // Đảm bảo ID là string hợp lệ - xử lý cả trường hợp _id là object (ObjectId)
+    let requestId = selectedRequest._id || selectedRequest.id;
+    if (!requestId) {
+      toast.error('ID yêu cầu không hợp lệ');
+      console.error('Invalid request ID:', selectedRequest);
+      return;
+    }
+    
+    // Chuyển đổi object thành string nếu cần
+    if (typeof requestId === 'object' && requestId !== null) {
+      console.log('Request ID is object, attempting conversion:', requestId);
+      console.log('Object keys:', Object.keys(requestId));
+      
+      // Kiểm tra xem có phải là char array không (object với keys là số: { '0': '6', '1': '7', ... })
+      const keys = Object.keys(requestId);
+      if (keys.length > 0 && keys.every(key => /^\d+$/.test(key))) {
+        // Object có dạng { '0': '6', '1': '9', ... } - char array
+        const normalized = keys
+          .sort((a, b) => parseInt(a) - parseInt(b))
+          .map(key => requestId[key])
+          .join('');
+        if (normalized && normalized.length === 24) { // MongoDB ObjectId có 24 ký tự
+          requestId = normalized;
+          console.log('Converted from char array to string:', requestId);
+        }
+      } else {
+        // Thử các cách khác nhau để lấy string ID
+        if (typeof requestId.toString === 'function') {
+          const stringId = requestId.toString();
+          // Kiểm tra xem toString có trả về [object Object] không
+          if (stringId && stringId !== '[object Object]' && stringId !== 'null' && stringId !== 'undefined') {
+            requestId = stringId;
+            console.log('Converted using toString():', requestId);
+          } else {
+            // Thử valueOf
+            if (typeof requestId.valueOf === 'function') {
+              const valueId = requestId.valueOf();
+              if (valueId && typeof valueId === 'string') {
+                requestId = valueId;
+                console.log('Converted using valueOf():', requestId);
+              } else if (valueId && typeof valueId === 'object' && valueId.toString) {
+                requestId = valueId.toString();
+                console.log('Converted using valueOf().toString():', requestId);
+              }
+            }
+            
+            // Thử các thuộc tính phổ biến
+            if (requestId.$oid) {
+              requestId = requestId.$oid;
+              console.log('Converted using $oid:', requestId);
+            } else if (requestId.id) {
+              requestId = requestId.id;
+              console.log('Converted using .id:', requestId);
+            } else if (requestId._id) {
+              requestId = requestId._id;
+              console.log('Converted using ._id:', requestId);
+            } else if (requestId.str) {
+              requestId = requestId.str;
+              console.log('Converted using .str:', requestId);
+            } else {
+              toast.error('ID yêu cầu không hợp lệ - không thể chuyển đổi object thành string');
+              console.error('Invalid request ID object structure:', requestId);
+              return;
+            }
+          }
+        } else if (requestId.$oid) {
+          // MongoDB extended JSON format
+          requestId = requestId.$oid;
+          console.log('Converted using $oid:', requestId);
+        } else {
+          toast.error('ID yêu cầu không hợp lệ');
+          console.error('Invalid request ID object:', requestId);
+          return;
+        }
+      }
+    }
+    
+    // Đảm bảo cuối cùng là string
+    requestId = String(requestId);
+    if (!requestId || requestId === 'undefined' || requestId === 'null' || requestId === '[object Object]') {
+      toast.error('ID yêu cầu không hợp lệ');
+      console.error('Invalid request ID after conversion:', requestId);
+      console.error('Original selectedRequest:', selectedRequest);
+      return;
+    }
+    
+    console.log('Final request ID:', requestId);
+
     try {
-      setProcessingRequestId(selectedRequest._id);
+      setProcessingRequestId(requestId);
       const response = await roleUpgradeAPI.rejectRequest(
-        selectedRequest._id,
+        requestId,
         adminNotes
       );
 

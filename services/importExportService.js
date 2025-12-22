@@ -1115,6 +1115,17 @@ function fixVietnameseSpacing(text) {
     { regex: /t\s+ỉnh/gi, replace: "tỉnh" },
     { regex: /n\s+am/gi, replace: "nam" },
     { regex: /v\s+iệt/gi, replace: "việt" },
+    // Các từ hóa học và dược phẩm bị tách
+    { regex: /g\s+astrolium/gi, replace: "Gastrolium" },
+    { regex: /a\s+ttapulgite/gi, replace: "Attapulgite" },
+    { regex: /a\s+ttapulg\s+ite/gi, replace: "Attapulgite" },
+    { regex: /g\s+el/gi, replace: "Gel" },
+    { regex: /m\s+agnesi/gi, replace: "magnesi" },
+    { regex: /m\s+ag\s+nesi/gi, replace: "magnesi" },
+    { regex: /m\s+ormoiron/gi, replace: "Mormoiron" },
+    { regex: /h\s+ydroxyde/gi, replace: "hydroxyde" },
+    { regex: /c\s+arbonate/gi, replace: "carbonate" },
+    { regex: /h\s+oạt\s+hóa/gi, replace: "hoạt hóa" },
     // Thêm các từ bị tách phức tạp hơn
     { regex: /t\s+ỉ\s+êu/gi, replace: "tiêu" },
     { regex: /c\s+h\s+uẩn/gi, replace: "chuẩn" },
@@ -1301,25 +1312,60 @@ const processDrugBuffer = (buffer, context) => {
   fetch('http://127.0.0.1:7242/ingest/225bc8d1-6824-4e38-b617-49570f639471',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'importExportService.js:processDrugBuffer',message:'FULLTEXT_AFTER_JOIN',data:{fullText:fullText.substring(0,200),length:fullText.length,timestamp:Date.now()},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H1'})}).catch(()=>{});
   // #endregion
   
-  // Fix dính chữ - Cải thiện logic để xử lý tốt hơn
+  // Fix dính chữ - Cải thiện logic để xử lý tốt hơn các cột bị dính trong bảng PDF
   // Thứ tự quan trọng: xử lý pattern cụ thể trước, sau đó mới xử lý pattern chung
   
-  // 1. Xử lý các pattern đặc biệt trước (để tránh bị pattern chung can thiệp)
-  // "5mgViên" -> "5mg Viên", "10mlHộp" -> "10ml Hộp"
-  fullText = fullText.replace(/(\d+)(mg|ml|g|kg)([A-ZÀ-Ỹ])/gi, '$1$2 $3');
-  // "viênHộp" -> "viên Hộp", "góiHộp" -> "gói Hộp"
-  fullText = fullText.replace(/(viên|gói|chai|hộp|vỉ|lọ|tuýp|ống)([A-ZÀ-Ỹ])/gi, '$1 $2');
-  // "mgViên" -> "mg Viên" (không có số trước)
-  fullText = fullText.replace(/(mg|ml|g|kg)([A-ZÀ-Ỹ])/gi, '$1 $2');
+  // PHASE 1: Xử lý các pattern đặc biệt trong dược phẩm (ưu tiên cao nhất)
+  // Pattern: "5mgViên" -> "5mg Viên", "10mlHộp" -> "10ml Hộp", "250mgViên" -> "250mg Viên"
+  fullText = fullText.replace(/(\d+(?:,\d+)?)\s*(mg|ml|g|kg|%)\s*([A-ZÀ-Ỹ])/gi, '$1$2 $3');
+  // Pattern: "5mgViên nén" -> "5mg Viên nén" (không có space giữa mg và Viên)
+  fullText = fullText.replace(/(\d+(?:,\d+)?)(mg|ml|g|kg|%)([A-ZÀ-Ỹ])/gi, '$1$2 $3');
   
-  // 2. Số + chữ hoa (1Iodine -> 1 Iodine)
-  fullText = fullText.replace(/(\d)([A-ZÀ-Ỹ])/g, '$1 $2');
-  // 3. Chữ thường + chữ hoa (IodinePovidone -> Iodine Povidone)
+  // Pattern: "viênHộp" -> "viên Hộp", "góiHộp" -> "gói Hộp", "chaiHộp" -> "chai Hộp"
+  fullText = fullText.replace(/(viên|gói|chai|hộp|vỉ|lọ|tuýp|ống|can)([A-ZÀ-Ỹ])/gi, '$1 $2');
+  // Pattern: "Viên nénHộp" -> "Viên nén Hộp"
+  fullText = fullText.replace(/(viên\s+nén|viên\s+nang|dung\s+dịch|bột\s+pha|thuốc\s+bột|thuốc\s+cốm|siro|kem|hỗn\s+dịch|thuốc\s+xịt|thuốc\s+mỡ|nguyên\s+liệu)([A-ZÀ-Ỹ])/gi, '$1 $2');
+  
+  // Pattern: "mgViên" -> "mg Viên" (không có số trước)
+  fullText = fullText.replace(/(mg|ml|g|kg|%)([A-ZÀ-Ỹ])/gi, '$1 $2');
+  
+  // PHASE 2: Xử lý dính chữ giữa các từ (pattern chung)
+  // Pattern: Số + chữ hoa (1Iodine -> 1 Iodine, 2Prednison -> 2 Prednison)
+  fullText = fullText.replace(/(\d{1,3})([A-ZÀ-Ỹ][a-zà-ỹ])/g, '$1 $2');
+  
+  // Pattern: Chữ thường + chữ hoa (IodinePovidone -> Iodine Povidone, Prednison5mg -> Prednison 5mg)
   fullText = fullText.replace(/([a-zà-ỹ])([A-ZÀ-Ỹ])/g, '$1 $2');
-  // 4. Chữ hoa + chữ hoa (nếu có pattern như "A.F." -> giữ nguyên, nhưng "AB" -> "A B" nếu sau đó là chữ thường)
+  
+  // Pattern: Chữ hoa + chữ hoa (nếu sau đó là chữ thường) - nhưng giữ nguyên viết tắt như "A.F."
+  // Tránh tách "A.F." thành "A. F."
   fullText = fullText.replace(/([A-ZÀ-Ỹ])([A-ZÀ-Ỹ][a-zà-ỹ])/g, '$1 $2');
-  // 5. Số + chữ thường (nếu có, nhưng ít gặp)
-  fullText = fullText.replace(/(\d)([a-zà-ỹ])/g, '$1 $2');
+  
+  // Pattern: Số + chữ thường (5mg -> giữ nguyên, nhưng 5viên -> 5 viên)
+  fullText = fullText.replace(/(\d)(viên|gói|chai|hộp|vỉ|lọ|tuýp|ống)/gi, '$1 $2');
+  
+  // PHASE 3: Xử lý các pattern đặc biệt trong tên thuốc và hoạt chất
+  // Pattern: "Acid/Acid" -> "Acid / Acid" (dấu gạch chéo)
+  fullText = fullText.replace(/([a-zà-ỹ])\/([A-ZÀ-Ỹ])/gi, '$1 / $2');
+  
+  // Pattern: Tên thuốc có số và chữ dính: "Midantin 250/31,25" -> giữ nguyên, nhưng "250/31,25Acid" -> "250/31,25 Acid"
+  fullText = fullText.replace(/(\d+\/\d+(?:,\d+)?)([A-ZÀ-Ỹ])/gi, '$1 $2');
+  
+  // Pattern: "dưới dạng" bị dính: "dướidạng" -> "dưới dạng"
+  fullText = fullText.replace(/(dưới)(dạng)/gi, '$1 $2');
+  
+  // Pattern: Các từ tiếng Việt bị dính: "trihydrat" -> giữ nguyên, nhưng "trihydratAcid" -> "trihydrat Acid"
+  fullText = fullText.replace(/(trihydrat|monohydrat|dihydrat|hexahydrat|proxetil|citrat|phosphat|sulfat|hydroclorid|hydrochlorid|valerat|propionat|maleat|attapulgite|magnesi|mormoiron|hydroxyde|carbonate|gastrolium)([A-ZÀ-Ỹ])/gi, '$1 $2');
+  
+  // PHASE 4: Xử lý các từ hóa học bị tách (chữ thường + space + chữ thường)
+  // Pattern: "g astrolium" -> "Gastrolium", "g el" -> "Gel", "mag nesi" -> "magnesi"
+  fullText = fullText.replace(/\b(g)\s+(astrolium|el)\b/gi, (match, p1, p2) => {
+    if (p2.toLowerCase() === 'astrolium') return 'Gastrolium';
+    if (p2.toLowerCase() === 'el') return 'Gel';
+    return match;
+  });
+  fullText = fullText.replace(/\b(mag)\s+(nesi)\b/gi, 'magnesi');
+  fullText = fullText.replace(/\b(a)\s+(ttapulgite)\b/gi, 'Attapulgite');
+  fullText = fullText.replace(/\b(a)\s+(ttapulg)\s+(ite)\b/gi, 'Attapulgite');
   
   // Loại bỏ các từ khóa rác ở đầu dòng nếu có (VD: "1. Cách ghi...", "2. Số đăng ký...")
   // Kiểm tra cả trường hợp chữ bị tách: "Cách ghi" có thể là "C ách g hi"
@@ -1353,7 +1399,9 @@ const processDrugBuffer = (buffer, context) => {
     shelfLife: null,
     expiryDate: null,
     registrationFacility: context.registrationFacility,
+    registrationFacilityAddress: context.registrationFacilityAddress,
     manufacturingFacility: context.manufacturingFacility,
+    manufacturingFacilityAddress: context.manufacturingFacilityAddress,
     appendix: context.appendix,
     validityPeriod: context.validityPeriod,
     validityDate: context.validityDate,
@@ -1381,9 +1429,11 @@ const processDrugBuffer = (buffer, context) => {
     drugInfo.stt = `AUTO_${Date.now().toString().slice(-4)}`;
   }
 
-  // 3. Tìm SĐK (Neo quan trọng) - Cải thiện theo cấu trúc QĐ 720/QĐ-QLD
+  // 3. Tìm SĐK (Neo quan trọng) - Cải thiện theo cấu trúc công văn Bộ Y tế
   // Pattern: SĐK mới (12 số) có thể kèm SĐK cũ trong ngoặc đơn: "893100493025 (VS-4878-14)"
+  // Hoặc format: "893100493025 (VD-22739-15)" - SĐK mới 12 số, SĐK cũ trong ngoặc
   const reg12Match = contentWithoutSTT.match(/(\d{12})/);
+  // Pattern SĐK cũ: VD-22739-15, VS-4878-14, VD3-99-21, VD-33603-19, etc.
   const regOldMatch = contentWithoutSTT.match(/\(([A-Z]{2,3}\d{0,1}-\d{4,5}-\d{2,3})\)/i); // Tìm trong ngoặc đơn
   let splitIndex = -1;
 
@@ -1391,30 +1441,31 @@ const processDrugBuffer = (buffer, context) => {
     drugInfo.registrationNumber = reg12Match[0];
     splitIndex = contentWithoutSTT.indexOf(reg12Match[0]);
     
-    // Tìm SĐK cũ trong ngoặc đơn sau SĐK mới
-    if (regOldMatch) {
-      const oldRegIndex = contentWithoutSTT.indexOf(regOldMatch[0]);
-      // Chỉ lấy SĐK cũ nếu nó nằm sau SĐK mới (trong cùng dòng hoặc dòng tiếp theo)
-      if (oldRegIndex > reg12Match.index || Math.abs(oldRegIndex - reg12Match.index) < 50) {
-        drugInfo.oldRegistrationNumber = regOldMatch[1]; // Lấy nội dung trong ngoặc, không lấy dấu ngoặc
-      }
+    // Tìm SĐK cũ trong ngoặc đơn sau SĐK mới (có thể ngay sau hoặc cách một vài ký tự)
+    // Pattern: "893100493025 (VD-22739-15)" hoặc "893100493025(VD-22739-15)"
+    const afterReg12 = contentWithoutSTT.substring(reg12Match.index + 12);
+    const oldRegInParen = afterReg12.match(/\(([A-Z]{2,3}\d{0,1}-\d{4,5}-\d{2,3})\)/i);
+    if (oldRegInParen) {
+      drugInfo.oldRegistrationNumber = oldRegInParen[1]; // Lấy nội dung trong ngoặc, không lấy dấu ngoặc
     }
     
-    // Nếu không tìm thấy trong ngoặc, thử tìm pattern cũ (không có ngoặc)
+    // Nếu không tìm thấy trong ngoặc, thử tìm pattern cũ (không có ngoặc) ngay sau SĐK mới
     if (!drugInfo.oldRegistrationNumber) {
-      const regOldMatchNoParen = contentWithoutSTT.match(/([A-Z]{2,3}\d{0,1}-\d{4,5}-\d{2,3})/i);
-      if (regOldMatchNoParen && regOldMatchNoParen.index > reg12Match.index) {
-        drugInfo.oldRegistrationNumber = regOldMatchNoParen[0];
+      const regOldMatchNoParen = afterReg12.match(/\s+([A-Z]{2,3}\d{0,1}-\d{4,5}-\d{2,3})\b/i);
+      if (regOldMatchNoParen) {
+        drugInfo.oldRegistrationNumber = regOldMatchNoParen[1];
       }
     }
   } else if (regOldMatch) {
-    // Chỉ có SĐK cũ (không có SĐK mới 12 số)
+    // Chỉ có SĐK cũ (không có SĐK mới 12 số) - trường hợp hiếm
     drugInfo.oldRegistrationNumber = regOldMatch[1];
     drugInfo.registrationNumber = regOldMatch[1]; // Dùng SĐK cũ làm SĐK chính
     splitIndex = contentWithoutSTT.indexOf(regOldMatch[0]);
   }
 
-  // 4. Tìm Tuổi thọ (tháng) - Cải thiện theo QĐ 720/QĐ-QLD
+  // 4. Tìm Tuổi thọ (tháng) - Cải thiện theo công văn Bộ Y tế
+  // Pattern: "36", "24", "48" (có thể có "tháng" sau)
+  // Tìm số 2 chữ số (24, 36, 48) hoặc 3 chữ số (60) đứng độc lập hoặc có "tháng" sau
   const shelfLifeMatch = contentWithoutSTT.match(/\b(24|36|48|60)\s*(?:tháng)?\b/i);
   if (shelfLifeMatch) {
     drugInfo.shelfLife = parseInt(shelfLifeMatch[1]);
@@ -1422,30 +1473,57 @@ const processDrugBuffer = (buffer, context) => {
   
   // 5. Tìm Quy cách đóng gói (sau dạng bào chế, trước SĐK)
   // Pattern: "Hộp 1 chai 20ml; Hộp 1 chai 30ml" hoặc "Hộp 10 vỉ x 10 viên"
-  const packagingMatch = contentWithoutSTT.match(/(Hộp|Chai|Vỉ|Gói|Lọ|Tuýp|Ống)[^0-9]*\d+[^0-9]*\d*[^0-9]*(?:;|$)/i);
-  if (packagingMatch) {
-    // Lấy toàn bộ phần quy cách (có thể kéo dài nhiều dòng)
-    const packagingStart = contentWithoutSTT.indexOf(packagingMatch[0]);
-    const beforeSDK = (splitIndex > -1) ? contentWithoutSTT.substring(packagingStart, splitIndex) : contentWithoutSTT.substring(packagingStart);
-    drugInfo.packaging = beforeSDK.replace(/\s+(nsx|tccs|bp|usp|dđvn).*$/i, '').trim();
+  // Hoặc: "Hộp 12 gói x 1,5g", "Hộp 1 vỉ x 4 viên", "Chai 125ml; Chai 500ml"
+  // Tìm từ đầu dòng hoặc sau dạng bào chế đến trước SĐK
+  let packagingText = '';
+  if (splitIndex > -1) {
+    // Lấy phần trước SĐK
+    packagingText = contentWithoutSTT.substring(0, splitIndex);
+  } else {
+    // Nếu không có SĐK, lấy toàn bộ
+    packagingText = contentWithoutSTT;
   }
   
-  // 6. Tìm Tiêu chuẩn (NSX, BP, USP, DĐVN, TCCS)
-  const standardMatch = contentWithoutSTT.match(/\b(NSX|BP|USP|DĐVN|TCCS|JP|EP)\b/i);
+  // Tìm quy cách: bắt đầu bằng Hộp/Chai/Vỉ/Gói/Lọ/Tuýp/Ống, có số, có thể có dấu chấm phẩy
+  const packagingPattern = /(Hộp|Chai|Vỉ|Gói|Lọ|Tuýp|Ống|Can)[^0-9]*\d+[^0-9]*\d*[^0-9]*(?:ml|viên|gói|g|vỉ|lọ|chai|tuýp|ống|lit|lít)?(?:\s*;\s*(?:Hộp|Chai|Vỉ|Gói|Lọ|Tuýp|Ống|Can)[^0-9]*\d+[^0-9]*\d*[^0-9]*(?:ml|viên|gói|g|vỉ|lọ|chai|tuýp|ống|lit|lít)?)*/gi;
+  const packagingMatch = packagingText.match(packagingPattern);
+  if (packagingMatch) {
+    // Lấy phần quy cách đầu tiên (có thể có nhiều quy cách, lấy tất cả)
+    drugInfo.packaging = packagingMatch[0].trim();
+    // Loại bỏ phần tiêu chuẩn nếu có ở cuối
+    drugInfo.packaging = drugInfo.packaging.replace(/\s+(NSX|BP|USP|DĐVN|TCCS|JP|EP|TCNSX|TCCS).*$/i, '').trim();
+  }
+  
+  // 6. Tìm Tiêu chuẩn (NSX, BP, USP, DĐVN, TCCS, JP, EP)
+  // Tìm trong phần trước SĐK hoặc sau quy cách
+  const standardPattern = /\b(NSX|BP|USP|DĐVN|TCCS|JP|EP|TCNSX|In-house)\b/i;
+  const standardMatch = contentWithoutSTT.match(standardPattern);
   if (standardMatch) {
     drugInfo.standard = standardMatch[0].toUpperCase();
+    // Map một số giá trị
+    if (drugInfo.standard === 'TCNSX' || drugInfo.standard === 'IN-HOUSE') {
+      drugInfo.standard = 'NSX'; // Tiêu chuẩn nhà sản xuất
+    }
   }
 
-  // 7. Phân tích Tên và Hoạt chất (loại bỏ quy cách và tiêu chuẩn đã extract)
+  // 7. Phân tích Tên và Hoạt chất (loại bỏ quy cách, tiêu chuẩn, tuổi thọ đã extract)
   let mainContent = (splitIndex > -1) ? contentWithoutSTT.substring(0, splitIndex).trim() : contentWithoutSTT;
   
-  // Loại bỏ phần quy cách và tiêu chuẩn đã extract khỏi mainContent
+  // Loại bỏ phần quy cách, tiêu chuẩn, tuổi thọ đã extract khỏi mainContent
   if (drugInfo.packaging) {
-    mainContent = mainContent.replace(drugInfo.packaging, '').trim();
+    // Loại bỏ quy cách (có thể có nhiều lần xuất hiện)
+    mainContent = mainContent.replace(new RegExp(drugInfo.packaging.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), '').trim();
   }
   if (drugInfo.standard) {
-    mainContent = mainContent.replace(new RegExp(drugInfo.standard, 'i'), '').trim();
+    mainContent = mainContent.replace(new RegExp(drugInfo.standard, 'gi'), '').trim();
   }
+  if (drugInfo.shelfLife) {
+    // Loại bỏ tuổi thọ (ví dụ: "36", "36 tháng")
+    mainContent = mainContent.replace(new RegExp(`\\b${drugInfo.shelfLife}\\s*(?:tháng)?\\b`, 'gi'), '').trim();
+  }
+  
+  // Loại bỏ số lần gia hạn nếu có (thường là "1" ở cuối)
+  mainContent = mainContent.replace(/\s+\b\d+\s*$/, '').trim();
   
   // #region agent log
   fetch('http://127.0.0.1:7242/ingest/225bc8d1-6824-4e38-b617-49570f639471',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'importExportService.js:processDrugBuffer',message:'MAIN_CONTENT_BEFORE_CLEAN',data:{mainContent:mainContent.substring(0,200),splitIndex,hasRegNumber:!!drugInfo.registrationNumber,timestamp:Date.now()},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H2'})}).catch(()=>{});
@@ -1454,75 +1532,189 @@ const processDrugBuffer = (buffer, context) => {
   // Clean rác cuối chuỗi
   mainContent = mainContent.replace(/\s+(nsx|tccs|bp|usp|dđvn).*$/i, '').replace(/\s+\d+\s*tháng.*$/i, '').trim();
 
-  // Tìm dạng bào chế
-  const forms = ['viên nén', 'viên nang', 'viên bao', 'dung dịch', 'thuốc tiêm', 'bột pha', 'siro', 'kem bôi', 'hỗn dịch', 'thuốc cốm', 'thuốc mỡ', 'viên đặt', 'nguyên liệu'];
+  // Tìm dạng bào chế - Cải thiện theo công văn Bộ Y tế
+  // Các dạng bào chế phổ biến trong công văn:
+  const forms = [
+    'viên nén bao phim', 'viên nén sủi bọt', 'viên nén phân tán', 'viên nén',
+    'viên nang mềm', 'viên nang',
+    'dung dịch dùng ngoài', 'dung dịch nhỏ mũi', 'dung dịch vệ sinh phụ nữ', 'dung dịch',
+    'thuốc tiêm', 'dung dịch tiêm',
+    'thuốc bột pha hỗn dịch uống', 'bột pha hỗn dịch uống', 'bột pha hỗn dịch', 'bột pha dung dịch uống', 'bột pha',
+    'thuốc bột uống', 'thuốc bột',
+    'thuốc cốm',
+    'siro thuốc', 'siro',
+    'kem bôi da', 'kem',
+    'hỗn dịch xịt mũi', 'hỗn dịch',
+    'thuốc xịt mũi', 'thuốc xịt',
+    'thuốc mỡ',
+    'nguyên liệu làm thuốc', 'nguyên liệu'
+  ];
   let formFound = false;
+  let formIndex = -1;
   
+  // Tìm từ dạng cụ thể nhất đến chung nhất
   for (const f of forms) {
     const formRegex = new RegExp(f.replace(/\s+/g, '\\s*'), 'i');
     const match = mainContent.match(formRegex);
     
     if (match) {
       drugInfo.form = f;
-      const fIndex = match.index;
-      const preForm = mainContent.substring(0, fIndex).trim();
+      formIndex = match.index;
+      formFound = true;
+      break; // Lấy dạng cụ thể nhất (đã sắp xếp từ cụ thể đến chung)
+    }
+  }
+  
+  if (formFound && formIndex >= 0) {
+    const preForm = mainContent.substring(0, formIndex).trim();
       
-      // Tách Tên / Hoạt chất - Cải thiện theo cấu trúc QĐ 720/QĐ-QLD
-      // Pattern: "Tên thuốc Hoạt chất - Hàm lượng" hoặc "Tên thuốc; Hoạt chất"
-      if (preForm.includes(';')) {
-        // Có dấu chấm phẩy: tên và hoạt chất được tách rõ
-        const parts = preForm.split(';');
-        drugInfo.name = parts[0].trim();
-        drugInfo.activeIngredient = parts.slice(1).join('; ').trim();
-      } else if (preForm.includes('-')) {
-        // Có dấu gạch ngang: có thể là "Hoạt chất - Hàm lượng"
+      // Tách Tên / Hoạt chất - Cải thiện theo cấu trúc công văn Bộ Y tế
+      // Format trong công văn: "Tên thuốc" ở cột (2), "Hoạt chất chính - Hàm lượng" ở cột (3)
+      // Trong PDF có thể bị dính: "IodinePovidone iodine 10% (w/v)" -> cần tách
+      
+      // Pattern 0: Phát hiện tên và hoạt chất bị lặp hoặc dính chữ
+      // Ví dụ: "Prednison 5 mgPrednison 5mg", "IodinePovidone iodine"
+      
+      let nameParsed = false;
+      let activeIngredientParsed = false;
+      
+      // Pattern 0a: Tên và hoạt chất bị lặp (tên xuất hiện 2 lần gần nhau)
+      // Tìm: [Tên][Tên lặp lại hoặc biến thể][Hoạt chất]
+      // Pattern 0b: Tên thuốc thường là 1 từ (ví dụ: Gastrolium, Iodine, Prednison)
+      // Hoạt chất thường bắt đầu bằng chữ hoa (ví dụ: Attapulgite, Povidone)
+      const words = preForm.split(/\s+/).filter(w => w.length > 0);
+      
+      // Kiểm tra nếu từ đầu là tên thuốc (thường là 1 từ, viết hoa chữ cái đầu)
+      // và từ thứ 2 là hoạt chất (cũng viết hoa chữ cái đầu, nhưng khác tên)
+      if (words.length >= 2) {
+        const firstWord = words[0];
+        const secondWord = words[1];
+        
+        // Nếu từ đầu là tên thuốc (1 từ, viết hoa) và từ thứ 2 là hoạt chất (viết hoa, khác tên)
+        if (/^[A-ZÀ-Ỹ][a-zà-ỹ]+$/.test(firstWord) && /^[A-ZÀ-Ỹ]/.test(secondWord) && 
+            firstWord.toLowerCase() !== secondWord.toLowerCase()) {
+          // Tên là từ đầu, hoạt chất là phần còn lại
+          drugInfo.name = firstWord;
+          drugInfo.activeIngredient = words.slice(1).join(' ').trim();
+          nameParsed = true;
+          activeIngredientParsed = true;
+        } else if (words.length >= 3) {
+          // Tìm từ thứ 2 hoặc 3 có vẻ giống từ đầu (lặp)
+          for (let i = 1; i < Math.min(4, words.length); i++) {
+            const currentWord = words[i];
+            // Nếu từ hiện tại giống với từ đầu (có thể có biến thể nhỏ)
+            const firstWordLower = firstWord.toLowerCase();
+            const currentWordLower = currentWord.toLowerCase();
+            if (firstWordLower.length >= 3 && currentWordLower.length >= 3 &&
+                (currentWordLower.startsWith(firstWordLower.substring(0, Math.min(4, firstWordLower.length))) ||
+                 firstWordLower.startsWith(currentWordLower.substring(0, Math.min(4, currentWordLower.length))))) {
+              // Tìm thấy lặp: tên là từ đầu, hoạt chất là phần sau (bỏ phần lặp)
+              drugInfo.name = words.slice(0, i).join(' ');
+              drugInfo.activeIngredient = words.slice(i + 1).join(' ').trim() || currentWord;
+              nameParsed = true;
+              activeIngredientParsed = true;
+              break;
+            }
+          }
+        }
+      }
+      
+      // Nếu đã tách được từ pattern lặp, bỏ qua các pattern khác
+      if (!nameParsed || !activeIngredientParsed) {
+        if (preForm.includes(';')) {
+          // Pattern 1: Có dấu chấm phẩy - tên và hoạt chất được tách rõ
+          const parts = preForm.split(';');
+          if (!nameParsed) drugInfo.name = parts[0].trim();
+          if (!activeIngredientParsed) drugInfo.activeIngredient = parts.slice(1).join('; ').trim();
+        } else if (preForm.includes(' - ')) {
+        // Có dấu gạch ngang với space: "Hoạt chất - Hàm lượng"
+        // Tìm dấu gạch ngang cuối cùng (thường là separator giữa hoạt chất và hàm lượng)
         const dashIndex = preForm.lastIndexOf(' - ');
         if (dashIndex > 0) {
-          // Tên thuốc là phần trước dấu gạch ngang cuối cùng
-          drugInfo.name = preForm.substring(0, dashIndex).trim();
-          drugInfo.activeIngredient = preForm.substring(dashIndex + 3).trim();
-        } else {
-          // Dấu gạch ngang không phải separator, xử lý như bình thường
-          const words = preForm.split(/\s+/).filter(w => w.length > 0);
-          if (words.length <= 2) {
-            drugInfo.name = words.join(' ');
-            drugInfo.activeIngredient = words.join(' ');
+          // Phần trước dấu gạch ngang cuối: có thể là "Tên thuốc Hoạt chất" hoặc chỉ "Hoạt chất"
+          const beforeDash = preForm.substring(0, dashIndex).trim();
+          const afterDash = preForm.substring(dashIndex + 3).trim();
+          
+          // Nếu phần trước có nhiều từ, tách: 1-2 từ đầu là tên, còn lại là hoạt chất
+          const beforeWords = beforeDash.split(/\s+/).filter(w => w.length > 0);
+          if (beforeWords.length <= 2) {
+            // 1-2 từ: thường là tên thuốc
+            if (!nameParsed) drugInfo.name = beforeWords.join(' ');
+            if (!activeIngredientParsed) drugInfo.activeIngredient = beforeDash + ' - ' + afterDash;
           } else {
-            drugInfo.name = words.slice(0, 2).join(' ');
-            drugInfo.activeIngredient = words.slice(2).join(' ');
+            // > 2 từ: 1-2 từ đầu là tên, còn lại là hoạt chất
+            if (!nameParsed) drugInfo.name = beforeWords.slice(0, 2).join(' ');
+            if (!activeIngredientParsed) drugInfo.activeIngredient = beforeWords.slice(2).join(' ') + ' - ' + afterDash;
           }
+        } else {
+          // Dấu gạch ngang không phải separator chính
+          if (!nameParsed) drugInfo.name = preForm;
+          if (!activeIngredientParsed) drugInfo.activeIngredient = preForm;
         }
       } else {
         // Không có separator rõ ràng: tách thông minh
-        // Pattern: Tên thuốc thường là 1-2 từ đầu (có thể có số), còn lại là hoạt chất
+        // Trong công văn, tên thuốc thường là 1-3 từ đầu, còn lại là hoạt chất
         const words = preForm.split(/\s+/).filter(w => w.length > 0);
         
         if (words.length === 0) {
-          drugInfo.name = preForm;
-          drugInfo.activeIngredient = preForm;
+          if (!nameParsed) drugInfo.name = preForm;
+          if (!activeIngredientParsed) drugInfo.activeIngredient = preForm;
         } else if (words.length === 1) {
-          drugInfo.name = words[0];
-          drugInfo.activeIngredient = words[0];
-        } else if (words.length <= 2) {
-          // 1-2 từ: thường là tên thuốc (ví dụ: "Iodine", "Prednison 5 mg")
-          drugInfo.name = words.join(' ');
-          drugInfo.activeIngredient = words.join(' '); // Nếu không có hoạt chất riêng
+          if (!nameParsed) drugInfo.name = words[0];
+          if (!activeIngredientParsed) drugInfo.activeIngredient = words[0];
         } else {
-          // > 2 từ: 1-2 từ đầu là tên, còn lại là hoạt chất
-          // Tên thuốc thường ngắn (1-2 từ), hoạt chất dài hơn
-          const nameWordCount = Math.min(2, Math.floor(words.length / 2));
-          drugInfo.name = words.slice(0, nameWordCount).join(' ');
-          drugInfo.activeIngredient = words.slice(nameWordCount).join(' ').trim() || drugInfo.name;
+          // Tìm pattern: Tên thuốc thường bắt đầu bằng chữ hoa, có thể có số
+          // Hoạt chất thường dài hơn, có thể có "dưới dạng", "tương đương", etc.
+          
+          // Thử tách dựa trên pattern: Tên ngắn (1-2 từ) + Hoạt chất dài
+          // Hoặc: Tên có số đơn giản (ví dụ: "Prednison 5 mg") + Hoạt chất phức tạp
+          
+          // Pattern 1: Tên là 1-2 từ đầu, còn lại là hoạt chất
+          if (words.length <= 4) {
+            // 2-4 từ: thường là tên (1-2 từ) + hoạt chất (1-2 từ)
+            const nameWordCount = Math.min(2, Math.floor(words.length / 2));
+            drugInfo.name = words.slice(0, nameWordCount).join(' ');
+            drugInfo.activeIngredient = words.slice(nameWordCount).join(' ').trim() || drugInfo.name;
+          } else {
+            // > 4 từ: tên thường là 1-3 từ đầu, còn lại là hoạt chất
+            // Tìm điểm tách: sau khi có từ viết hoa đơn lẻ hoặc sau số + đơn vị
+            let splitIndex = -1;
+            
+            // Tìm pattern: "Tên" + "Hoạt chất" (hoạt chất thường có từ dài hơn hoặc có dấu gạch ngang)
+            for (let i = 1; i < Math.min(4, words.length); i++) {
+              const currentWord = words[i];
+              const nextWord = words[i + 1];
+              
+              // Nếu từ hiện tại là số + đơn vị và từ tiếp theo là chữ hoa -> có thể là điểm tách
+              if (/\d+(mg|ml|g|%)/i.test(currentWord) && nextWord && /^[A-ZÀ-Ỹ]/.test(nextWord)) {
+                splitIndex = i + 1;
+                break;
+              }
+              
+              // Nếu từ hiện tại là chữ hoa đơn lẻ và từ tiếp theo là chữ thường -> có thể là điểm tách
+              if (/^[A-ZÀ-Ỹ]$/.test(currentWord) && nextWord && /^[a-zà-ỹ]/.test(nextWord)) {
+                splitIndex = i + 1;
+                break;
+              }
+            }
+            
+            if (splitIndex > 0 && splitIndex < words.length) {
+              if (!nameParsed) drugInfo.name = words.slice(0, splitIndex).join(' ');
+              if (!activeIngredientParsed) drugInfo.activeIngredient = words.slice(splitIndex).join(' ').trim();
+            } else {
+              // Không tìm thấy điểm tách rõ ràng: dùng heuristic
+              const nameWordCount = Math.min(3, Math.floor(words.length / 2));
+              if (!nameParsed) drugInfo.name = words.slice(0, nameWordCount).join(' ');
+              if (!activeIngredientParsed) drugInfo.activeIngredient = words.slice(nameWordCount).join(' ').trim() || drugInfo.name;
+            }
+          }
         }
       }
+      } // Đóng if (!nameParsed || !activeIngredientParsed)
       
       // #region agent log
       fetch('http://127.0.0.1:7242/ingest/225bc8d1-6824-4e38-b617-49570f639471',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'importExportService.js:processDrugBuffer',message:'PARSED_NAME_INGREDIENT',data:{preForm:preForm.substring(0,150),parsedName:drugInfo.name,parsedIngredient:drugInfo.activeIngredient.substring(0,100),formFound:formFound,form:drugInfo.form,timestamp:Date.now()},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H3'})}).catch(()=>{});
       // #endregion
-      
-      formFound = true;
-      break;
-    }
   }
 
   if (!formFound) {
@@ -1632,7 +1824,9 @@ const parsePDFFromMinistryOfHealth = async (filePath) => {
       validityPeriod: null,
       validityDate: null,
       registrationFacility: null,
-      manufacturingFacility: null
+      registrationFacilityAddress: null, // Lưu địa chỉ đầy đủ
+      manufacturingFacility: null,
+      manufacturingFacilityAddress: null // Lưu địa chỉ đầy đủ
     };
 
     for (let i = 0; i < lines.length; i++) {
@@ -1651,7 +1845,7 @@ const parsePDFFromMinistryOfHealth = async (filePath) => {
       }
       if (lowerLine.match(/^trang\s*\d+/)) continue;
 
-      // 2. Context Change
+      // 2. Context Change - Cải thiện để lấy địa chỉ đầy đủ (có thể kéo dài nhiều dòng)
       if (isContextLine(line)) {
         if (buffer.length > 0) {
           const drug = processDrugBuffer(buffer, currentContext);
@@ -1659,9 +1853,51 @@ const parsePDFFromMinistryOfHealth = async (filePath) => {
           buffer = [];
         }
 
-        // Logic cập nhật context - Cải thiện theo QĐ 720/QĐ-QLD
+        // Logic cập nhật context - Cải thiện theo công văn Bộ Y tế
+        // Xử lý địa chỉ có thể kéo dài nhiều dòng: đọc các dòng tiếp theo nếu địa chỉ chưa đầy đủ
+        let addressLines = [line];
+        let addressComplete = false;
+        
+        // Kiểm tra xem dòng này có chứa "Địa chỉ:" chưa
+        const hasAddressStart = /Địa chỉ[:\s]/i.test(line);
+        
+        // Nếu có "Địa chỉ:" nhưng chưa có "Việt Nam" hoặc chưa có dấu đóng ngoặc, đọc thêm các dòng tiếp theo
+        if (hasAddressStart && !/Việt Nam/i.test(line) && !/\)\s*$/.test(line)) {
+          // Đọc các dòng tiếp theo cho đến khi gặp "Việt Nam" hoặc dòng mới (cơ sở khác/thuốc mới)
+          let linesRead = 0;
+          for (let j = i + 1; j < Math.min(i + 5, lines.length); j++) {
+            const nextLine = lines[j].trim();
+            if (!nextLine) break;
+            
+            // Nếu là dòng mới (cơ sở khác hoặc thuốc mới), dừng lại
+            const nextLowerLine = nextLine.toLowerCase();
+            if (isContextLine(nextLine) || isNewDrugSignal(nextLine)) {
+              break;
+            }
+            
+            addressLines.push(nextLine);
+            linesRead++;
+            
+            // Nếu đã có "Việt Nam" hoặc dấu đóng ngoặc, địa chỉ đã đầy đủ
+            if (/Việt Nam/i.test(nextLine) || /\)\s*$/.test(nextLine)) {
+              addressComplete = true;
+              break;
+            }
+          }
+          
+          // Gộp các dòng địa chỉ lại
+          if (addressLines.length > 1) {
+            line = addressLines.join(' ');
+            lowerLine = line.toLowerCase();
+            // Cập nhật i để bỏ qua các dòng đã đọc (trừ dòng hiện tại)
+            if (linesRead > 0) {
+              i += linesRead;
+            }
+          }
+        }
+        
         if (lowerLine.includes('phụ lục')) {
-            const match = lowerLine.match(/phụ lục\s+([IVX]+)/i);
+            const match = lowerLine.match(/phụ lục\s+([IVX123]+)/i);
             if (match) {
               currentContext.appendix = match[1];
               // Xác định hiệu lực dựa trên Phụ lục
@@ -1673,16 +1909,24 @@ const parsePDFFromMinistryOfHealth = async (filePath) => {
               } else if (match[1] === 'II' || match[1] === '2') {
                 currentContext.validityPeriod = 3;
               } else if (match[1] === 'III' || match[1] === '3') {
-                // Phụ lục III: gia hạn đến 31/12/2025
-                currentContext.validityDate = new Date(2025, 11, 31); // Tháng 11 = tháng 12 (0-indexed)
+                // Phụ lục III: gia hạn đến 31/12/2025 (hoặc ngày khác nếu có trong text)
+                // Tìm ngày cụ thể trong dòng
+                const dateMatch = line.match(/đến\s*(\d{1,2}\/\d{1,2}\/\d{4})/i);
+                if (dateMatch) {
+                  const parts = dateMatch[1].split('/');
+                  currentContext.validityDate = new Date(parseInt(parts[2]), parseInt(parts[1])-1, parseInt(parts[0]));
+                } else {
+                  // Mặc định: 31/12/2025
+                  currentContext.validityDate = new Date(2025, 11, 31); // Tháng 11 = tháng 12 (0-indexed)
+                }
               }
             }
         }
-        // Kiểm tra pattern "gia hạn 05 năm" hoặc "gia hạn 03 năm"
-        if (lowerLine.includes('gia hạn 05 năm') || lowerLine.includes('gia hạn 05năm') || lowerLine.includes('05 năm')) {
+        // Kiểm tra pattern "gia hạn 05 năm" hoặc "gia hạn 03 năm" (có thể viết liền hoặc có space)
+        if (lowerLine.includes('gia hạn 05 năm') || lowerLine.includes('gia hạn 05năm') || lowerLine.includes('05 năm') || lowerLine.includes('hiệu lực 05 năm')) {
           currentContext.validityPeriod = 5;
         }
-        if (lowerLine.includes('gia hạn 03 năm') || lowerLine.includes('gia hạn 03năm') || lowerLine.includes('03 năm')) {
+        if (lowerLine.includes('gia hạn 03 năm') || lowerLine.includes('gia hạn 03năm') || lowerLine.includes('03 năm') || lowerLine.includes('hiệu lực 03 năm')) {
           currentContext.validityPeriod = 3;
         }
         // Kiểm tra pattern "gia hạn đến" với ngày cụ thể
@@ -1691,10 +1935,68 @@ const parsePDFFromMinistryOfHealth = async (filePath) => {
             const parts = dateMatch[1].split('/');
             currentContext.validityDate = new Date(parseInt(parts[2]), parseInt(parts[1])-1, parseInt(parts[0]));
         }
-        const regMatch = line.match(/^\d+\.\s*Cơ sở đăng ký[:\s]+(.+)$/i);
-        if (regMatch) currentContext.registrationFacility = regMatch[1].trim();
-        const manuMatch = line.match(/^\d+\.\d+\.\s*Cơ sở sản xuất[:\s]+(.+)$/i);
-        if (manuMatch) currentContext.manufacturingFacility = manuMatch[1].trim();
+        // Parse cơ sở đăng ký: "1. Cơ sở đăng ký: Công ty..." hoặc "Cơ sở đăng ký: Công ty..."
+        // Format: "Cơ sở đăng ký: Công ty Cổ phần Dược phẩm Minh Dân (Địa chỉ: ...)"
+        // Cải thiện: Lấy cả tên và địa chỉ đầy đủ (có thể đã được gộp từ nhiều dòng)
+        const regMatch = line.match(/(?:^\d+\.\s*)?Cơ sở đăng ký[:\s]+(.+)$/i);
+        if (regMatch) {
+          let fullText = regMatch[1].trim();
+          // Tách tên và địa chỉ
+          // Pattern 1: Có dấu ngoặc đơn chứa "Địa chỉ" (địa chỉ trong ngoặc)
+          const addressMatch = fullText.match(/(.+?)\s*\([^)]*Địa chỉ[:\s]+(.+?)\)/i);
+          if (addressMatch) {
+            currentContext.registrationFacility = fixVietnameseSpacing(addressMatch[1].trim());
+            currentContext.registrationFacilityAddress = fixVietnameseSpacing(addressMatch[2].trim());
+          } else {
+            // Pattern 2: Có "Địa chỉ:" không có ngoặc đơn (có thể kéo dài nhiều dòng, đã được gộp)
+            const addressMatch2 = fullText.match(/(.+?)\s*Địa chỉ[:\s]+(.+)$/i);
+            if (addressMatch2) {
+              currentContext.registrationFacility = fixVietnameseSpacing(addressMatch2[1].trim());
+              // Lấy toàn bộ phần sau "Địa chỉ:" (có thể đã được gộp từ nhiều dòng)
+              let address = addressMatch2[2].trim();
+              // Loại bỏ dấu đóng ngoặc nếu có ở cuối
+              address = address.replace(/\s*\)\s*$/, '').trim();
+              // Loại bỏ dấu chấm phẩy thừa ở cuối nếu có
+              address = address.replace(/\s*;\s*$/, '').trim();
+              currentContext.registrationFacilityAddress = fixVietnameseSpacing(address);
+            } else {
+              // Không có địa chỉ rõ ràng, lấy toàn bộ làm tên
+              currentContext.registrationFacility = fixVietnameseSpacing(fullText);
+              currentContext.registrationFacilityAddress = null;
+            }
+          }
+        }
+        // Parse cơ sở sản xuất: "1.1. Cơ sở sản xuất: Công ty..." hoặc "Cơ sở sản xuất: Công ty..."
+        // Format: "Cơ sở sản xuất: Công ty Cổ phần Dược phẩm Minh Dân (Địa chỉ: ...)"
+        // Cải thiện: Lấy cả tên và địa chỉ đầy đủ (có thể đã được gộp từ nhiều dòng)
+        const manuMatch = line.match(/(?:^\d+\.\d+\.\s*)?Cơ sở sản xuất[:\s]+(.+)$/i);
+        if (manuMatch) {
+          let fullText = manuMatch[1].trim();
+          // Tách tên và địa chỉ
+          // Pattern 1: Có dấu ngoặc đơn chứa "Địa chỉ" (địa chỉ trong ngoặc)
+          const addressMatch = fullText.match(/(.+?)\s*\([^)]*Địa chỉ[:\s]+(.+?)\)/i);
+          if (addressMatch) {
+            currentContext.manufacturingFacility = fixVietnameseSpacing(addressMatch[1].trim());
+            currentContext.manufacturingFacilityAddress = fixVietnameseSpacing(addressMatch[2].trim());
+          } else {
+            // Pattern 2: Có "Địa chỉ:" không có ngoặc đơn (có thể kéo dài nhiều dòng, đã được gộp)
+            const addressMatch2 = fullText.match(/(.+?)\s*Địa chỉ[:\s]+(.+)$/i);
+            if (addressMatch2) {
+              currentContext.manufacturingFacility = fixVietnameseSpacing(addressMatch2[1].trim());
+              // Lấy toàn bộ phần sau "Địa chỉ:" (có thể đã được gộp từ nhiều dòng)
+              let address = addressMatch2[2].trim();
+              // Loại bỏ dấu đóng ngoặc nếu có ở cuối
+              address = address.replace(/\s*\)\s*$/, '').trim();
+              // Loại bỏ dấu chấm phẩy thừa ở cuối nếu có
+              address = address.replace(/\s*;\s*$/, '').trim();
+              currentContext.manufacturingFacilityAddress = fixVietnameseSpacing(address);
+            } else {
+              // Không có địa chỉ rõ ràng, lấy toàn bộ làm tên
+              currentContext.manufacturingFacility = fixVietnameseSpacing(fullText);
+              currentContext.manufacturingFacilityAddress = null;
+            }
+          }
+        }
         
         continue;
       }
@@ -1735,7 +2037,23 @@ const parsePDFFromMinistryOfHealth = async (filePath) => {
       } else {
         // 5. Continuation - Nối dòng vào buffer
         if (buffer.length > 0) {
-          buffer.push(line);
+          // Kiểm tra xem dòng này có phải là phần tiếp theo của quy cách đóng gói không
+          // Pattern: "Hộp...", "Chai...", "500 viên", "10 vỉ x 10 viên", etc.
+          const isPackagingContinuation = /^(Hộp|Chai|Vỉ|Gói|Lọ|Tuýp|Ống|Can|\d+\s*(viên|vỉ|gói|chai|lọ|tuýp|ống|ml|g|lit|lít))/i.test(line.trim());
+          
+          // Hoặc là phần tiếp theo của hoạt chất (có chữ thường, không bắt đầu bằng số lớn)
+          const isIngredientContinuation = /^[a-zà-ỹ]/.test(line.trim()) && !/^\d{3,}/.test(line.trim());
+          
+          if (isPackagingContinuation || isIngredientContinuation || line.length < 100) {
+            // Nối vào buffer nếu là phần tiếp theo hợp lệ
+            buffer.push(line);
+          } else {
+            // Dòng này có vẻ là thuốc mới hoặc rác - flush buffer trước
+            const drug = processDrugBuffer(buffer, currentContext);
+            if (drug) drugs.push(drug);
+            buffer = [];
+            // Không thêm dòng này vào buffer mới (để signal detection xử lý ở lần lặp tiếp theo)
+          }
         } else {
           // Log những dòng bị bỏ qua khi buffer rỗng để debug
           // Chỉ log nếu dòng có vẻ quan trọng (có số hoặc text dài) và không phải rác
@@ -1825,13 +2143,22 @@ const importDrugsFromPDF = async (filePath, user, req = null) => {
           testReport: `Giấy đăng ký lưu hành số ${certificateNumber} được gia hạn theo công văn Bộ Y tế${drugInfo.appendix ? ` - Phụ lục ${drugInfo.appendix}` : ''}`
         };
         
+        // Thêm thông tin cơ sở đăng ký và sản xuất với địa chỉ đầy đủ
         if (drugInfo.registrationFacility || drugInfo.manufacturingFacility) {
           const facilityInfo = [];
           if (drugInfo.registrationFacility) {
-            facilityInfo.push(`Cơ sở đăng ký: ${drugInfo.registrationFacility}`);
+            let regInfo = `Cơ sở đăng ký: ${drugInfo.registrationFacility}`;
+            if (drugInfo.registrationFacilityAddress) {
+              regInfo += ` (Địa chỉ: ${drugInfo.registrationFacilityAddress})`;
+            }
+            facilityInfo.push(regInfo);
           }
           if (drugInfo.manufacturingFacility) {
-            facilityInfo.push(`Cơ sở sản xuất: ${drugInfo.manufacturingFacility}`);
+            let manuInfo = `Cơ sở sản xuất: ${drugInfo.manufacturingFacility}`;
+            if (drugInfo.manufacturingFacilityAddress) {
+              manuInfo += ` (Địa chỉ: ${drugInfo.manufacturingFacilityAddress})`;
+            }
+            facilityInfo.push(manuInfo);
           }
           if (facilityInfo.length > 0) {
             qualityTestInfo.testReport += `. ${facilityInfo.join('; ')}`;

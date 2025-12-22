@@ -137,28 +137,35 @@ const initializeBlockchain = async () => {
 initializeBlockchain();
 
 // Routes - Include TẤT CẢ routes
-app.use('/api/auth', authRoutes);
-app.use('/api/auth', profileRoutes);
-app.use('/api/users', userRoutes);
-app.use('/api/drugs', require('./routes/drugs'));
-app.use('/api/supply-chain', require('./routes/supplyChain'));
-app.use('/api/tasks', require('./routes/tasks'));
-app.use('/api/notifications', require('./routes/notifications'));
-app.use('/api/reviews', require('./routes/reviews'));
-app.use('/api/digital-signatures', require('./routes/digitalSignatures'));
-app.use('/api/reports', require('./routes/reports'));
-app.use('/api/settings', settingsRoutes);
-app.use('/api/blockchain', blockchainRoutes);
-app.use('/api/trust-scores', trustScoreRoutes);
-app.use('/api/metrics', metricsRoutes);
-app.use('/api/audit-logs', require('./routes/auditLogs'));
-app.use('/api/inventory', require('./routes/inventory'));
-app.use('/api/orders', require('./routes/orders'));
-app.use('/api/backups', require('./routes/backups'));
-app.use('/api/invoices', require('./routes/invoices'));
-app.use('/api/payments', require('./routes/payments'));
-app.use('/api/suppliers', require('./routes/suppliers'));
-app.use('/api/import-export', require('./routes/importExport'));
+try {
+  app.use('/api/auth', authRoutes);
+  app.use('/api/auth', profileRoutes);
+  app.use('/api/users', userRoutes);
+  app.use('/api/drugs', require('./routes/drugs'));
+  app.use('/api/supply-chain', require('./routes/supplyChain'));
+  app.use('/api/tasks', require('./routes/tasks'));
+  app.use('/api/notifications', require('./routes/notifications'));
+  app.use('/api/reviews', require('./routes/reviews'));
+  app.use('/api/digital-signatures', require('./routes/digitalSignatures'));
+  app.use('/api/reports', require('./routes/reports'));
+  app.use('/api/settings', settingsRoutes);
+  app.use('/api/blockchain', blockchainRoutes);
+  app.use('/api/trust-scores', trustScoreRoutes);
+  app.use('/api/metrics', metricsRoutes);
+  app.use('/api/audit-logs', require('./routes/auditLogs'));
+  app.use('/api/inventory', require('./routes/inventory'));
+  app.use('/api/orders', require('./routes/orders'));
+  app.use('/api/backups', require('./routes/backups'));
+  app.use('/api/invoices', require('./routes/invoices'));
+  app.use('/api/payments', require('./routes/payments'));
+  app.use('/api/suppliers', require('./routes/suppliers'));
+  app.use('/api/import-export', require('./routes/importExport'));
+  app.use('/api/role-upgrade', require('./routes/roleUpgrade'));
+  console.log('✅ [DEV] Tất cả routes đã được load');
+} catch (error) {
+  console.error('❌ [DEV] Lỗi khi load routes:', error);
+  throw error;
+}
 if (bidsRoutes) {
   app.use('/api/bids', bidsRoutes);
   // #region agent log
@@ -232,12 +239,18 @@ app.use((req, res) => {
 const PORT = process.env.PORT || 5000;
 const HOST = process.env.HOST || '0.0.0.0';
 
-app.listen(PORT, HOST, () => {
-  console.log('===========================================');
-  console.log('🚀 DEV Express server started');
-  console.log(`Port: ${PORT}`);
-  console.log(`Health: http://localhost:${PORT}/api/health`);
-  console.log('===========================================');
-});
+// Khởi động server ngay sau khi routes được load
+try {
+  app.listen(PORT, HOST, () => {
+    console.log('===========================================');
+    console.log('🚀 DEV Express server started');
+    console.log(`Port: ${PORT}`);
+    console.log(`Health: http://localhost:${PORT}/api/health`);
+    console.log('===========================================');
+  });
+} catch (error) {
+  console.error('❌ [DEV] Lỗi khi khởi động server:', error);
+  process.exit(1);
+}
 
 
