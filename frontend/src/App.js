@@ -37,6 +37,7 @@ import DrugTimelineDemo from './pages/DrugTimelineDemo';
 import Marketplace from './pages/Marketplace';
 import Bids from './pages/Bids';
 import Checkout from './pages/Checkout';
+import VnpayCallback from './pages/VnpayCallback';
 import RoleUpgradeRequest from './pages/RoleUpgradeRequest';
 import RoleUpgradeManagement from './pages/RoleUpgradeManagement';
 import Metrics from './pages/Metrics';
@@ -137,6 +138,33 @@ const AppRoutes = () => {
     if (token) {
       setAuthToken(token);
     }
+    
+    // Health check khi app khởi động
+    const checkBackendHealth = async () => {
+      try {
+        const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+        const response = await fetch(`${apiUrl}/health`, {
+          method: 'GET',
+          headers: { 'Content-Type': 'application/json' },
+          signal: AbortSignal.timeout(3000) // Timeout 3 giây
+        });
+        
+        if (response.ok) {
+          console.log('✅ Backend server đang chạy');
+        } else {
+          console.warn('⚠️ Backend server trả về lỗi:', response.status);
+        }
+      } catch (error) {
+        // Chỉ log, không hiển thị toast vì có thể backend chưa sẵn sàng
+        console.warn('⚠️ Không thể kết nối đến backend server:', error.message);
+        console.info('💡 Đảm bảo backend đang chạy tại http://localhost:5000');
+      }
+    };
+    
+    // Chỉ check health khi không phải production hoặc khi cần thiết
+    if (process.env.NODE_ENV !== 'production') {
+      checkBackendHealth();
+    }
   }, []);
 
   if (isLoading) {
@@ -156,6 +184,7 @@ const AppRoutes = () => {
       <Route path="/login" element={!isAuthenticated ? <Login /> : <Navigate to="/dashboard" replace />} />
       <Route path="/register" element={!isAuthenticated ? <Register /> : <Navigate to="/dashboard" replace />} />
       <Route path="/google/callback" element={<GoogleCallback />} />
+      <Route path="/payments/vnpay/callback" element={<VnpayCallback />} />
       <Route path="/verify/:blockchainId" element={<Verify />} />
 
       {/* Protected Routes */}

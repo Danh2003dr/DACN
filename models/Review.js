@@ -125,7 +125,7 @@ const reviewSchema = new mongoose.Schema({
   // Loại đánh giá
   reviewType: {
     type: String,
-    enum: ['purchase', 'usage', 'service', 'quality_check', 'complaint', 'recommendation'],
+    enum: ['purchase', 'usage', 'service', 'quality_check', 'complaint', 'recommendation', 'delivery', 'effectiveness', 'contract'],
     default: 'usage'
   },
   

@@ -175,9 +175,20 @@ api.interceptors.response.use(
       }
     } else {
       // Network error - không kết nối được đến server
-      toast.error('Không thể kết nối đến server. Vui lòng kiểm tra kết nối mạng hoặc thử lại sau.', {
-        id: 'network-error' // Dùng id để tránh duplicate toasts
-      });
+      // Chỉ hiển thị toast nếu không phải là request bị skip hoặc đã hiển thị gần đây
+      if (!config.skipErrorHandler) {
+        // Kiểm tra xem đã hiển thị toast gần đây chưa (trong 5 giây)
+        const lastNetworkError = sessionStorage.getItem('lastNetworkErrorTime');
+        const now = Date.now();
+        
+        if (!lastNetworkError || (now - parseInt(lastNetworkError)) > 5000) {
+          toast.error('Không thể kết nối đến server. Vui lòng kiểm tra:\n1. Backend có đang chạy tại http://localhost:5000?\n2. Mở Browser Console (F12) để xem lỗi chi tiết', {
+            id: 'network-error', // Dùng id để tránh duplicate toasts
+            duration: 6000
+          });
+          sessionStorage.setItem('lastNetworkErrorTime', now.toString());
+        }
+      }
     }
     
     return Promise.reject(error);
@@ -1292,6 +1303,17 @@ export const paymentAPI = {
     }
   },
 
+  // Tạo payment request với VNPay
+  createVnpayPayment: async (data) => {
+    try {
+      const response = await api.post('/payments/vnpay/create', data);
+      return response.data;
+    } catch (error) {
+      console.error('Error creating VNPay payment:', error);
+      throw error;
+    }
+  },
+
   // Kiểm tra trạng thái thanh toán MoMo
   checkMomoPaymentStatus: async (paymentId) => {
     try {
@@ -1346,13 +1368,24 @@ export const supplierAPI = {
 
   // Update supplier rating
   updateSupplierRating: async (id, data) => {
-    const response = await api.post(`/suppliers/${id}/rating`, data);
+    // Ensure ID is properly encoded in URL
+    const encodedId = encodeURIComponent(String(id || '').trim());
+    if (!encodedId || encodedId === '') {
+      throw new Error('Supplier ID không hợp lệ');
+    }
+    const response = await api.post(`/suppliers/${encodedId}/rating`, data);
     return response.data;
   },
 
   // Create contract
   createContract: async (id, data) => {
-    const response = await api.post(`/suppliers/${id}/contracts`, data);
+    // Validate và encode ID để đảm bảo URL đúng
+    if (!id || typeof id !== 'string' || id.trim() === '' || id.startsWith('.')) {
+      throw new Error('ID nhà cung ứng không hợp lệ.');
+    }
+    // Encode ID để đảm bảo URL đúng
+    const encodedId = encodeURIComponent(id.trim());
+    const response = await api.post(`/suppliers/${encodedId}/contracts`, data);
     return response.data;
   },
 

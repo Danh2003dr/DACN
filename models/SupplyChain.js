@@ -141,6 +141,37 @@ const supplyChainSchema = new mongoose.Schema({
     permissions: [String]
   }],
   
+  // Người giao hàng (shipper) - tài khoản chịu trách nhiệm vận chuyển hoặc bên thứ 3
+  shipper: {
+    shipperId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      required: false // Không bắt buộc vì có thể là bên thứ 3
+    },
+    shipperName: {
+      type: String,
+      required: true // Bắt buộc phải có tên (từ user hoặc bên thứ 3)
+    },
+    shipperRole: {
+      type: String,
+      enum: ['manufacturer', 'distributor', 'dealer', 'pharmacy', 'hospital', 'admin', 'third_party'],
+      required: true
+    },
+    shipperOrganization: String,
+    shipperContact: {
+      phone: String,
+      email: String
+    },
+    assignedAt: {
+      type: Date,
+      default: Date.now
+    },
+    assignedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    }
+  },
+  
   status: {
     type: String,
     enum: ['active', 'recalled', 'expired', 'completed', 'suspended'],

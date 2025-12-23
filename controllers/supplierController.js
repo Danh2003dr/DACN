@@ -157,6 +157,14 @@ const getSupplierById = async (req, res) => {
  */
 const updateSupplierRating = async (req, res) => {
   try {
+    // Log để debug
+    console.log('📝 [updateSupplierRating] Received request:', {
+      supplierId: req.params.id,
+      supplierIdType: typeof req.params.id,
+      ratingData: req.body,
+      userId: req.user?._id
+    });
+    
     const result = await supplierService.updateSupplierRating(req.params.id, req.body, req.user, req);
 
     res.status(200).json({
@@ -165,7 +173,8 @@ const updateSupplierRating = async (req, res) => {
       data: result
     });
   } catch (error) {
-    console.error('Error updating supplier rating:', error);
+    console.error('❌ [updateSupplierRating] Error:', error.message);
+    console.error('   Stack:', error.stack);
     res.status(400).json({
       success: false,
       message: error.message || 'Lỗi khi cập nhật đánh giá.',
@@ -181,6 +190,19 @@ const updateSupplierRating = async (req, res) => {
  */
 const createContract = async (req, res) => {
   try {
+    // Log để debug
+    console.log('📝 [createContract Controller] Received request:', {
+      supplierId: req.params.id,
+      supplierIdType: typeof req.params.id,
+      contractData: {
+        contractType: req.body.contractType,
+        startDate: req.body.startDate,
+        endDate: req.body.endDate,
+        buyerId: req.body.buyerId
+      },
+      userId: req.user?._id
+    });
+    
     const result = await supplierService.createContract({
       ...req.body,
       supplierId: req.params.id
@@ -192,7 +214,8 @@ const createContract = async (req, res) => {
       data: result
     });
   } catch (error) {
-    console.error('Error creating contract:', error);
+    console.error('❌ [createContract Controller] Error:', error.message);
+    console.error('   Stack:', error.stack);
     res.status(400).json({
       success: false,
       message: error.message || 'Lỗi khi tạo hợp đồng.',

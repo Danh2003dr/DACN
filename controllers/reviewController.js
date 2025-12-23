@@ -1,6 +1,7 @@
 const Review = require('../models/Review');
 const User = require('../models/User');
 const Drug = require('../models/Drug');
+const Order = require('../models/Order');
 const mongoose = require('mongoose');
 const TrustScoreService = require('../services/trustScoreService');
 
@@ -113,22 +114,93 @@ const createReview = async (req, res) => {
       });
     }
 
+    // Xác minh đơn hàng nếu có orderId
+    let isVerified = false;
+    let finalVerificationInfo = verificationInfo || {};
+    
+    // Xử lý purchaseDate nếu có (convert string sang Date object)
+    if (finalVerificationInfo.purchaseDate) {
+      try {
+        const purchaseDate = new Date(finalVerificationInfo.purchaseDate);
+        if (!isNaN(purchaseDate.getTime())) {
+          finalVerificationInfo.purchaseDate = purchaseDate;
+        } else {
+          finalVerificationInfo.purchaseDate = null;
+        }
+      } catch (error) {
+        console.error('Error parsing purchaseDate:', error);
+        finalVerificationInfo.purchaseDate = null;
+      }
+    }
+    
+    if (verificationInfo?.orderId) {
+      try {
+        // Tìm order theo orderNumber (orderId có thể là orderNumber hoặc ObjectId)
+        const orderConditions = [
+          { orderNumber: verificationInfo.orderId }
+        ];
+        
+        if (mongoose.Types.ObjectId.isValid(verificationInfo.orderId)) {
+          orderConditions.push({ _id: verificationInfo.orderId });
+        }
+        
+        // Tìm order với điều kiện user có liên quan (buyer hoặc createdBy)
+        // Sử dụng $and để kết hợp điều kiện tìm order và điều kiện user
+        const order = await Order.findOne({
+          $and: [
+            { $or: orderConditions },
+            {
+              $or: [
+                { buyer: req.user._id },
+                { createdBy: req.user._id }
+              ]
+            }
+          ]
+        });
+
+        if (order) {
+          isVerified = true;
+          finalVerificationInfo.verificationMethod = 'order_confirmation';
+          finalVerificationInfo.orderId = order.orderNumber; // Lưu orderNumber thay vì ObjectId để dễ đọc
+          
+          // Nếu có batchNumber trong order items, tự động điền vào
+          if (!finalVerificationInfo.batchNumber && order.items && order.items.length > 0) {
+            try {
+              const OrderItem = require('../models/OrderItem');
+              const orderItems = await OrderItem.find({ order: order._id });
+              if (orderItems.length > 0 && orderItems[0].batchNumber) {
+                finalVerificationInfo.batchNumber = orderItems[0].batchNumber;
+              }
+            } catch (error) {
+              console.error('Error loading order items for batch number:', error);
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error verifying order:', error);
+        // Không throw error, chỉ đánh dấu là không xác minh được
+      }
+    }
+
     // Tạo đánh giá
     const reviewData = {
       targetType,
       targetId: resolvedTargetId,
       targetName,
       overallRating,
-      criteriaRatings: criteriaRatings || {},
+      criteriaRatings: criteriaRatings ? Object.fromEntries(
+        Object.entries(criteriaRatings).map(([key, value]) => [key, value !== null && value !== undefined && value !== '' ? Number(value) : null])
+      ) : {},
       title,
       content,
       reviewType: reviewType || 'usage',
       isAnonymous: isAnon,
       reviewerInfo: reviewerInfo || {},
-      verificationInfo: verificationInfo || {},
+      verificationInfo: finalVerificationInfo,
       tags: tags || [],
       source: 'web',
-      language: 'vi'
+      language: 'vi',
+      isVerified: isVerified
     };
 
     // Admin tạo đánh giá thì tự động duyệt để cập nhật điểm tín nhiệm ngay

@@ -88,27 +88,49 @@ const Suppliers = () => {
 
   // Helper function để normalize ID thành string
   const normalizeId = (id, fallbackKey = '') => {
-    if (!id) return '';
+    if (!id && id !== 0) return '';
     
-    if (typeof id === 'string' && id.trim() !== '' && id !== '[object Object]') {
-      return id;
+    // Nếu đã là string hợp lệ, trim và trả về
+    if (typeof id === 'string') {
+      const trimmed = id.trim();
+      if (trimmed !== '' && trimmed !== '[object Object]') {
+        return trimmed;
+      }
+      return '';
     }
     
+    // Nếu là number, chuyển sang string
+    if (typeof id === 'number') {
+      return String(id);
+    }
+    
+    // Nếu là object
     if (typeof id === 'object' && id !== null) {
       // Nếu là ObjectId object, sử dụng toString()
       if (id.toString && typeof id.toString === 'function') {
-        const stringId = id.toString();
-        if (stringId && stringId !== '[object Object]') {
-          return stringId;
+        try {
+          const stringId = id.toString();
+          if (stringId && stringId !== '[object Object]' && stringId.trim() !== '') {
+            return stringId.trim();
+          }
+        } catch (e) {
+          console.warn('Error calling toString() on ID:', e);
         }
       }
       
       // Thử lấy _id hoặc id từ nested object
-      if (id._id) {
-        return normalizeId(id._id, fallbackKey);
+      if (id._id !== undefined && id._id !== null) {
+        const normalized = normalizeId(id._id, fallbackKey);
+        if (normalized) return normalized;
       }
-      if (id.id) {
-        return normalizeId(id.id, fallbackKey);
+      if (id.id !== undefined && id.id !== null) {
+        const normalized = normalizeId(id.id, fallbackKey);
+        if (normalized) return normalized;
+      }
+      
+      // Thử lấy từ các key khác nếu có
+      if (id.str && typeof id.str === 'string') {
+        return id.str.trim();
       }
     }
     
@@ -221,17 +243,69 @@ const Suppliers = () => {
         return;
       }
 
-      // Normalize supplier ID to ensure it's a string
-      let supplierId = normalizeId(selectedSupplier._id);
-      if (!supplierId && selectedSupplier.supplierCode) {
-        // Fallback to supplierCode if _id is not available
-        supplierId = selectedSupplier.supplierCode;
+      // Log selectedSupplier để debug
+      console.log('🔍 [handleCreateContract] selectedSupplier:', {
+        _id: selectedSupplier._id,
+        _idType: typeof selectedSupplier._id,
+        supplierCode: selectedSupplier.supplierCode,
+        supplierCodeType: typeof selectedSupplier.supplierCode,
+        id: selectedSupplier.id,
+        fullObject: selectedSupplier
+      });
+
+      // Normalize supplier ID - ưu tiên _id, fallback về supplierCode
+      let supplierId = '';
+      
+      // Thử lấy _id trước (ưu tiên vì chắc chắn hơn)
+      if (selectedSupplier._id) {
+        supplierId = normalizeId(selectedSupplier._id);
+        // Validate ObjectId format (24 hex characters)
+        if (supplierId && /^[0-9a-fA-F]{24}$/.test(supplierId)) {
+          console.log('✅ [handleCreateContract] Using _id as supplierId:', supplierId);
+        } else {
+          // Nếu _id không hợp lệ, reset để thử supplierCode
+          if (!/^[0-9a-fA-F]{24}$/.test(supplierId)) {
+            console.warn('⚠️ [handleCreateContract] _id không phải ObjectId hợp lệ, sẽ thử supplierCode');
+            supplierId = '';
+          }
+        }
+      }
+      
+      // Nếu không có _id hợp lệ, thử dùng supplierCode
+      if (!supplierId || supplierId === '' || supplierId === '[object Object]' || !/^[0-9a-fA-F]{24}$/.test(supplierId)) {
+        if (selectedSupplier.supplierCode && typeof selectedSupplier.supplierCode === 'string') {
+          supplierId = selectedSupplier.supplierCode.trim();
+          console.log('✅ [handleCreateContract] Using supplierCode as supplierId:', supplierId);
+        } else if (selectedSupplier.id) {
+          const normalizedId = normalizeId(selectedSupplier.id);
+          if (normalizedId && /^[0-9a-fA-F]{24}$/.test(normalizedId)) {
+            supplierId = normalizedId;
+            console.log('✅ [handleCreateContract] Using id as supplierId:', supplierId);
+          }
+        }
       }
 
-      if (!supplierId) {
+      // Validate supplierId không được rỗng, không được có dấu chấm ở đầu, và phải có ít nhất 3 ký tự
+      if (!supplierId || supplierId === '' || supplierId === '[object Object]' || 
+          supplierId.length < 3 || supplierId.startsWith('.')) {
+        console.error('❌ [handleCreateContract] Invalid supplier ID:', {
+          supplierId,
+          supplierIdLength: supplierId?.length,
+          selectedSupplier,
+          _id: selectedSupplier._id,
+          supplierCode: selectedSupplier.supplierCode,
+          id: selectedSupplier.id
+        });
         toast.error('Không thể lấy ID của nhà cung ứng. Vui lòng thử lại.');
         return;
       }
+
+      console.log('📤 [handleCreateContract] Sending contract data:', {
+        supplierId,
+        contractType: contractData.contractType,
+        startDate: contractData.startDate,
+        endDate: contractData.endDate
+      });
 
       await supplierAPI.createContract(supplierId, contractData);
       setShowContractModal(false);
@@ -282,14 +356,84 @@ const Suppliers = () => {
 
   const handleUpdateRating = async () => {
     try {
-      if (!selectedSupplier) return;
+      if (!selectedSupplier) {
+        toast.error('Vui lòng chọn nhà cung ứng để đánh giá');
+        return;
+      }
 
-      // Normalize supplier ID
-      const supplierId = normalizeId(selectedSupplier._id) || selectedSupplier.supplierCode;
-      if (!supplierId) {
+      // Validate rating data - kiểm tra giá trị phải > 0
+      if (!ratingData.quality || ratingData.quality <= 0 || 
+          !ratingData.delivery || ratingData.delivery <= 0 || 
+          !ratingData.service || ratingData.service <= 0 || 
+          !ratingData.price || ratingData.price <= 0) {
+        toast.error('Vui lòng nhập đầy đủ các đánh giá (1-5)');
+        return;
+      }
+
+      // Normalize supplier ID - ưu tiên _id, fallback về supplierCode
+      let supplierId = '';
+      
+      // Log selectedSupplier để debug
+      console.log('🔍 [handleUpdateRating] selectedSupplier:', {
+        _id: selectedSupplier._id,
+        _idType: typeof selectedSupplier._id,
+        supplierCode: selectedSupplier.supplierCode,
+        supplierCodeType: typeof selectedSupplier.supplierCode,
+        id: selectedSupplier.id,
+        fullObject: selectedSupplier
+      });
+      
+      // Thử lấy _id trước (ưu tiên vì chắc chắn hơn)
+      if (selectedSupplier._id) {
+        supplierId = normalizeId(selectedSupplier._id);
+        // Validate ObjectId format (24 hex characters)
+        if (supplierId && /^[0-9a-fA-F]{24}$/.test(supplierId)) {
+          console.log('✅ Using _id as supplierId:', supplierId);
+        } else {
+          // Nếu _id không hợp lệ, reset để thử supplierCode
+          if (!/^[0-9a-fA-F]{24}$/.test(supplierId)) {
+            console.warn('⚠️ _id không phải ObjectId hợp lệ, sẽ thử supplierCode');
+            supplierId = '';
+          }
+        }
+      }
+      
+      // Nếu không có _id hợp lệ, thử dùng supplierCode
+      if (!supplierId || supplierId === '' || supplierId === '[object Object]' || !/^[0-9a-fA-F]{24}$/.test(supplierId)) {
+        if (selectedSupplier.supplierCode && typeof selectedSupplier.supplierCode === 'string') {
+          supplierId = selectedSupplier.supplierCode.trim();
+          console.log('✅ Using supplierCode as supplierId:', supplierId);
+        } else if (selectedSupplier.id) {
+          const normalizedId = normalizeId(selectedSupplier.id);
+          if (normalizedId && /^[0-9a-fA-F]{24}$/.test(normalizedId)) {
+            supplierId = normalizedId;
+            console.log('✅ Using id as supplierId:', supplierId);
+          }
+        }
+      }
+      
+      // Validate supplierId không được rỗng, không được có dấu chấm ở đầu, và phải có ít nhất 3 ký tự
+      if (!supplierId || supplierId === '' || supplierId === '[object Object]' || 
+          supplierId.length < 3 || supplierId.startsWith('.')) {
+        console.error('❌ Invalid supplier ID:', {
+          supplierId,
+          supplierIdLength: supplierId?.length,
+          selectedSupplier,
+          _id: selectedSupplier._id,
+          supplierCode: selectedSupplier.supplierCode,
+          id: selectedSupplier.id
+        });
         toast.error('Không thể lấy ID của nhà cung ứng. Vui lòng thử lại.');
         return;
       }
+
+      console.log('Updating rating for supplier:', {
+        supplierId,
+        supplierName: selectedSupplier.name,
+        supplierCode: selectedSupplier.supplierCode,
+        _id: selectedSupplier._id,
+        ratingData
+      });
 
       await supplierAPI.updateSupplierRating(supplierId, ratingData);
       setShowRatingModal(false);
@@ -299,6 +443,11 @@ const Suppliers = () => {
       loadSuppliers();
     } catch (error) {
       console.error('Error updating rating:', error);
+      console.error('Error details:', {
+        response: error.response?.data,
+        status: error.response?.status,
+        supplier: selectedSupplier
+      });
       const errorMessage = error.response?.data?.message || error.message || 'Lỗi khi cập nhật đánh giá';
       toast.error(errorMessage);
     }
@@ -488,6 +637,13 @@ const Suppliers = () => {
                       <button
                         onClick={() => {
                           setSelectedSupplier(supplier);
+                          // Khởi tạo rating data từ supplier hiện tại hoặc giá trị mặc định
+                          setRatingData({
+                            quality: supplier.rating?.quality || 0,
+                            delivery: supplier.rating?.delivery || 0,
+                            service: supplier.rating?.service || 0,
+                            price: supplier.rating?.price || 0
+                          });
                           setShowRatingModal(true);
                         }}
                         className="text-yellow-600 hover:text-yellow-800"

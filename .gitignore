@@ -10,5 +10,12 @@ yarn-error.log*
 .env.local
 .env.*.local
 
-# ... existing code ...
+# Generated / runtime data (do not commit)
+backups/
+uploads/
+
+# Sensitive docs (do not commit)
+VNPAY_CREDENTIALS.md
+
+# Dependencies
 node_modules

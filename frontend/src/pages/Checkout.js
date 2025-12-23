@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import { useCart } from '../contexts/CartContext';
 import { useAuth } from '../contexts/AuthContext';
-import { orderAPI, drugAPI, userAPI } from '../utils/api';
+import { orderAPI, drugAPI, userAPI, paymentAPI } from '../utils/api';
 import toast from 'react-hot-toast';
 
 const Checkout = () => {
@@ -225,17 +225,214 @@ const Checkout = () => {
       }
 
       if (orders.length > 0) {
+        // Nếu là VNPay payment, tạo payment request và redirect
+        if (paymentMethod === 'vnpay') {
+          try {
+            const totalAmount = getTotalPrice();
+            
+            // Tính tổng tiền của tất cả orders (có thể là nhiều orders nếu có nhiều manufacturer)
+            const totalOrderAmount = orders.reduce((sum, order) => {
+              return sum + (order.totalAmount || order.items.reduce((itemSum, item) => {
+                return itemSum + ((item.unitPrice || 0) * (item.quantity || 0));
+              }, 0));
+            }, 0);
+
+            // Tạo VNPay payment request
+            // Có thể dùng order đầu tiên hoặc tạo một invoice tổng hợp
+            // Ở đây tôi sẽ dùng order đầu tiên làm reference
+            const firstOrder = orders[0];
+            
+            // Đảm bảo orderId là string hợp lệ
+            // Mongoose ObjectId có thể là object, cần convert sang string
+            let orderIdString = null;
+            
+            if (!firstOrder) {
+              throw new Error('Không tìm thấy đơn hàng để thanh toán.');
+            }
+            
+            // Bước 1: Serialize order object để đảm bảo _id được convert đúng
+            let serializedOrder = null;
+            try {
+              serializedOrder = JSON.parse(JSON.stringify(firstOrder));
+            } catch (e) {
+              console.error('💳 [Checkout] Error serializing order:', e);
+              serializedOrder = firstOrder;
+            }
+            
+            // Bước 2: Extract _id từ serialized order
+            if (serializedOrder && serializedOrder._id) {
+              const rawId = serializedOrder._id;
+              
+              // Nếu _id đã là string hợp lệ
+              if (typeof rawId === 'string' && /^[0-9a-fA-F]{24}$/.test(rawId)) {
+                orderIdString = rawId;
+              } 
+              // Nếu _id là object, thử extract
+              else if (typeof rawId === 'object' && rawId !== null) {
+                // Thử các cách extract
+                if (rawId.$oid) {
+                  orderIdString = rawId.$oid;
+                } else if (rawId.toString && typeof rawId.toString === 'function') {
+                  const idStr = rawId.toString();
+                  if (/^[0-9a-fA-F]{24}$/.test(idStr)) {
+                    orderIdString = idStr;
+                  }
+                } else if (rawId._id) {
+                  const idStr = String(rawId._id);
+                  if (/^[0-9a-fA-F]{24}$/.test(idStr)) {
+                    orderIdString = idStr;
+                  }
+                }
+              }
+              // Nếu _id là string nhưng không đúng format, thử trim và validate
+              else if (typeof rawId === 'string') {
+                const trimmed = rawId.trim();
+                if (/^[0-9a-fA-F]{24}$/.test(trimmed)) {
+                  orderIdString = trimmed;
+                }
+              }
+            }
+            
+            // Bước 3: Nếu vẫn chưa có, thử extract từ original order
+            if (!orderIdString && firstOrder._id) {
+              try {
+                if (typeof firstOrder._id === 'string' && /^[0-9a-fA-F]{24}$/.test(firstOrder._id)) {
+                  orderIdString = firstOrder._id;
+                } else if (firstOrder._id && typeof firstOrder._id.toString === 'function') {
+                  const idStr = firstOrder._id.toString();
+                  if (/^[0-9a-fA-F]{24}$/.test(idStr)) {
+                    orderIdString = idStr;
+                  }
+                }
+              } catch (e) {
+                console.error('💳 [Checkout] Error extracting from original _id:', e);
+              }
+            }
+            
+            // Bước 4: Thử dùng field 'id' (Mongoose virtual field)
+            if (!orderIdString && firstOrder.id) {
+              const idStr = String(firstOrder.id);
+              if (/^[0-9a-fA-F]{24}$/.test(idStr)) {
+                orderIdString = idStr;
+              }
+            }
+            
+            // Bước 5: Thử từ serialized order.id
+            if (!orderIdString && serializedOrder && serializedOrder.id) {
+              const idStr = String(serializedOrder.id);
+              if (/^[0-9a-fA-F]{24}$/.test(idStr)) {
+                orderIdString = idStr;
+              }
+            }
+            
+            // Validate orderId format (MongoDB ObjectId là 24 hex characters)
+            if (!orderIdString || !/^[0-9a-fA-F]{24}$/.test(orderIdString)) {
+              console.error('💳 [Checkout] Invalid orderId format:', {
+                orderIdString,
+                orderIdType: typeof orderIdString,
+                orderIdLength: orderIdString?.length,
+                firstOrder: firstOrder ? {
+                  _id: firstOrder._id,
+                  _idType: typeof firstOrder._id,
+                  _idConstructor: firstOrder._id?.constructor?.name,
+                  orderNumber: firstOrder.orderNumber,
+                  serializedOrder: serializedOrder ? {
+                    _id: serializedOrder._id,
+                    _idType: typeof serializedOrder._id
+                  } : null
+                } : null
+              });
+              throw new Error('ID đơn hàng không hợp lệ. Vui lòng thử lại.');
+            }
+            
+            console.log('💳 [Checkout] Creating VNPay payment:', {
+              orderNumber: firstOrder?.orderNumber,
+              orderIdString: orderIdString,
+              orderIdLength: orderIdString?.length,
+              amount: totalOrderAmount || totalAmount,
+              orderIdValid: /^[0-9a-fA-F]{24}$/.test(orderIdString),
+              firstOrderKeys: firstOrder ? Object.keys(firstOrder) : null,
+              firstOrderId: firstOrder?.id,
+              firstOrder_id: firstOrder?._id,
+              serializedOrderId: serializedOrder?.id,
+              serializedOrder_id: serializedOrder?._id
+            });
+            
+            toast.success('Đang chuyển đến trang thanh toán VNPay...');
+            
+            const vnpayResponse = await paymentAPI.createVnpayPayment({
+              orderId: orderIdString, // Đảm bảo là string hợp lệ
+              amount: totalOrderAmount || totalAmount,
+              orderInfo: `Thanh toán đơn hàng ${firstOrder.orderNumber || orderIdString}`
+            });
+
+            if (vnpayResponse.success && vnpayResponse.data.paymentUrl) {
+              // Xóa giỏ hàng
+              clearCart();
+              
+              // Redirect đến VNPay payment page
+              window.location.href = vnpayResponse.data.paymentUrl;
+              return; // Dừng lại, không navigate đến /orders
+            } else {
+              throw new Error('Không thể tạo yêu cầu thanh toán VNPay');
+            }
+          } catch (error) {
+            console.error('Error creating VNPay payment:', error);
+            toast.error(error.response?.data?.message || 'Lỗi khi tạo thanh toán VNPay');
+            // Vẫn giữ orders đã tạo, user có thể thanh toán sau
+            clearCart();
+            navigate('/orders');
+            return;
+          }
+        }
+
+        // Các phương thức thanh toán khác (bank_transfer, cash, credit, momo)
         // Xóa giỏ hàng
         clearCart();
         
         toast.success(`Đã tạo ${orders.length} đơn hàng thành công!`);
+        
+        // Nếu là MoMo, cũng cần xử lý tương tự VNPay
+        if (paymentMethod === 'momo') {
+          try {
+            const totalAmount = getTotalPrice();
+            const totalOrderAmount = orders.reduce((sum, order) => {
+              return sum + (order.totalAmount || order.items.reduce((itemSum, item) => {
+                return itemSum + ((item.unitPrice || 0) * (item.quantity || 0));
+              }, 0));
+            }, 0);
+
+            const firstOrder = orders[0];
+            
+            toast.success('Đang chuyển đến trang thanh toán MoMo...');
+            
+            const momoResponse = await paymentAPI.createMomoPayment({
+              orderId: firstOrder._id,
+              amount: totalOrderAmount || totalAmount
+            });
+
+            if (momoResponse.success && momoResponse.data.paymentUrl) {
+              window.location.href = momoResponse.data.paymentUrl;
+              return;
+            }
+          } catch (error) {
+            console.error('Error creating MoMo payment:', error);
+            toast.error(error.response?.data?.message || 'Lỗi khi tạo thanh toán MoMo');
+          }
+        }
         
         // Redirect đến trang orders
         navigate('/orders');
       }
     } catch (error) {
       console.error('Error creating order:', error);
-      const errorMessage = error.response?.data?.message || 'Tạo đơn hàng thất bại';
+      console.error('Error details:', {
+        status: error.response?.status,
+        message: error.response?.data?.message,
+        error: error.response?.data?.error,
+        data: error.response?.data
+      });
+      const errorMessage = error.response?.data?.message || error.response?.data?.error || 'Tạo đơn hàng thất bại';
       toast.error(errorMessage);
     } finally {
       setLoading(false);
@@ -563,12 +760,12 @@ const Checkout = () => {
                   <input
                     type="radio"
                     name="paymentMethod"
-                    value="check"
-                    checked={paymentMethod === 'check'}
+                    value="vnpay"
+                    checked={paymentMethod === 'vnpay'}
                     onChange={(e) => setPaymentMethod(e.target.value)}
                     className="text-blue-600 focus:ring-blue-500"
                   />
-                  <span className="flex-1">Séc</span>
+                  <span className="flex-1">VNPay (Thẻ ATM/Internet Banking)</span>
                 </label>
                 
                 {/* Credit Payment Option */}

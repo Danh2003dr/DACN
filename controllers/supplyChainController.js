@@ -141,6 +141,58 @@ const createSupplyChain = async (req, res) => {
       actorProfiles.push(creatorProfile);
     }
     
+    // Xử lý người giao hàng (shipper) - có thể được chỉ định khi tạo
+    let shipperData = null;
+    if (req.body.shipper) {
+      // Trường hợp 1: Chọn từ user trong hệ thống (có shipperId)
+      if (req.body.shipper.shipperId) {
+        const shipperId = sanitizeInput(req.body.shipper.shipperId);
+        
+        // Validate ObjectId
+        if (mongoose.Types.ObjectId.isValid(shipperId)) {
+          const shipperUser = await User.findById(shipperId).select('fullName phone email organizationInfo role');
+          if (shipperUser) {
+            // Chỉ cho phép các role có thể giao hàng
+            const allowedShipperRoles = ['manufacturer', 'distributor', 'dealer', 'pharmacy', 'hospital', 'admin'];
+            if (allowedShipperRoles.includes(shipperUser.role)) {
+              shipperData = {
+                shipperId: shipperUser._id,
+                shipperName: shipperUser.fullName || shipperUser.username,
+                shipperRole: shipperUser.role,
+                shipperOrganization: shipperUser.organizationInfo?.name || '',
+                shipperContact: {
+                  phone: shipperUser.phone || '',
+                  email: shipperUser.email || ''
+                },
+                assignedAt: new Date(),
+                assignedBy: req.user._id
+              };
+            } else {
+              console.warn(`⚠️ User ${shipperId} có role ${shipperUser.role} không được phép làm shipper`);
+            }
+          }
+        }
+      } 
+      // Trường hợp 2: Bên thứ 3 vận chuyển (không có shipperId, chỉ có thông tin text)
+      else if (req.body.shipper.shipperName) {
+        const shipperName = sanitizeInput(req.body.shipper.shipperName);
+        if (shipperName && shipperName.trim().length > 0) {
+          shipperData = {
+            shipperName: shipperName.trim(),
+            shipperRole: req.body.shipper.shipperRole || 'third_party',
+            shipperOrganization: sanitizeInput(req.body.shipper.shipperOrganization)?.trim() || '',
+            shipperContact: {
+              phone: sanitizeInput(req.body.shipper.shipperContact?.phone)?.trim() || '',
+              email: sanitizeInput(req.body.shipper.shipperContact?.email)?.trim() || ''
+            },
+            assignedAt: new Date(),
+            assignedBy: req.user._id
+            // Không có shipperId vì là bên thứ 3
+          };
+        }
+      }
+    }
+    
     const supplyChain = new SupplyChain({
       drugId,
       drugBatchNumber,
@@ -150,6 +202,7 @@ const createSupplyChain = async (req, res) => {
         verificationUrl: `${serverUrl}/verify/${verificationId}`
       },
       actors: actorProfiles,
+      shipper: shipperData,
       createdBy: req.user._id,
       steps: []
     });
@@ -451,14 +504,32 @@ const addSupplyChainStep = async (req, res) => {
     supplyChain.steps.push(newStep);
     
     // Cập nhật currentLocation với coordinates đã geocode (nếu có)
+    // Nếu có shipper và action là shipped/received, dùng thông tin shipper
+    let locationActor = {
+      actorId: req.user._id,
+      actorName: req.user.fullName,
+      actorRole: req.user.role
+    };
+    
+    // Nếu có shipper và đang thực hiện hành động giao hàng, ưu tiên dùng shipper
+    if (supplyChain.shipper && supplyChain.shipper.shipperId && 
+        (action === 'shipped' || action === 'received' || action === 'handover')) {
+      // Kiểm tra quyền: chỉ shipper hoặc admin mới có thể cập nhật location khi giao hàng
+      if (req.user._id.toString() === supplyChain.shipper.shipperId.toString() || req.user.role === 'admin') {
+        locationActor = {
+          actorId: supplyChain.shipper.shipperId,
+          actorName: supplyChain.shipper.shipperName,
+          actorRole: supplyChain.shipper.shipperRole
+        };
+      }
+    }
+    
     const finalCoordinates =
       hasValidCoordinates(processedLocation?.coordinates)
         ? processedLocation.coordinates
         : (hasValidCoordinates(req.user.location?.coordinates) ? req.user.location.coordinates : undefined);
     supplyChain.currentLocation = {
-      actorId: req.user._id,
-      actorName: req.user.fullName,
-      actorRole: req.user.role,
+      ...locationActor,
       address: processedLocation?.address || req.user.location?.address,
       coordinates: finalCoordinates,
       lastUpdated: new Date()

@@ -546,16 +546,16 @@ const Layout = ({ children }) => {
             <div className="ml-4 flex items-center md:ml-6">
               {/* Notifications */}
               <div className="relative" ref={notificationDropdownRef}>
-                <button
-                  type="button"
+              <button
+                type="button"
                   onClick={() => setShowNotificationDropdown(!showNotificationDropdown)}
                   className="bg-white p-1 rounded-full text-gray-400 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 relative"
-                >
-                  <Bell className="h-6 w-6" />
+              >
+                <Bell className="h-6 w-6" />
                   {notificationStats.unread > 0 && (
                     <span className="absolute top-0 right-0 inline-block w-3 h-3 bg-red-500 rounded-full border-2 border-white"></span>
                   )}
-                </button>
+              </button>
 
                 {/* Notification Dropdown */}
                 {showNotificationDropdown && (

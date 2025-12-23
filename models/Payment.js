@@ -75,7 +75,7 @@ const paymentSchema = new mongoose.Schema({
   // Phương thức thanh toán
   method: {
     type: String,
-    enum: ['cash', 'bank_transfer', 'credit_card', 'check', 'mobile_payment', 'momo', 'other'],
+    enum: ['cash', 'bank_transfer', 'credit_card', 'check', 'mobile_payment', 'momo', 'vnpay', 'other'],
     required: true,
     index: true
   },

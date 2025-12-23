@@ -74,6 +74,18 @@ const createOrder = async (data, user, req = null) => {
       });
     }
 
+    // Validate payment method
+    const validPaymentMethods = ['cash', 'bank_transfer', 'credit_card', 'check', 'momo', 'vnpay', 'other'];
+    const finalPaymentMethod = paymentMethod || 'bank_transfer';
+    
+    if (!validPaymentMethods.includes(finalPaymentMethod)) {
+      console.error('❌ Invalid payment method:', finalPaymentMethod);
+      console.error('Valid methods:', validPaymentMethods);
+      throw new Error(`Phương thức thanh toán không hợp lệ: ${finalPaymentMethod}. Các phương thức hợp lệ: ${validPaymentMethods.join(', ')}`);
+    }
+
+    console.log('✅ Creating order with payment method:', finalPaymentMethod);
+
     // Tạo order
     const order = await Order.create({
       orderNumber,
@@ -87,7 +99,7 @@ const createOrder = async (data, user, req = null) => {
       sellerOrganization,
       shippingAddress: shippingAddress || {},
       billingAddress: billingAddress || shippingAddress || {},
-      paymentMethod: paymentMethod || 'bank_transfer',
+      paymentMethod: finalPaymentMethod,
       shipping: {
         method: shippingMethod || 'standard'
       },

@@ -33,7 +33,7 @@ import {
   ChevronUp
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { supplyChainAPI, drugAPI } from '../utils/api';
+import { supplyChainAPI, drugAPI, userAPI } from '../utils/api';
 import toast from 'react-hot-toast';
 import DrugTimeline from '../components/DrugTimeline';
 import SupplyChainMap from '../components/SupplyChainMap';
@@ -443,6 +443,37 @@ const SupplyChain = () => {
         toast.error('Vui lòng điền đầy đủ thông tin bắt buộc');
         return;
       }
+      
+      // Xử lý shipper data
+      if (data.shipperType === 'user' && data.shipperId) {
+        // Chọn từ user trong hệ thống
+        data.shipper = {
+          shipperId: data.shipperId
+        };
+      } else if (data.shipperType === 'third_party') {
+        // Bên thứ 3 vận chuyển - chỉ có thông tin text, không có shipperId
+        if (!data.thirdPartyName || !data.thirdPartyName.trim()) {
+          toast.error('Vui lòng nhập tên bên vận chuyển');
+          return;
+        }
+        data.shipper = {
+          shipperName: data.thirdPartyName.trim(),
+          shipperOrganization: data.thirdPartyOrganization?.trim() || '',
+          shipperContact: {
+            phone: data.thirdPartyPhone?.trim() || '',
+            email: data.thirdPartyEmail?.trim() || ''
+          },
+          shipperRole: 'third_party' // Đánh dấu là bên thứ 3
+        };
+      }
+      
+      // Xóa các field tạm không cần gửi lên backend
+      delete data.shipperType;
+      delete data.shipperId;
+      delete data.thirdPartyName;
+      delete data.thirdPartyOrganization;
+      delete data.thirdPartyPhone;
+      delete data.thirdPartyEmail;
       
       console.log('📤 Creating supply chain with data:', { ...data, drugId: data.drugId });
       
@@ -1232,7 +1263,10 @@ const CreateSupplyChainModal = ({ onSubmit, onClose, loading }) => {
   const { register, handleSubmit, formState: { errors }, watch, setValue } = useForm();
   const [drugs, setDrugs] = useState([]);
   const [loadingDrugs, setLoadingDrugs] = useState(false);
+  const [shippers, setShippers] = useState([]);
+  const [loadingShippers, setLoadingShippers] = useState(false);
   const selectedDrugId = watch('drugId');
+  const shipperType = watch('shipperType');
 
   // Load danh sách drugs khi modal mở
   useEffect(() => {
@@ -1278,6 +1312,61 @@ const CreateSupplyChainModal = ({ onSubmit, onClose, loading }) => {
     };
 
     loadDrugs();
+  }, []);
+
+  // Load danh sách shippers (users có thể làm shipper)
+  useEffect(() => {
+    const loadShippers = async () => {
+      try {
+        setLoadingShippers(true);
+        // Các role có thể làm shipper
+        const shipperRoles = ['manufacturer', 'distributor', 'dealer', 'pharmacy', 'hospital', 'admin'];
+        let allShippers = [];
+        
+        // Load users từ từng role
+        for (const role of shipperRoles) {
+          try {
+            let page = 1;
+            let hasMore = true;
+            const limit = 100;
+            
+            while (hasMore) {
+              const response = await userAPI.getUsers({ role, limit, page });
+              
+              if (response.success && response.data?.users) {
+                allShippers = [...allShippers, ...response.data.users];
+                
+                const total = response.data.pagination?.total || 0;
+                const currentPage = response.data.pagination?.current || page;
+                const totalPages = response.data.pagination?.pages || 1;
+                
+                if (currentPage >= totalPages || allShippers.length >= total) {
+                  hasMore = false;
+                } else {
+                  page++;
+                }
+              } else {
+                hasMore = false;
+              }
+            }
+          } catch (error) {
+            console.warn(`Error loading shippers for role ${role}:`, error);
+          }
+        }
+        
+        if (allShippers.length > 0) {
+          setShippers(allShippers);
+          console.log(`✅ Đã tải ${allShippers.length} shippers`);
+        }
+      } catch (error) {
+        console.error('Error loading shippers:', error);
+        // Không hiển thị toast error vì đây là optional field
+      } finally {
+        setLoadingShippers(false);
+      }
+    };
+    
+    loadShippers();
   }, []);
 
   // Normalize drug ID helper
@@ -1408,6 +1497,127 @@ const CreateSupplyChainModal = ({ onSubmit, onClose, loading }) => {
                 <option value="bottle">Chai</option>
                 <option value="tablet">Viên</option>
               </select>
+            </div>
+          </div>
+
+          {/* Shipper Selection */}
+          <div className="border-t pt-4">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Người vận chuyển (Shipper)
+            </label>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Loại shipper
+                </label>
+                <select
+                  {...register('shipperType')}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">Không chọn</option>
+                  <option value="user">Chọn từ hệ thống</option>
+                  <option value="third_party">Bên thứ 3 vận chuyển</option>
+                </select>
+              </div>
+
+              {/* Chọn từ user trong hệ thống */}
+              {shipperType === 'user' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Chọn người vận chuyển *
+                  </label>
+                  {loadingShippers ? (
+                    <div className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 flex items-center">
+                      <span className="text-gray-500 text-sm">Đang tải danh sách...</span>
+                    </div>
+                  ) : (
+                    <select
+                      {...register('shipperId', { 
+                        required: shipperType === 'user' ? 'Vui lòng chọn người vận chuyển' : false 
+                      })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="">Chọn người vận chuyển</option>
+                      {shippers.map((shipper) => {
+                        const shipperId = shipper._id || shipper.id;
+                        if (!shipperId) return null;
+                        return (
+                          <option key={shipperId} value={shipperId}>
+                            {shipper.fullName || shipper.username || 'N/A'}
+                            {shipper.organizationInfo?.name ? ` - ${shipper.organizationInfo.name}` : ''}
+                            {shipper.role ? ` (${shipper.role})` : ''}
+                          </option>
+                        );
+                      })}
+                    </select>
+                  )}
+                  {errors.shipperId && (
+                    <p className="text-red-500 text-sm mt-1">{errors.shipperId.message}</p>
+                  )}
+                </div>
+              )}
+
+              {/* Bên thứ 3 vận chuyển */}
+              {shipperType === 'third_party' && (
+                <div className="bg-blue-50 p-4 rounded-lg space-y-4 border border-blue-200">
+                  <h4 className="font-medium text-gray-900 text-sm">📦 Thông tin bên thứ 3 vận chuyển</h4>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Tên bên vận chuyển *
+                    </label>
+                    <input
+                      type="text"
+                      {...register('thirdPartyName', { 
+                        required: shipperType === 'third_party' ? 'Vui lòng nhập tên bên vận chuyển' : false 
+                      })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      placeholder="Ví dụ: Công ty Vận chuyển ABC"
+                    />
+                    {errors.thirdPartyName && (
+                      <p className="text-red-500 text-sm mt-1">{errors.thirdPartyName.message}</p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Tên tổ chức
+                    </label>
+                    <input
+                      type="text"
+                      {...register('thirdPartyOrganization')}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      placeholder="Tên công ty/tổ chức"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Số điện thoại
+                      </label>
+                      <input
+                        type="tel"
+                        {...register('thirdPartyPhone')}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                        placeholder="Số điện thoại"
+                      />
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Email
+                      </label>
+                      <input
+                        type="email"
+                        {...register('thirdPartyEmail')}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                        placeholder="Email"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
           

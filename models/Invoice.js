@@ -162,7 +162,7 @@ const invoiceSchema = new mongoose.Schema({
   // Phương thức thanh toán
   paymentMethod: {
     type: String,
-    enum: ['cash', 'bank_transfer', 'credit_card', 'check', 'momo', 'other'],
+    enum: ['cash', 'bank_transfer', 'credit_card', 'check', 'momo', 'vnpay', 'other'],
     default: 'bank_transfer'
   },
   

@@ -472,7 +472,7 @@ const paginationSchema = Joi.object({
   
   role: Joi.string()
     .allow('')
-    .valid('admin', 'manufacturer', 'distributor', 'hospital', 'patient', '')
+    .valid('admin', 'manufacturer', 'distributor', 'dealer', 'pharmacy', 'hospital', 'patient', '')
     .optional()
     .messages({
       'any.only': 'Vai trò không hợp lệ'

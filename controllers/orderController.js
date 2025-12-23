@@ -17,11 +17,17 @@ const createOrder = async (req, res) => {
       data: result
     });
   } catch (error) {
-    console.error('Error creating order:', error);
+    console.error('❌ Error creating order:', error);
+    console.error('Error name:', error.name);
+    console.error('Error message:', error.message);
+    if (error.name === 'ValidationError') {
+      console.error('Validation errors:', error.errors);
+    }
     res.status(400).json({
       success: false,
       message: error.message || 'Lỗi khi tạo đơn hàng.',
-      error: error.message
+      error: error.message,
+      details: error.errors || undefined
     });
   }
 };

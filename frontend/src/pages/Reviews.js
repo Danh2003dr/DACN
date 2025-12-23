@@ -230,6 +230,14 @@ const Reviews = () => {
         reviewType: data.reviewType || 'usage'
       };
       
+      // Thêm criteriaRatings và verificationInfo nếu có (đã được clean trong form onSubmit)
+      if (data.criteriaRatings && Object.keys(data.criteriaRatings).length > 0) {
+        payload.criteriaRatings = data.criteriaRatings;
+      }
+      if (data.verificationInfo && Object.keys(data.verificationInfo).length > 0) {
+        payload.verificationInfo = data.verificationInfo;
+      }
+      
       console.log('📤 Sending payload:', payload);
       
       const response = await reviewAPI.createReview(payload);
@@ -296,6 +304,21 @@ const Reviews = () => {
       distributor: 'Nhà phân phối',
       hospital: 'Bệnh viện',
       manufacturer: 'Nhà sản xuất'
+    };
+    return map[type] || type || 'Không rõ';
+  };
+
+  const getReviewTypeLabel = (type) => {
+    const map = {
+      usage: 'Trải nghiệm sử dụng',
+      purchase: 'Mua hàng',
+      service: 'Dịch vụ',
+      quality_check: 'Kiểm định chất lượng',
+      complaint: 'Phản ánh / khiếu nại',
+      recommendation: 'Đề xuất cải tiến',
+      delivery: 'Đánh giá giao hàng',
+      effectiveness: 'Hiệu quả điều trị',
+      contract: 'Thực hiện hợp đồng'
     };
     return map[type] || type || 'Không rõ';
   };
@@ -493,6 +516,11 @@ const Reviews = () => {
                           <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-50 text-gray-700 border border-gray-200">
                             {targetType}
                           </span>
+                          {review.reviewType && (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200">
+                              {getReviewTypeLabel(review.reviewType)}
+                            </span>
+                          )}
 
                           {(activeTab === 'admin' || activeTab === 'my') && (
                             <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${statusMeta.cls}`}>
@@ -528,6 +556,55 @@ const Reviews = () => {
                           <p className="mt-3 text-sm text-gray-700 line-clamp-2">
                             {review.content}
                           </p>
+                        )}
+
+                        {/* Hiển thị tiêu chí đánh giá chi tiết */}
+                        {review.criteriaRatings && Object.keys(review.criteriaRatings).length > 0 && (
+                          <div className="mt-3 space-y-1">
+                            <p className="text-xs font-medium text-gray-700">Đánh giá chi tiết:</p>
+                            <div className="flex flex-wrap gap-2">
+                              {review.criteriaRatings.drugQuality && (
+                                <span className="text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded border border-blue-200">
+                                  Chất lượng: {review.criteriaRatings.drugQuality}/5
+                                </span>
+                              )}
+                              {review.criteriaRatings.effectiveness && (
+                                <span className="text-xs bg-green-50 text-green-700 px-2 py-1 rounded border border-green-200">
+                                  Hiệu quả: {review.criteriaRatings.effectiveness}/5
+                                </span>
+                              )}
+                              {review.criteriaRatings.sideEffects && (
+                                <span className="text-xs bg-purple-50 text-purple-700 px-2 py-1 rounded border border-purple-200">
+                                  Tác dụng phụ: {review.criteriaRatings.sideEffects}/5
+                                </span>
+                              )}
+                              {review.criteriaRatings.packaging && (
+                                <span className="text-xs bg-yellow-50 text-yellow-700 px-2 py-1 rounded border border-yellow-200">
+                                  Bao bì: {review.criteriaRatings.packaging}/5
+                                </span>
+                              )}
+                              {review.criteriaRatings.deliveryTime && (
+                                <span className="text-xs bg-indigo-50 text-indigo-700 px-2 py-1 rounded border border-indigo-200">
+                                  Giao hàng: {review.criteriaRatings.deliveryTime}/5
+                                </span>
+                              )}
+                              {review.criteriaRatings.customerService && (
+                                <span className="text-xs bg-pink-50 text-pink-700 px-2 py-1 rounded border border-pink-200">
+                                  Dịch vụ: {review.criteriaRatings.customerService}/5
+                                </span>
+                              )}
+                              {review.criteriaRatings.communication && (
+                                <span className="text-xs bg-teal-50 text-teal-700 px-2 py-1 rounded border border-teal-200">
+                                  Giao tiếp: {review.criteriaRatings.communication}/5
+                                </span>
+                              )}
+                              {review.criteriaRatings.reliability && (
+                                <span className="text-xs bg-orange-50 text-orange-700 px-2 py-1 rounded border border-orange-200">
+                                  Tin cậy: {review.criteriaRatings.reliability}/5
+                                </span>
+                              )}
+                            </div>
+                          </div>
                         )}
 
                         <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-gray-500">
@@ -664,7 +741,10 @@ const Reviews = () => {
       {showCreateModal && (
         <CreateReviewModal
           onSubmit={onCreateReview}
-          onClose={() => setShowCreateModal(false)}
+          onClose={() => {
+            setShowCreateModal(false);
+            // Reset các state khi đóng modal (sẽ được xử lý trong component)
+          }}
           loading={loading}
         />
       )}
@@ -748,6 +828,28 @@ const CreateReviewModal = ({ onSubmit, onClose, loading }) => {
       reviewType: 'usage',
       isAnonymous: true
     }
+  });
+
+  // State cho tiêu chí đánh giá chi tiết
+  const [criteriaRatings, setCriteriaRatings] = useState({
+    // Cho thuốc
+    drugQuality: '',
+    effectiveness: '',
+    sideEffects: '',
+    packaging: '',
+    // Cho tổ chức
+    deliveryTime: '',
+    customerService: '',
+    communication: '',
+    reliability: ''
+  });
+  
+  // State cho xác minh
+  const [verificationInfo, setVerificationInfo] = useState({
+    batchNumber: '',
+    orderId: '',
+    purchaseDate: '',
+    verificationMethod: 'manual'
   });
 
   const selectedTargetType = watch('targetType');
@@ -1050,7 +1152,30 @@ const CreateReviewModal = ({ onSubmit, onClose, loading }) => {
       <div className="bg-white rounded-lg p-6 max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
         <h3 className="text-lg font-semibold mb-4">Tạo đánh giá mới</h3>
         
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+        <form onSubmit={handleSubmit((data) => {
+          // Chuẩn bị criteriaRatings và verificationInfo để truyền vào onSubmit
+          const cleanCriteriaRatings = {};
+          Object.entries(criteriaRatings).forEach(([key, value]) => {
+            if (value !== '' && value !== null && value !== undefined) {
+              cleanCriteriaRatings[key] = Number(value);
+            }
+          });
+
+          const cleanVerificationInfo = {};
+          if (verificationInfo.batchNumber || verificationInfo.orderId || verificationInfo.purchaseDate) {
+            cleanVerificationInfo.batchNumber = verificationInfo.batchNumber || null;
+            cleanVerificationInfo.orderId = verificationInfo.orderId || null;
+            cleanVerificationInfo.purchaseDate = verificationInfo.purchaseDate || null;
+            cleanVerificationInfo.verificationMethod = verificationInfo.verificationMethod || 'manual';
+          }
+
+          // Gọi onSubmit với dữ liệu đầy đủ
+          onSubmit({
+            ...data,
+            criteriaRatings: Object.keys(cleanCriteriaRatings).length > 0 ? cleanCriteriaRatings : undefined,
+            verificationInfo: Object.keys(cleanVerificationInfo).length > 0 ? cleanVerificationInfo : undefined
+          });
+        })} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -1069,6 +1194,17 @@ const CreateReviewModal = ({ onSubmit, onClose, loading }) => {
                     setOrganizations([]);
                     setSearchTerm(''); // Reset search term
                     setSelectedOptionValue(''); // Reset dropdown selection
+                    // Reset criteriaRatings khi thay đổi targetType
+                    setCriteriaRatings({
+                      drugQuality: '',
+                      effectiveness: '',
+                      sideEffects: '',
+                      packaging: '',
+                      deliveryTime: '',
+                      customerService: '',
+                      communication: '',
+                      reliability: ''
+                    });
                   }
                 })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
@@ -1337,11 +1473,236 @@ const CreateReviewModal = ({ onSubmit, onClose, loading }) => {
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
             >
               <option value="usage">Trải nghiệm sử dụng</option>
-              <option value="service">Dịch vụ</option>
-              <option value="quality_check">Kiểm định / chất lượng</option>
+              {selectedTargetType === 'drug' && (
+                <>
+                  <option value="quality_check">Kiểm định chất lượng lô hàng</option>
+                  <option value="effectiveness">Hiệu quả điều trị</option>
+                </>
+              )}
+              {['manufacturer', 'distributor', 'hospital'].includes(selectedTargetType) && (
+                <>
+                  <option value="delivery">Đánh giá giao hàng</option>
+                  <option value="service">Dịch vụ</option>
+                  <option value="contract">Thực hiện hợp đồng</option>
+                </>
+              )}
               <option value="complaint">Phản ánh / khiếu nại</option>
               <option value="recommendation">Đề xuất cải tiến</option>
             </select>
+          </div>
+
+          {/* Tiêu chí đánh giá chi tiết - Cho thuốc */}
+          {selectedTargetType === 'drug' && (
+            <div className="space-y-3 border-t pt-4">
+              <h4 className="font-medium text-gray-900">Đánh giá chi tiết (tùy chọn)</h4>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Chất lượng thuốc (1-5)
+                  </label>
+                  <select
+                    value={criteriaRatings.drugQuality || ''}
+                    onChange={(e) => setCriteriaRatings({...criteriaRatings, drugQuality: e.target.value})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">Chưa chọn</option>
+                    <option value="1">1 - Rất kém</option>
+                    <option value="2">2 - Kém</option>
+                    <option value="3">3 - Trung bình</option>
+                    <option value="4">4 - Tốt</option>
+                    <option value="5">5 - Rất tốt</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Hiệu quả (1-5)
+                  </label>
+                  <select
+                    value={criteriaRatings.effectiveness || ''}
+                    onChange={(e) => setCriteriaRatings({...criteriaRatings, effectiveness: e.target.value})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">Chưa chọn</option>
+                    <option value="1">1 - Không hiệu quả</option>
+                    <option value="2">2 - Ít hiệu quả</option>
+                    <option value="3">3 - Trung bình</option>
+                    <option value="4">4 - Hiệu quả</option>
+                    <option value="5">5 - Rất hiệu quả</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Tác dụng phụ (1-5, 1=nhiều, 5=ít)
+                  </label>
+                  <select
+                    value={criteriaRatings.sideEffects || ''}
+                    onChange={(e) => setCriteriaRatings({...criteriaRatings, sideEffects: e.target.value})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">Chưa chọn</option>
+                    <option value="1">1 - Rất nhiều</option>
+                    <option value="2">2 - Nhiều</option>
+                    <option value="3">3 - Trung bình</option>
+                    <option value="4">4 - Ít</option>
+                    <option value="5">5 - Rất ít</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Bao bì (1-5)
+                  </label>
+                  <select
+                    value={criteriaRatings.packaging || ''}
+                    onChange={(e) => setCriteriaRatings({...criteriaRatings, packaging: e.target.value})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">Chưa chọn</option>
+                    <option value="1">1 - Rất kém</option>
+                    <option value="2">2 - Kém</option>
+                    <option value="3">3 - Trung bình</option>
+                    <option value="4">4 - Tốt</option>
+                    <option value="5">5 - Rất tốt</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Tiêu chí đánh giá chi tiết - Cho tổ chức */}
+          {['manufacturer', 'distributor', 'hospital'].includes(selectedTargetType) && (
+            <div className="space-y-3 border-t pt-4">
+              <h4 className="font-medium text-gray-900">Đánh giá chi tiết (tùy chọn)</h4>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Thời gian giao hàng (1-5)
+                  </label>
+                  <select
+                    value={criteriaRatings.deliveryTime || ''}
+                    onChange={(e) => setCriteriaRatings({...criteriaRatings, deliveryTime: e.target.value})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">Chưa chọn</option>
+                    <option value="1">1 - Rất chậm</option>
+                    <option value="2">2 - Chậm</option>
+                    <option value="3">3 - Trung bình</option>
+                    <option value="4">4 - Nhanh</option>
+                    <option value="5">5 - Rất nhanh</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Dịch vụ khách hàng (1-5)
+                  </label>
+                  <select
+                    value={criteriaRatings.customerService || ''}
+                    onChange={(e) => setCriteriaRatings({...criteriaRatings, customerService: e.target.value})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">Chưa chọn</option>
+                    <option value="1">1 - Rất kém</option>
+                    <option value="2">2 - Kém</option>
+                    <option value="3">3 - Trung bình</option>
+                    <option value="4">4 - Tốt</option>
+                    <option value="5">5 - Rất tốt</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Giao tiếp (1-5)
+                  </label>
+                  <select
+                    value={criteriaRatings.communication || ''}
+                    onChange={(e) => setCriteriaRatings({...criteriaRatings, communication: e.target.value})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">Chưa chọn</option>
+                    <option value="1">1 - Rất kém</option>
+                    <option value="2">2 - Kém</option>
+                    <option value="3">3 - Trung bình</option>
+                    <option value="4">4 - Tốt</option>
+                    <option value="5">5 - Rất tốt</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Độ tin cậy (1-5)
+                  </label>
+                  <select
+                    value={criteriaRatings.reliability || ''}
+                    onChange={(e) => setCriteriaRatings({...criteriaRatings, reliability: e.target.value})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">Chưa chọn</option>
+                    <option value="1">1 - Rất kém</option>
+                    <option value="2">2 - Kém</option>
+                    <option value="3">3 - Trung bình</option>
+                    <option value="4">4 - Tốt</option>
+                    <option value="5">5 - Rất tốt</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Xác minh đánh giá */}
+          <div className="space-y-3 border-t pt-4">
+            <h4 className="font-medium text-gray-900">Xác minh đánh giá (tùy chọn)</h4>
+            <p className="text-sm text-gray-600 mb-3">
+              Thêm thông tin xác minh để đánh giá của bạn có độ tin cậy cao hơn
+            </p>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Mã lô (Batch Number)
+                </label>
+                <input
+                  type="text"
+                  value={verificationInfo.batchNumber || ''}
+                  onChange={(e) => setVerificationInfo({...verificationInfo, batchNumber: e.target.value})}
+                  placeholder="Nhập mã lô thuốc"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Mã đơn hàng (Order Number)
+                </label>
+                <input
+                  type="text"
+                  value={verificationInfo.orderId || ''}
+                  onChange={(e) => setVerificationInfo({...verificationInfo, orderId: e.target.value})}
+                  placeholder="Nhập mã đơn hàng"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Ngày mua/nhận
+                </label>
+                <input
+                  type="date"
+                  value={verificationInfo.purchaseDate || ''}
+                  onChange={(e) => setVerificationInfo({...verificationInfo, purchaseDate: e.target.value})}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Phương thức xác minh
+                </label>
+                <select
+                  value={verificationInfo.verificationMethod || 'manual'}
+                  onChange={(e) => setVerificationInfo({...verificationInfo, verificationMethod: e.target.value})}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="manual">Nhập thủ công</option>
+                  <option value="qr_code">Quét QR Code</option>
+                  <option value="order_confirmation">Xác nhận đơn hàng</option>
+                  <option value="receipt">Hóa đơn</option>
+                </select>
+              </div>
+            </div>
           </div>
           
           <div className="flex items-center">
@@ -1367,6 +1728,23 @@ const CreateReviewModal = ({ onSubmit, onClose, loading }) => {
                 setSearchTerm('');
                 setDrugs([]);
                 setOrganizations([]);
+                // Reset criteriaRatings và verificationInfo
+                setCriteriaRatings({
+                  drugQuality: '',
+                  effectiveness: '',
+                  sideEffects: '',
+                  packaging: '',
+                  deliveryTime: '',
+                  customerService: '',
+                  communication: '',
+                  reliability: ''
+                });
+                setVerificationInfo({
+                  batchNumber: '',
+                  orderId: '',
+                  purchaseDate: '',
+                  verificationMethod: 'manual'
+                });
                 onClose();
               }}
               className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
@@ -1389,6 +1767,22 @@ const CreateReviewModal = ({ onSubmit, onClose, loading }) => {
 
 // Review Detail Modal Component
 const ReviewDetailModal = ({ review, onClose, onVoteHelpful, onReport }) => {
+  // Helper function để get review type label
+  const getReviewTypeLabel = (type) => {
+    const map = {
+      usage: 'Trải nghiệm sử dụng',
+      purchase: 'Mua hàng',
+      service: 'Dịch vụ',
+      quality_check: 'Kiểm định chất lượng',
+      complaint: 'Phản ánh / khiếu nại',
+      recommendation: 'Đề xuất cải tiến',
+      delivery: 'Đánh giá giao hàng',
+      effectiveness: 'Hiệu quả điều trị',
+      contract: 'Thực hiện hợp đồng'
+    };
+    return map[type] || type || 'Không rõ';
+  };
+
   // Helper function để normalize ID (giống như trong Reviews component)
   const normalizeId = (id, fallback = '') => {
     if (!id) return fallback;
@@ -1479,25 +1873,140 @@ const ReviewDetailModal = ({ review, onClose, onVoteHelpful, onReport }) => {
               </p>
             </div>
           )}
+
+          {/* Hiển thị tiêu chí đánh giá chi tiết */}
+          {review.criteriaRatings && Object.keys(review.criteriaRatings).length > 0 && (
+            <div>
+              <h5 className="font-medium text-gray-900 mb-2">Đánh giá chi tiết</h5>
+              <div className="grid grid-cols-2 gap-3 bg-gray-50 p-3 rounded-lg">
+                {review.criteriaRatings.drugQuality && (
+                  <div className="text-sm">
+                    <span className="font-medium text-gray-700">Chất lượng thuốc: </span>
+                    <span className="text-gray-900">{review.criteriaRatings.drugQuality}/5</span>
+                  </div>
+                )}
+                {review.criteriaRatings.effectiveness && (
+                  <div className="text-sm">
+                    <span className="font-medium text-gray-700">Hiệu quả: </span>
+                    <span className="text-gray-900">{review.criteriaRatings.effectiveness}/5</span>
+                  </div>
+                )}
+                {review.criteriaRatings.sideEffects && (
+                  <div className="text-sm">
+                    <span className="font-medium text-gray-700">Tác dụng phụ: </span>
+                    <span className="text-gray-900">{review.criteriaRatings.sideEffects}/5</span>
+                  </div>
+                )}
+                {review.criteriaRatings.packaging && (
+                  <div className="text-sm">
+                    <span className="font-medium text-gray-700">Bao bì: </span>
+                    <span className="text-gray-900">{review.criteriaRatings.packaging}/5</span>
+                  </div>
+                )}
+                {review.criteriaRatings.deliveryTime && (
+                  <div className="text-sm">
+                    <span className="font-medium text-gray-700">Thời gian giao hàng: </span>
+                    <span className="text-gray-900">{review.criteriaRatings.deliveryTime}/5</span>
+                  </div>
+                )}
+                {review.criteriaRatings.customerService && (
+                  <div className="text-sm">
+                    <span className="font-medium text-gray-700">Dịch vụ khách hàng: </span>
+                    <span className="text-gray-900">{review.criteriaRatings.customerService}/5</span>
+                  </div>
+                )}
+                {review.criteriaRatings.communication && (
+                  <div className="text-sm">
+                    <span className="font-medium text-gray-700">Giao tiếp: </span>
+                    <span className="text-gray-900">{review.criteriaRatings.communication}/5</span>
+                  </div>
+                )}
+                {review.criteriaRatings.reliability && (
+                  <div className="text-sm">
+                    <span className="font-medium text-gray-700">Độ tin cậy: </span>
+                    <span className="text-gray-900">{review.criteriaRatings.reliability}/5</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Hiển thị thông tin xác minh */}
+          {review.verificationInfo && (review.verificationInfo.batchNumber || review.verificationInfo.orderId || review.verificationInfo.purchaseDate) && (
+            <div>
+              <h5 className="font-medium text-gray-900 mb-2">Thông tin xác minh</h5>
+              <div className="bg-green-50 border border-green-200 p-3 rounded-lg space-y-2">
+                {review.verificationInfo.batchNumber && (
+                  <div className="text-sm">
+                    <span className="font-medium text-gray-700">Mã lô: </span>
+                    <span className="text-gray-900">{review.verificationInfo.batchNumber}</span>
+                  </div>
+                )}
+                {review.verificationInfo.orderId && (
+                  <div className="text-sm">
+                    <span className="font-medium text-gray-700">Mã đơn hàng: </span>
+                    <span className="text-gray-900">{review.verificationInfo.orderId}</span>
+                  </div>
+                )}
+                {review.verificationInfo.purchaseDate && (
+                  <div className="text-sm">
+                    <span className="font-medium text-gray-700">Ngày mua/nhận: </span>
+                    <span className="text-gray-900">
+                      {new Date(review.verificationInfo.purchaseDate).toLocaleDateString('vi-VN')}
+                    </span>
+                  </div>
+                )}
+                {review.verificationInfo.verificationMethod && (
+                  <div className="text-sm">
+                    <span className="font-medium text-gray-700">Phương thức: </span>
+                    <span className="text-gray-900">
+                      {review.verificationInfo.verificationMethod === 'order_confirmation' 
+                        ? 'Xác nhận đơn hàng'
+                        : review.verificationInfo.verificationMethod === 'qr_code'
+                        ? 'Quét QR Code'
+                        : review.verificationInfo.verificationMethod === 'receipt'
+                        ? 'Hóa đơn'
+                        : 'Nhập thủ công'}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
           
           <div className="grid grid-cols-2 gap-4 text-sm">
             <div>
+              <span className="font-medium text-gray-900">Loại đánh giá:</span>
+              <p className="text-gray-600">{getReviewTypeLabel(review.reviewType)}</p>
+            </div>
+            <div>
               <span className="font-medium text-gray-900">Người đánh giá:</span>
               <p className="text-gray-600">
-                {review.isAnonymous ? 'Ẩn danh' : review.reviewer?.fullName}
+                {review.isAnonymous ? 'Ẩn danh' : review.reviewer?.fullName || 'Không rõ'}
               </p>
             </div>
             <div>
               <span className="font-medium text-gray-900">Thời gian:</span>
               <p className="text-gray-600">{new Date(review.createdAt).toLocaleString('vi-VN')}</p>
             </div>
+            {review.isVerified && (
+              <div>
+                <span className="font-medium text-gray-900">Xác minh:</span>
+                <p className="text-green-600 font-medium">✓ Đã xác minh</p>
+              </div>
+            )}
             <div>
               <span className="font-medium text-gray-900">Vote hữu ích:</span>
               <p className="text-gray-600">{review.helpfulVotes || 0}</p>
             </div>
             <div>
               <span className="font-medium text-gray-900">Trạng thái:</span>
-              <p className="text-gray-600">{review.status}</p>
+              <p className="text-gray-600">
+                {review.status === 'pending' ? 'Chờ duyệt' :
+                 review.status === 'approved' ? 'Đã duyệt' :
+                 review.status === 'rejected' ? 'Từ chối' :
+                 review.status === 'flagged' ? 'Bị báo cáo' : review.status}
+              </p>
             </div>
           </div>
         </div>
