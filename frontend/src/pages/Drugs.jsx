@@ -846,10 +846,21 @@ const Drugs = () => {
                   {filteredDrugs.map((drug, idx) => (
                     <tr key={getUniqueKey(drug, idx)} className="hover:bg-gray-50/70">
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <div>
-                          <div className="text-sm font-medium text-gray-900">
-                            {drug.name}
-                          </div>
+                        <div className="flex items-center gap-3">
+                          {(drug.imageUrl || drug.qrCode?.imageUrl) ? (
+                            <img
+                              src={drug.imageUrl || drug.qrCode?.imageUrl}
+                              alt={drug.name || 'drug'}
+                              className="h-10 w-14 rounded-lg object-cover border border-gray-200 bg-white"
+                              loading="lazy"
+                            />
+                          ) : (
+                            <div className="h-10 w-14 rounded-lg border border-dashed border-gray-300 bg-gray-50" />
+                          )}
+                          <div>
+                            <div className="text-sm font-medium text-gray-900">
+                              {drug.name}
+                            </div>
                           <div className="text-sm text-gray-500">
                             Mã lô: {drug.drugId}
                           </div>
@@ -866,6 +877,7 @@ const Drugs = () => {
                               </span>
                             </div>
                           )}
+                          </div>
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">

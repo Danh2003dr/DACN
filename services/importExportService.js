@@ -12,6 +12,7 @@ const auditService = require('./auditService');
 const blockchainService = require('./blockchainService');
 const getServerUrl = require('../utils/getServerUrl');
 const QRCode = require('qrcode');
+const { generateDrugImageDataUrl } = require('../utils/generateDrugImage');
 
 /**
  * Import/Export Service
@@ -532,6 +533,13 @@ const importDrugsFromCSV = async (filePath, user, req = null) => {
         try {
           drug = await Drug.create({
             ...drugData,
+            imageUrl: drugData.imageUrl || generateDrugImageDataUrl({
+              name: drugData.name,
+              activeIngredient: drugData.activeIngredient,
+              dosage: drugData.dosage,
+              form: drugData.form,
+              certificateNumber: registrationNumber || `CV_${Date.now()}_${index + 1}`
+            }),
             manufacturerId: manufacturerId,
             createdBy: user._id,
             qualityTest: {
@@ -2206,6 +2214,13 @@ const importDrugsFromPDF = async (filePath, user, req = null) => {
         
         const drug = await Drug.create({
           ...drugData,
+          imageUrl: drugData.imageUrl || generateDrugImageDataUrl({
+            name: drugData.name,
+            activeIngredient: drugData.activeIngredient,
+            dosage: drugData.dosage,
+            form: drugData.form,
+            certificateNumber: drugData.qualityTest?.certificateNumber || `PDF_${Date.now()}`
+          }),
           createdBy: user._id
         });
         

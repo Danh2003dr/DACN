@@ -11,6 +11,7 @@ const getServerUrl = require('../utils/getServerUrl');
 const drugRiskService = require('../services/drugRiskService');
 const auditService = require('../services/auditService');
 const TrustScoreService = require('../services/trustScoreService');
+const { generateDrugImageDataUrl } = require('../utils/generateDrugImage');
 // Import JSON helper utilities để xử lý BigInt
 const { toJSONSafe, safeJsonResponse } = require('../utils/jsonHelper');
 // Debug logging helper
@@ -65,6 +66,13 @@ const createDrug = async (req, res) => {
       activeIngredient,
       dosage,
       form,
+      imageUrl: req.body?.imageUrl || generateDrugImageDataUrl({
+        name,
+        activeIngredient,
+        dosage,
+        form,
+        certificateNumber: qualityTest?.certificateNumber || `MANUAL_${Date.now()}`
+      }),
       batchNumber,
       productionDate,
       expiryDate,

@@ -37,6 +37,13 @@ const drugSchema = new mongoose.Schema({
     enum: ['viên nén', 'viên nang', 'siro', 'dung dịch tiêm', 'kem', 'gel', 'thuốc mỡ', 'cao khô', 'cao đặc', 'khác'],
     default: 'viên nén'
   },
+
+  // Ảnh đại diện/thumbnail cho thuốc (có thể auto-generate khi import)
+  // Lưu dạng URL hoặc data URI (data:image/svg+xml,...)
+  imageUrl: {
+    type: String,
+    trim: true
+  },
   
   // Thông tin sản xuất
   manufacturerId: {
