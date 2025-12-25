@@ -1,7 +1,7 @@
 import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import { BrowserRouter } from 'react-router-dom';
-import Dashboard from '../../pages/Dashboard';
+import Dashboard from '../../pages/Dashboard.jsx';
 import { AuthContext } from '../../contexts/AuthContext';
 
 // Mock API
@@ -49,10 +49,9 @@ describe('Dashboard Component - Unit Tests', () => {
   it('should render dashboard with stats', async () => {
     renderWithRouter(<Dashboard />);
     
-    await waitFor(() => {
-      expect(screen.getByText(/tổng số thuốc/i)).toBeInTheDocument();
-      expect(screen.getByText(/100/i)).toBeInTheDocument();
-    });
+    // Tránh multiple assertions trong cùng waitFor (eslint testing-library rule)
+    expect(await screen.findByText(/tổng lô thuốc/i)).toBeInTheDocument();
+    expect(await screen.findByText(/100/i)).toBeInTheDocument();
   });
 
   it('should display welcome message with user name', () => {

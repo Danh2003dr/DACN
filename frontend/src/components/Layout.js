@@ -463,7 +463,7 @@ const Layout = ({ children }) => {
   const RoleIcon = getRoleIcon(user?.role);
 
   return (
-    <div className="h-screen flex overflow-hidden bg-gray-100">
+    <div className="h-screen flex overflow-hidden bg-gray-50">
       {/* Mobile sidebar overlay */}
       {sidebarOpen && (
         <div className="fixed inset-0 flex z-40 md:hidden">
@@ -518,7 +518,7 @@ const Layout = ({ children }) => {
       {/* Main content */}
       <div className="flex flex-col w-0 flex-1 overflow-hidden">
         {/* Top navigation */}
-        <div className="relative z-10 flex-shrink-0 flex h-16 bg-white shadow">
+        <div className="relative z-10 flex-shrink-0 flex h-16 bg-white border-b border-gray-100 shadow-soft">
           <button
             type="button"
             className="px-4 border-r border-gray-200 text-gray-500 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-primary-500 md:hidden"
@@ -535,7 +535,7 @@ const Layout = ({ children }) => {
                     <Search className="h-5 w-5" />
                   </div>
                   <input
-                    className="block w-full h-full pl-8 pr-3 py-2 border-transparent text-gray-900 placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-0 focus:border-transparent sm:text-sm"
+                    className="block w-full h-10 pl-9 pr-3 py-2 border border-gray-200 bg-gray-50 rounded-xl text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent sm:text-sm"
                     placeholder="Tìm kiếm..."
                     type="search"
                   />
@@ -559,7 +559,7 @@ const Layout = ({ children }) => {
 
                 {/* Notification Dropdown */}
                 {showNotificationDropdown && (
-                  <div className="absolute right-0 mt-2 w-96 bg-white rounded-lg shadow-xl border border-gray-200 z-50 max-h-[600px] flex flex-col">
+                  <div className="absolute right-0 mt-2 w-96 bg-white rounded-2xl shadow-hard border border-gray-200 z-50 max-h-[600px] flex flex-col overflow-hidden">
                     {/* Dropdown Header */}
                     <div className="flex items-center justify-between p-4 border-b border-gray-200">
                       <h3 className="text-lg font-semibold text-gray-900">Thông báo</h3>
@@ -645,7 +645,7 @@ const Layout = ({ children }) => {
                           setShowNotificationDropdown(false);
                           navigate('/notifications');
                         }}
-                        className="w-full px-4 py-2 text-sm font-medium text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                        className="w-full px-4 py-2 text-sm font-semibold text-blue-600 hover:bg-blue-50 rounded-xl transition-colors"
                       >
                         Xem tất cả thông báo
                       </button>
@@ -682,28 +682,28 @@ const Layout = ({ children }) => {
                 </div>
 
                 {profileMenuOpen && (
-                  <div className="origin-top-right absolute right-0 mt-2 w-48 rounded-md shadow-lg py-1 bg-white ring-1 ring-black ring-opacity-5 focus:outline-none">
+                  <div className="origin-top-right absolute right-0 mt-2 w-56 rounded-2xl shadow-hard py-2 bg-white ring-1 ring-black ring-opacity-5 focus:outline-none overflow-hidden">
                     <div className="px-4 py-2 text-sm text-gray-700 border-b">
                       <p className="font-medium">{user?.fullName}</p>
                       <p className="text-gray-500">{getRoleDisplayName(user?.role)}</p>
                     </div>
                     <Link
                       to="/profile"
-                      className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                      className="block px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
                       onClick={() => setProfileMenuOpen(false)}
                     >
                       Hồ sơ của tôi
                     </Link>
                     <Link
                       to="/settings"
-                      className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                      className="block px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
                       onClick={() => setProfileMenuOpen(false)}
                     >
                       Cài đặt
                     </Link>
                     <button
                       onClick={handleLogout}
-                      className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                      className="block w-full text-left px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
                     >
                       Đăng xuất
                     </button>

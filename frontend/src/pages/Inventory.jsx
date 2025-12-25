@@ -23,6 +23,11 @@ import {
   ChevronRight
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { PageHeader } from '../components/ui/PageHeader';
+import { Card } from '../components/ui/Card';
+import { Button } from '../components/ui/Button';
+import { Input } from '../components/ui/Input';
+import { Select } from '../components/ui/Select';
 
 const Inventory = () => {
   const { user, hasRole, hasAnyRole } = useAuth();
@@ -740,89 +745,79 @@ const Inventory = () => {
   };
 
   return (
-    <div className="p-6">
-      <div className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Quản lý Kho hàng</h1>
-          <p className="text-gray-600">Theo dõi và quản lý tồn kho real-time</p>
-        </div>
-        <div className="flex gap-2">
-          <button
-            onClick={handleRefresh}
-            className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition flex items-center gap-2"
-          >
-            <RefreshCw className="w-4 h-4" />
-            Refresh
-          </button>
-          {hasAnyRole(['admin', 'manufacturer', 'distributor', 'hospital']) && (
-            <>
-              <button
-                onClick={async () => {
-                  await Promise.all([
-                    loadDrugs(), // Load danh sách thuốc khi mở modal
-                    loadLocations(), // Load danh sách địa điểm khi mở modal
-                    loadSuppliers() // Load danh sách nhà cung ứng khi mở modal
-                  ]);
-                  setShowStockInModal(true);
-                }}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition flex items-center gap-2"
-              >
-                <Plus className="w-4 h-4" />
-                Nhập kho
-              </button>
-              <button
-                onClick={() => setShowStockOutModal(true)}
-                className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition flex items-center gap-2"
-              >
-                <Minus className="w-4 h-4" />
-                Xuất kho
-              </button>
-              <button
-                onClick={() => handleOpenTransferModal()}
-                className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition flex items-center gap-2"
-              >
-                <ArrowRightLeft className="w-4 h-4" />
-                Chuyển kho
-              </button>
-            </>
-          )}
-          {hasAnyRole(['admin', 'manufacturer']) && (
-            <>
-              <button
-                onClick={() => handleOpenAdjustModal()}
-                className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition flex items-center gap-2"
-              >
-                <Package className="w-4 h-4" />
-                Điều chỉnh
-              </button>
-              <button
-                onClick={async () => {
-                  await Promise.all([
-                    loadDrugs(), // Load danh sách thuốc khi mở modal
-                    loadLocations(), // Load danh sách địa điểm khi mở modal
-                    // Load tất cả items để có dữ liệu cho dropdown
-                    inventoryAPI.getInventory({ page: 1, limit: 1000 }).then(response => {
-                      if (response && response.success) {
-                        setItems(response.data.items || []);
-                      }
-                    }).catch(err => console.error('Error loading inventory:', err))
-                  ]);
-                  setShowStocktakeModal(true);
-                }}
-                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition flex items-center gap-2"
-              >
-                <ClipboardCheck className="w-4 h-4" />
-                Kiểm kê
-              </button>
-            </>
-          )}
-        </div>
-      </div>
+    <div className="p-6 space-y-6">
+      <PageHeader
+        title="Quản lý Kho hàng"
+        subtitle="Theo dõi và quản lý tồn kho real-time"
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="secondary" onClick={handleRefresh} leftIcon={RefreshCw}>
+              Refresh
+            </Button>
+            {hasAnyRole(['admin', 'manufacturer', 'distributor', 'hospital']) && (
+              <>
+                <Button
+                  onClick={async () => {
+                    await Promise.all([loadDrugs(), loadLocations(), loadSuppliers()]);
+                    setShowStockInModal(true);
+                  }}
+                  leftIcon={Plus}
+                >
+                  Nhập kho
+                </Button>
+                <Button
+                  variant="warning"
+                  onClick={() => setShowStockOutModal(true)}
+                  leftIcon={Minus}
+                >
+                  Xuất kho
+                </Button>
+                <Button
+                  variant="purple"
+                  onClick={() => handleOpenTransferModal()}
+                  leftIcon={ArrowRightLeft}
+                >
+                  Chuyển kho
+                </Button>
+              </>
+            )}
+            {hasAnyRole(['admin', 'manufacturer']) && (
+              <>
+                <Button
+                  className="bg-indigo-600 hover:bg-indigo-700 focus:ring-indigo-500"
+                  onClick={() => handleOpenAdjustModal()}
+                  leftIcon={Package}
+                >
+                  Điều chỉnh
+                </Button>
+                <Button
+                  variant="success"
+                  onClick={async () => {
+                    await Promise.all([
+                      loadDrugs(),
+                      loadLocations(),
+                      inventoryAPI.getInventory({ page: 1, limit: 1000 })
+                        .then(response => {
+                          if (response && response.success) setItems(response.data.items || []);
+                        })
+                        .catch(err => console.error('Error loading inventory:', err))
+                    ]);
+                    setShowStocktakeModal(true);
+                  }}
+                  leftIcon={ClipboardCheck}
+                >
+                  Kiểm kê
+                </Button>
+              </>
+            )}
+          </div>
+        }
+      />
 
       {/* Stats Cards */}
       {stats && (
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-          <div className="bg-white rounded-lg shadow p-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+          <Card className="p-5">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-gray-600">Tổng số items</p>
@@ -830,8 +825,8 @@ const Inventory = () => {
               </div>
               <Box className="w-8 h-8 text-blue-600" />
             </div>
-          </div>
-          <div className="bg-white rounded-lg shadow p-4">
+          </Card>
+          <Card className="p-5">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-gray-600">Tổng số lượng</p>
@@ -839,8 +834,8 @@ const Inventory = () => {
               </div>
               <Package className="w-8 h-8 text-green-600" />
             </div>
-          </div>
-          <div className="bg-white rounded-lg shadow p-4">
+          </Card>
+          <Card className="p-5">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-gray-600">Sắp hết hàng</p>
@@ -848,8 +843,8 @@ const Inventory = () => {
               </div>
               <AlertTriangle className="w-8 h-8 text-orange-600" />
             </div>
-          </div>
-          <div className="bg-white rounded-lg shadow p-4">
+          </Card>
+          <Card className="p-5">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-gray-600">Sắp hết hạn</p>
@@ -857,45 +852,37 @@ const Inventory = () => {
               </div>
               <Calendar className="w-8 h-8 text-yellow-600" />
             </div>
-          </div>
+          </Card>
         </div>
       )}
 
       {/* Filters */}
-      <div className="bg-white rounded-lg shadow mb-6 p-4">
+      <Card className="p-5">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Tìm kiếm
-            </label>
-            <input
+            <p className="text-sm font-medium text-gray-700 mb-1">Tìm kiếm</p>
+            <Input
               type="text"
               value={filters.search}
               onChange={(e) => setFilters({ ...filters, search: e.target.value })}
               placeholder="Tên thuốc, mã lô..."
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              leftIcon={Search}
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Địa điểm
-            </label>
-            <input
+            <p className="text-sm font-medium text-gray-700 mb-1">Địa điểm</p>
+            <Input
               type="text"
               value={filters.locationId}
               onChange={(e) => setFilters({ ...filters, locationId: e.target.value })}
               placeholder="Location ID"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Trạng thái
-            </label>
-            <select
+            <p className="text-sm font-medium text-gray-700 mb-1">Trạng thái</p>
+            <Select
               value={filters.status}
               onChange={(e) => setFilters({ ...filters, status: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
               <option value="">Tất cả</option>
               <option value="available">Có sẵn</option>
@@ -904,7 +891,7 @@ const Inventory = () => {
               <option value="expired">Hết hạn</option>
               <option value="recalled">Thu hồi</option>
               <option value="damaged">Hư hỏng</option>
-            </select>
+            </Select>
           </div>
           <div className="flex items-end gap-2">
             <label className="flex items-center gap-2">
@@ -916,7 +903,8 @@ const Inventory = () => {
               />
               <span className="text-sm text-gray-700">Sắp hết hàng</span>
             </label>
-            <button
+            <Button
+              variant="secondary"
               onClick={() => {
                 setFilters({
                   locationId: '',
@@ -932,48 +920,47 @@ const Inventory = () => {
                   loadStats();
                 }, 100);
               }}
-              className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition"
             >
               Reset
-            </button>
-            <button
+            </Button>
+            <Button
               onClick={() => {
                 loadInventory(1);
                 loadStats();
               }}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+              variant="primary"
             >
               Áp dụng
-            </button>
+            </Button>
           </div>
         </div>
-      </div>
+      </Card>
 
       {/* Inventory Table */}
-      <div className="bg-white rounded-lg shadow overflow-hidden">
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-soft overflow-hidden">
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
+            <thead className="bg-gray-50/70">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
                   Thuốc
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
                   Địa điểm
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
                   Số lượng
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
                   Hạn sử dụng
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
                   Trạng thái
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
                   Giá trị
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
                   Thao tác
                 </th>
               </tr>

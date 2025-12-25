@@ -37,6 +37,11 @@ import { supplyChainAPI, drugAPI, userAPI } from '../utils/api';
 import toast from 'react-hot-toast';
 import DrugTimeline from '../components/DrugTimeline';
 import SupplyChainMap from '../components/SupplyChainMap';
+import { PageHeader } from '../components/ui/PageHeader';
+import { Card } from '../components/ui/Card';
+import { Button } from '../components/ui/Button';
+import { Input } from '../components/ui/Input';
+import { Select } from '../components/ui/Select';
 
 const SupplyChain = () => {
   const { user, hasRole, hasAnyRole } = useAuth();
@@ -746,22 +751,17 @@ const SupplyChain = () => {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Chuỗi Cung ứng</h1>
-          <p className="text-gray-600">Quản lý hành trình thuốc từ sản xuất đến người dùng</p>
-        </div>
-        
-        {hasAnyRole && hasAnyRole(['admin', 'manufacturer']) && (
-          <button
-            onClick={() => setShowCreateModal(true)}
-            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-2"
-          >
-            <Plus className="h-5 w-5" />
-            <span>Tạo hành trình mới</span>
-          </button>
-        )}
-      </div>
+      <PageHeader
+        title="Chuỗi Cung ứng"
+        subtitle="Quản lý hành trình thuốc từ sản xuất đến người dùng"
+        actions={
+          hasAnyRole && hasAnyRole(['admin', 'manufacturer']) ? (
+            <Button onClick={() => setShowCreateModal(true)} leftIcon={Plus}>
+              Tạo hành trình mới
+            </Button>
+          ) : null
+        }
+      />
 
       {/* Timeline Help Section */}
       <div className="bg-blue-50 border border-blue-200 rounded-lg">
@@ -822,32 +822,24 @@ const SupplyChain = () => {
       </div>
 
       {/* Filters */}
-      <div className="bg-white p-4 rounded-lg shadow">
+      <Card className="p-5">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Tìm kiếm
-            </label>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
-              <input
-                type="text"
-                value={filters.search}
-                onChange={(e) => setFilters({ ...filters, search: e.target.value })}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="Tìm theo lô, tên..."
-              />
-            </div>
+            <p className="text-sm font-medium text-gray-700 mb-1">Tìm kiếm</p>
+            <Input
+              type="text"
+              value={filters.search}
+              onChange={(e) => setFilters({ ...filters, search: e.target.value })}
+              placeholder="Tìm theo lô, tên..."
+              leftIcon={Search}
+            />
           </div>
           
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Trạng thái
-            </label>
-            <select
+            <p className="text-sm font-medium text-gray-700 mb-1">Trạng thái</p>
+            <Select
               value={filters.status}
               onChange={(e) => setFilters({ ...filters, status: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
               <option value="">Tất cả trạng thái</option>
               <option value="active">Hoạt động</option>
@@ -855,37 +847,35 @@ const SupplyChain = () => {
               <option value="expired">Hết hạn</option>
               <option value="completed">Hoàn thành</option>
               <option value="suspended">Tạm dừng</option>
-            </select>
+            </Select>
           </div>
           
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Vai trò
-            </label>
-            <select
+            <p className="text-sm font-medium text-gray-700 mb-1">Vai trò</p>
+            <Select
               value={filters.role}
               onChange={(e) => setFilters({ ...filters, role: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
               <option value="">Tất cả vai trò</option>
               <option value="manufacturer">Nhà sản xuất</option>
               <option value="distributor">Nhà phân phối</option>
               <option value="hospital">Bệnh viện</option>
               <option value="patient">Bệnh nhân</option>
-            </select>
+            </Select>
           </div>
           
           <div className="flex items-end">
-            <button
+            <Button
+              variant="secondary"
+              className="w-full"
               onClick={loadSupplyChains}
-              className="w-full bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 flex items-center justify-center space-x-2"
+              leftIcon={RefreshCw}
             >
-              <RefreshCw className="h-4 w-4" />
-              <span>Làm mới</span>
-            </button>
+              Làm mới
+            </Button>
           </div>
         </div>
-      </div>
+      </Card>
 
       {/* Action Buttons */}
       <div className="bg-white p-4 rounded-lg shadow flex items-center justify-between">

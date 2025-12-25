@@ -1,6 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { supplierAPI } from '../utils/api';
 import { useAuth } from '../contexts/AuthContext';
+import { Plus, Search } from 'lucide-react';
+import { PageHeader } from '../components/ui/PageHeader';
+import { Card } from '../components/ui/Card';
+import { Button } from '../components/ui/Button';
+import { Input } from '../components/ui/Input';
+import { Select } from '../components/ui/Select';
+import { Pagination } from '../components/ui/Pagination';
 import toast from 'react-hot-toast';
 
 const Suppliers = () => {
@@ -512,78 +519,75 @@ const Suppliers = () => {
     return `supplier-${idx}-${idPart}`;
   };
 
+  const totalPages = Math.max(1, Math.ceil((pagination.total || 0) / (pagination.limit || 1)));
+
   return (
-    <div className="p-6">
-      <div className="mb-6 flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Quản lý Nhà cung ứng</h1>
-          <p className="text-gray-600 mt-2">Quản lý hồ sơ nhà cung ứng và hợp đồng</p>
-        </div>
-        <button
-          onClick={() => setShowSupplierModal(true)}
-          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-        >
-          + Thêm nhà cung ứng
-        </button>
-      </div>
+    <div className="p-6 space-y-6">
+      <PageHeader
+        title="Quản lý Nhà cung ứng"
+        subtitle="Quản lý hồ sơ nhà cung ứng và hợp đồng"
+        actions={
+          <Button onClick={() => setShowSupplierModal(true)} leftIcon={Plus}>
+            Thêm nhà cung ứng
+          </Button>
+        }
+      />
 
       {/* Filters */}
-      <div className="bg-white p-4 rounded-lg shadow mb-6">
+      <Card className="p-5">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <input
+          <Input
             type="text"
             placeholder="Tìm kiếm..."
             value={filters.search}
             onChange={(e) => handleFilterChange('search', e.target.value)}
-            className="px-3 py-2 border rounded-lg"
+            leftIcon={Search}
           />
-          <select
+          <Select
             value={filters.type}
             onChange={(e) => handleFilterChange('type', e.target.value)}
-            className="px-3 py-2 border rounded-lg"
           >
             <option value="">Tất cả loại</option>
             <option value="manufacturer">Nhà sản xuất</option>
             <option value="distributor">Nhà phân phối</option>
             <option value="wholesaler">Bán buôn</option>
             <option value="retailer">Bán lẻ</option>
-          </select>
-          <select
+          </Select>
+          <Select
             value={filters.status}
             onChange={(e) => handleFilterChange('status', e.target.value)}
-            className="px-3 py-2 border rounded-lg"
           >
             <option value="">Tất cả trạng thái</option>
             <option value="active">Hoạt động</option>
             <option value="inactive">Không hoạt động</option>
             <option value="suspended">Tạm ngưng</option>
             <option value="blacklisted">Đen</option>
-          </select>
-          <button
+          </Select>
+          <Button
+            variant="secondary"
             onClick={() => {
               setFilters({ type: '', status: '', search: '' });
               setPagination(prev => ({ ...prev, page: 1 }));
             }}
-            className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
           >
             Reset
-          </button>
+          </Button>
         </div>
-      </div>
+      </Card>
 
       {/* Suppliers Table */}
-      <div className="bg-white rounded-lg shadow overflow-hidden">
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-soft overflow-hidden">
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
+            <thead className="bg-gray-50/70">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Mã</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Tên</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Loại</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Đánh giá</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Trust Score</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Trạng thái</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Thao tác</th>
+                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Mã</th>
+                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Tên</th>
+                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Loại</th>
+                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Đánh giá</th>
+                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Trust Score</th>
+                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Trạng thái</th>
+                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Thao tác</th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
@@ -601,7 +605,7 @@ const Suppliers = () => {
                 </tr>
               ) : (
                 suppliers.map((supplier, idx) => (
-                  <tr key={getUniqueKey(supplier, idx)} className="hover:bg-gray-50">
+                  <tr key={getUniqueKey(supplier, idx)} className="hover:bg-gray-50/70">
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                       {supplier.supplierCode}
                     </td>
@@ -646,7 +650,7 @@ const Suppliers = () => {
                           });
                           setShowRatingModal(true);
                         }}
-                        className="text-yellow-600 hover:text-yellow-800"
+                        className="text-yellow-700 hover:text-yellow-900 font-medium"
                       >
                         Đánh giá
                       </button>
@@ -655,7 +659,7 @@ const Suppliers = () => {
                           setSelectedSupplier(supplier);
                           setShowContractModal(true);
                         }}
-                        className="text-blue-600 hover:text-blue-800"
+                        className="text-blue-700 hover:text-blue-900 font-medium"
                       >
                         Hợp đồng
                       </button>
@@ -668,29 +672,12 @@ const Suppliers = () => {
         </div>
 
         {/* Pagination */}
-        {pagination.total > pagination.limit && (
-          <div className="px-6 py-4 border-t border-gray-200 flex justify-between items-center">
-            <div className="text-sm text-gray-700">
-              Hiển thị {(pagination.page - 1) * pagination.limit + 1} - {Math.min(pagination.page * pagination.limit, pagination.total)} / {pagination.total}
-            </div>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setPagination(prev => ({ ...prev, page: prev.page - 1 }))}
-                disabled={pagination.page === 1}
-                className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 disabled:opacity-50"
-              >
-                Trước
-              </button>
-              <button
-                onClick={() => setPagination(prev => ({ ...prev, page: prev.page + 1 }))}
-                disabled={pagination.page * pagination.limit >= pagination.total}
-                className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 disabled:opacity-50"
-              >
-                Sau
-              </button>
-            </div>
-          </div>
-        )}
+        <Pagination
+          page={pagination.page}
+          totalPages={totalPages}
+          onPrev={() => setPagination(prev => ({ ...prev, page: Math.max(1, prev.page - 1) }))}
+          onNext={() => setPagination(prev => ({ ...prev, page: Math.min(totalPages, prev.page + 1) }))}
+        />
       </div>
 
       {/* Supplier Modal */}

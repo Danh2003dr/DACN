@@ -16,6 +16,55 @@ import { QRCode } from 'react-qr-code';
 import { useAuth } from '../contexts/AuthContext';
 import api, { drugAPI } from '../utils/api';
 
+const StatCard = ({ label, value, icon: Icon, tone = 'blue' }) => {
+  const toneMap = {
+    blue: { bg: 'bg-blue-50', icon: 'text-blue-600', ring: 'ring-blue-200' },
+    green: { bg: 'bg-green-50', icon: 'text-green-600', ring: 'ring-green-200' },
+    red: { bg: 'bg-red-50', icon: 'text-red-600', ring: 'ring-red-200' },
+    amber: { bg: 'bg-amber-50', icon: 'text-amber-600', ring: 'ring-amber-200' }
+  };
+
+  const style = toneMap[tone] || toneMap.blue;
+  const displayValue = typeof value === 'number' ? value.toLocaleString('vi-VN') : (value || 0);
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 shadow-soft p-5">
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-gray-500">{label}</p>
+          <p className="mt-2 text-2xl font-semibold text-gray-900">{displayValue}</p>
+        </div>
+        <div className={`h-11 w-11 rounded-xl ${style.bg} ring-1 ${style.ring} flex items-center justify-center`}>
+          <Icon className={`h-6 w-6 ${style.icon}`} />
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const IconButton = ({ onClick, title, children, tone = 'gray', disabled = false }) => {
+  const toneMap = {
+    gray: 'text-gray-700 hover:text-gray-900 hover:bg-gray-100',
+    blue: 'text-blue-600 hover:text-blue-800 hover:bg-blue-50',
+    green: 'text-green-600 hover:text-green-800 hover:bg-green-50',
+    red: 'text-red-600 hover:text-red-800 hover:bg-red-50',
+    orange: 'text-orange-600 hover:text-orange-800 hover:bg-orange-50',
+    purple: 'text-purple-600 hover:text-purple-800 hover:bg-purple-50'
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      title={title}
+      className={`inline-flex items-center justify-center rounded-lg p-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${toneMap[tone] || toneMap.gray}`}
+    >
+      {children}
+    </button>
+  );
+};
+
 const Drugs = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -539,97 +588,70 @@ const Drugs = () => {
   };
 
   return (
-    <div className="p-6">
+    <div className="p-6 space-y-6">
       {/* Header */}
-      <div className="flex justify-between items-center mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Quản lý Lô Thuốc</h1>
-          <p className="text-gray-600">Theo dõi và quản lý các lô thuốc trong hệ thống</p>
+      <div className="rounded-2xl bg-gradient-to-r from-slate-50 to-blue-50 border border-gray-100 shadow-soft">
+        <div className="p-6 md:p-7">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h1 className="text-2xl md:text-3xl font-bold text-gray-900">Quản lý Lô Thuốc</h1>
+              <p className="text-gray-600 mt-2">Theo dõi và quản lý các lô thuốc trong hệ thống</p>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={loadDrugs}
+                className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
+                <RefreshCw className="h-4 w-4" />
+                Làm mới
+              </button>
+
+              {(user?.role === 'admin' || user?.role === 'manufacturer') && (
+                <button
+                  type="button"
+                  onClick={handleOpenCreateModal}
+                  className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+                >
+                  <Plus className="h-5 w-5" />
+                  Tạo lô thuốc mới
+                </button>
+              )}
+            </div>
+          </div>
         </div>
-        
-        {(user?.role === 'admin' || user?.role === 'manufacturer') && (
-          <button
-            onClick={handleOpenCreateModal}
-            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center gap-2"
-          >
-            <Plus className="w-5 h-5" />
-            Tạo lô thuốc mới
-          </button>
-        )}
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
-        <div className="bg-white p-6 rounded-lg shadow">
-          <div className="flex items-center">
-            <div className="p-2 bg-blue-100 rounded-lg">
-              <CheckCircle className="w-6 h-6 text-blue-600" />
-            </div>
-            <div className="ml-4">
-              <p className="text-sm text-gray-600">Tổng số lô</p>
-              <p className="text-2xl font-bold">{stats.total || 0}</p>
-            </div>
-          </div>
-        </div>
-        
-        <div className="bg-white p-6 rounded-lg shadow">
-          <div className="flex items-center">
-            <div className="p-2 bg-green-100 rounded-lg">
-              <CheckCircle className="w-6 h-6 text-green-600" />
-            </div>
-            <div className="ml-4">
-              <p className="text-sm text-gray-600">Đang hoạt động</p>
-              <p className="text-2xl font-bold">{stats.active || 0}</p>
-            </div>
-          </div>
-        </div>
-        
-        <div className="bg-white p-6 rounded-lg shadow">
-          <div className="flex items-center">
-            <div className="p-2 bg-red-100 rounded-lg">
-              <XCircle className="w-6 h-6 text-red-600" />
-            </div>
-            <div className="ml-4">
-              <p className="text-sm text-gray-600">Đã thu hồi</p>
-              <p className="text-2xl font-bold">{stats.recalled || 0}</p>
-            </div>
-          </div>
-        </div>
-        
-        <div className="bg-white p-6 rounded-lg shadow">
-          <div className="flex items-center">
-            <div className="p-2 bg-yellow-100 rounded-lg">
-              <AlertTriangle className="w-6 h-6 text-yellow-600" />
-            </div>
-            <div className="ml-4">
-              <p className="text-sm text-gray-600">Sắp hết hạn</p>
-              <p className="text-2xl font-bold">{stats.expiringSoon || 0}</p>
-            </div>
-          </div>
-        </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+        <StatCard label="Tổng số lô" value={stats.total || 0} icon={CheckCircle} tone="blue" />
+        <StatCard label="Đang hoạt động" value={stats.active || 0} icon={CheckCircle} tone="green" />
+        <StatCard label="Đã thu hồi" value={stats.recalled || 0} icon={XCircle} tone="red" />
+        <StatCard label="Sắp hết hạn" value={stats.expiringSoon || 0} icon={AlertTriangle} tone="amber" />
       </div>
 
       {/* Filters */}
-      <div className="bg-white p-4 rounded-lg shadow mb-6">
-        <div className="flex flex-col md:flex-row gap-4">
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-soft p-5">
+        <div className="flex flex-col md:flex-row gap-4 md:items-center">
           <div className="flex-1">
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
               <input
                 type="text"
                 placeholder="Tìm kiếm theo tên, mã lô, số lô..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
               />
             </div>
           </div>
-          
-          <div className="md:w-48">
+
+          <div className="md:w-56">
             <select
               value={filterStatus}
               onChange={(e) => setFilterStatus(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
             >
               <option value="">Tất cả trạng thái</option>
               <option value="active">Hoạt động</option>
@@ -638,19 +660,23 @@ const Drugs = () => {
               <option value="suspended">Tạm dừng</option>
             </select>
           </div>
-          
+
           <button
-            onClick={loadDrugs}
-            className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 flex items-center gap-2"
+            type="button"
+            onClick={() => {
+              setPage(1);
+              loadDrugs();
+            }}
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-gray-100 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-200"
           >
             <RefreshCw className="w-5 h-5" />
-            Làm mới
+            Áp dụng
           </button>
         </div>
       </div>
 
       {/* Drugs Table */}
-      <div className="bg-white rounded-lg shadow overflow-hidden">
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-soft overflow-hidden">
         {loading ? (
           <div className="p-8 text-center">
             <RefreshCw className="w-8 h-8 animate-spin mx-auto mb-4 text-blue-600" />
@@ -666,31 +692,31 @@ const Drugs = () => {
           <>
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
+                <thead className="bg-gray-50/70">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
                       Thông tin thuốc
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
                       Nhà sản xuất
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
                       Ngày sản xuất
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
                       Hạn sử dụng
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
                       Trạng thái
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
                       Hành động
                     </th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
                   {drugs.map((drug, idx) => (
-                    <tr key={getUniqueKey(drug, idx)} className="hover:bg-gray-50">
+                    <tr key={getUniqueKey(drug, idx)} className="hover:bg-gray-50/70">
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div>
                           <div className="text-sm font-medium text-gray-900">
@@ -739,53 +765,33 @@ const Drugs = () => {
                         </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => openQRModal(drug)}
-                            className="text-blue-600 hover:text-blue-900"
-                            title="Xem QR Code"
-                          >
+                        <div className="flex items-center gap-1">
+                          <IconButton onClick={() => openQRModal(drug)} title="Xem QR Code" tone="blue">
                             <QrCode className="w-5 h-5" />
-                          </button>
+                          </IconButton>
                           {drug.blockchain?.blockchainId && (
-                            <button
-                              onClick={() => openBlockchainModal(drug)}
-                              className="text-purple-600 hover:text-purple-900"
-                              title="Xem thông tin Blockchain"
-                            >
+                            <IconButton onClick={() => openBlockchainModal(drug)} title="Xem thông tin Blockchain" tone="purple">
                               <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
                                 <path fillRule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clipRule="evenodd" />
                               </svg>
-                            </button>
+                            </IconButton>
                           )}
                           {/* Chỉ admin và manufacturer mới có thể chỉnh sửa */}
                           {(user?.role === 'admin' || user?.role === 'manufacturer') && (
-                            <button
-                              onClick={() => openEditModal(drug)}
-                              className="text-green-600 hover:text-green-900"
-                              title="Chỉnh sửa"
-                            >
+                            <IconButton onClick={() => openEditModal(drug)} title="Chỉnh sửa" tone="green">
                               <Edit className="w-5 h-5" />
-                            </button>
+                            </IconButton>
                           )}
                           {/* Chỉ admin và manufacturer mới có thể thu hồi */}
                           {!drug.isRecalled && (user?.role === 'admin' || user?.role === 'manufacturer') && (
-                            <button
-                              onClick={() => handleRecall(drug._id)}
-                              className="text-orange-600 hover:text-orange-900"
-                              title="Thu hồi"
-                            >
+                            <IconButton onClick={() => handleRecall(drug._id)} title="Thu hồi" tone="orange">
                               <AlertTriangle className="w-5 h-5" />
-                            </button>
+                            </IconButton>
                           )}
                           {user?.role === 'admin' && (
-                            <button
-                              onClick={() => handleDelete(drug._id)}
-                              className="text-red-600 hover:text-red-900"
-                              title="Xóa"
-                            >
+                            <IconButton onClick={() => handleDelete(drug._id)} title="Xóa" tone="red">
                               <Trash2 className="w-5 h-5" />
-                            </button>
+                            </IconButton>
                           )}
                         </div>
                       </td>
@@ -802,14 +808,14 @@ const Drugs = () => {
                   <button
                     onClick={() => setPage(page - 1)}
                     disabled={page === 1}
-                    className="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
+                    className="inline-flex items-center justify-center rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                   >
                     Trước
                   </button>
                   <button
                     onClick={() => setPage(page + 1)}
                     disabled={page === totalPages}
-                    className="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
+                    className="ml-3 inline-flex items-center justify-center rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                   >
                     Sau
                   </button>
@@ -821,18 +827,21 @@ const Drugs = () => {
                     </p>
                   </div>
                   <div>
-                    <nav className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px">
+                    <nav className="relative z-0 inline-flex items-center gap-2">
                       <button
                         onClick={() => setPage(page - 1)}
                         disabled={page === 1}
-                        className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50"
+                        className="inline-flex items-center justify-center rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                       >
                         Trước
                       </button>
+                      <span className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm font-medium text-gray-700">
+                        {page} / {totalPages}
+                      </span>
                       <button
                         onClick={() => setPage(page + 1)}
                         disabled={page === totalPages}
-                        className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50"
+                        className="inline-flex items-center justify-center rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                       >
                         Sau
                       </button>
@@ -847,20 +856,25 @@ const Drugs = () => {
 
       {/* Create Drug Modal */}
       {showCreateModal && (
-        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-          <div className="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-1/2 shadow-lg rounded-md bg-white">
-            <div className="mt-3">
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="text-lg font-medium text-gray-900">Tạo lô thuốc mới</h3>
+        <div className="fixed inset-0 z-50 bg-gray-900/50 backdrop-blur-sm overflow-y-auto">
+          <div className="relative mx-auto w-11/12 max-w-3xl py-10">
+            <div className="rounded-2xl border border-gray-200 bg-white shadow-2xl overflow-hidden">
+              <div className="flex items-start justify-between gap-4 border-b border-gray-100 px-6 py-4">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-blue-500">Lô thuốc</p>
+                  <h3 className="mt-1 text-lg font-semibold text-gray-900">Tạo lô thuốc mới</h3>
+                </div>
                 <button
+                  type="button"
                   onClick={handleCloseCreateModal}
-                  className="text-gray-400 hover:text-gray-600"
+                  className="text-gray-400 hover:text-gray-600 transition-colors"
+                  aria-label="Đóng"
                 >
                   <XCircle className="w-6 h-6" />
                 </button>
               </div>
-              
-              <form onSubmit={handleSubmit(onSubmitCreate)} className="space-y-4">
+
+              <form onSubmit={handleSubmit(onSubmitCreate)} className="px-6 py-6 space-y-5">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -869,7 +883,7 @@ const Drugs = () => {
                     <input
                       type="text"
                       {...register('name', { required: 'Tên thuốc là bắt buộc' })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                     {errors.name && (
                       <p className="text-red-500 text-sm mt-1">{errors.name.message}</p>
@@ -883,7 +897,7 @@ const Drugs = () => {
                     <input
                       type="text"
                       {...register('activeIngredient', { required: 'Thành phần hoạt chất là bắt buộc' })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                     {errors.activeIngredient && (
                       <p className="text-red-500 text-sm mt-1">{errors.activeIngredient.message}</p>
@@ -897,7 +911,7 @@ const Drugs = () => {
                     <input
                       type="text"
                       {...register('dosage', { required: 'Liều lượng là bắt buộc' })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                     {errors.dosage && (
                       <p className="text-red-500 text-sm mt-1">{errors.dosage.message}</p>
@@ -910,7 +924,7 @@ const Drugs = () => {
                     </label>
                     <select
                       {...register('form', { required: 'Dạng bào chế là bắt buộc' })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                     >
                       <option value="">Chọn dạng bào chế</option>
                       <option value="viên nén">Viên nén</option>
@@ -934,7 +948,7 @@ const Drugs = () => {
                     <input
                       type="text"
                       {...register('batchNumber', { required: 'Số lô sản xuất là bắt buộc' })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                     {errors.batchNumber && (
                       <p className="text-red-500 text-sm mt-1">{errors.batchNumber.message}</p>
@@ -948,7 +962,7 @@ const Drugs = () => {
                     <input
                       type="date"
                       {...register('productionDate', { required: 'Ngày sản xuất là bắt buộc' })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                     />
                     {errors.productionDate && (
                       <p className="text-red-500 text-sm mt-1">{errors.productionDate.message}</p>
@@ -962,27 +976,25 @@ const Drugs = () => {
                     <input
                       type="date"
                       {...register('expiryDate', { required: 'Hạn sử dụng là bắt buộc' })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                     />
                     {errors.expiryDate && (
                       <p className="text-red-500 text-sm mt-1">{errors.expiryDate.message}</p>
                     )}
                   </div>
                 </div>
-                
-                <div className="flex justify-end gap-3 pt-4">
+
+                <div className="flex flex-col-reverse gap-3 border-t border-gray-100 pt-4 md:flex-row md:justify-end">
                   <button
                     type="button"
-                    onClick={() => {
-                      handleCloseCreateModal();
-                    }}
-                    className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+                    onClick={handleCloseCreateModal}
+                    className="w-full rounded-xl border border-gray-300 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 md:w-auto"
                   >
                     Hủy
                   </button>
                   <button
                     type="submit"
-                    className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                    className="w-full rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow hover:bg-blue-700 md:w-auto"
                   >
                     Tạo lô thuốc
                   </button>
@@ -995,20 +1007,28 @@ const Drugs = () => {
 
       {/* Edit Drug Modal */}
       {showEditModal && selectedDrug && (
-        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-          <div className="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-1/2 shadow-lg rounded-md bg-white">
-            <div className="mt-3">
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="text-lg font-medium text-gray-900">Chỉnh sửa lô thuốc</h3>
+        <div className="fixed inset-0 z-50 bg-gray-900/50 backdrop-blur-sm overflow-y-auto">
+          <div className="relative mx-auto w-11/12 max-w-3xl py-10">
+            <div className="rounded-2xl border border-gray-200 bg-white shadow-2xl overflow-hidden">
+              <div className="flex items-start justify-between gap-4 border-b border-gray-100 px-6 py-4">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-green-600">Cập nhật</p>
+                  <h3 className="mt-1 text-lg font-semibold text-gray-900">Chỉnh sửa lô thuốc</h3>
+                  <p className="mt-1 text-sm text-gray-500">
+                    Mã lô: <span className="font-medium text-gray-700">{selectedDrug?.drugId}</span>
+                  </p>
+                </div>
                 <button
+                  type="button"
                   onClick={handleCloseEditModal}
-                  className="text-gray-400 hover:text-gray-600"
+                  className="text-gray-400 hover:text-gray-600 transition-colors"
+                  aria-label="Đóng"
                 >
                   <XCircle className="w-6 h-6" />
                 </button>
               </div>
 
-              <form onSubmit={handleSubmit(onSubmitEdit)} className="space-y-4">
+              <form onSubmit={handleSubmit(onSubmitEdit)} className="px-6 py-6 space-y-5">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -1017,7 +1037,7 @@ const Drugs = () => {
                     <input
                       type="text"
                       {...register('name', { required: 'Tên thuốc là bắt buộc' })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500"
                     />
                     {errors.name && (
                       <p className="text-red-500 text-sm mt-1">{errors.name.message}</p>
@@ -1031,7 +1051,7 @@ const Drugs = () => {
                     <input
                       type="text"
                       {...register('activeIngredient', { required: 'Thành phần hoạt chất là bắt buộc' })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500"
                     />
                     {errors.activeIngredient && (
                       <p className="text-red-500 text-sm mt-1">{errors.activeIngredient.message}</p>
@@ -1045,7 +1065,7 @@ const Drugs = () => {
                     <input
                       type="text"
                       {...register('dosage', { required: 'Liều lượng là bắt buộc' })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500"
                     />
                     {errors.dosage && (
                       <p className="text-red-500 text-sm mt-1">{errors.dosage.message}</p>
@@ -1058,7 +1078,7 @@ const Drugs = () => {
                     </label>
                     <select
                       {...register('form', { required: 'Dạng bào chế là bắt buộc' })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 bg-white"
                     >
                       <option value="">Chọn dạng bào chế</option>
                       <option value="viên nén">Viên nén</option>
@@ -1082,7 +1102,7 @@ const Drugs = () => {
                     <input
                       type="text"
                       {...register('batchNumber', { required: 'Số lô sản xuất là bắt buộc' })}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-md bg-gray-100 text-gray-500 cursor-not-allowed"
+                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl bg-gray-50 text-gray-500 cursor-not-allowed"
                       disabled
                     />
                   </div>
@@ -1094,7 +1114,7 @@ const Drugs = () => {
                     <input
                       type="date"
                       {...register('productionDate', { required: 'Ngày sản xuất là bắt buộc' })}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-md bg-gray-100 text-gray-500 cursor-not-allowed"
+                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl bg-gray-50 text-gray-500 cursor-not-allowed"
                       disabled
                     />
                   </div>
@@ -1106,23 +1126,23 @@ const Drugs = () => {
                     <input
                       type="date"
                       {...register('expiryDate', { required: 'Hạn sử dụng là bắt buộc' })}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-md bg-gray-100 text-gray-500 cursor-not-allowed"
+                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl bg-gray-50 text-gray-500 cursor-not-allowed"
                       disabled
                     />
                   </div>
                 </div>
 
-                <div className="flex justify-end gap-3 pt-4">
+                <div className="flex flex-col-reverse gap-3 border-t border-gray-100 pt-4 md:flex-row md:justify-end">
                   <button
                     type="button"
                     onClick={handleCloseEditModal}
-                    className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+                    className="w-full rounded-xl border border-gray-300 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 md:w-auto"
                   >
                     Hủy
                   </button>
                   <button
                     type="submit"
-                    className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
+                    className="w-full rounded-xl bg-green-600 px-4 py-2.5 text-sm font-semibold text-white shadow hover:bg-green-700 md:w-auto"
                   >
                     Lưu thay đổi
                   </button>
@@ -1135,8 +1155,8 @@ const Drugs = () => {
 
       {/* QR Code Modal */}
       {showQRModal && selectedDrug && (
-        <div className="fixed inset-0 bg-gray-900 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-          <div className="relative top-16 mx-auto w-11/12 max-w-3xl">
+        <div className="fixed inset-0 z-50 bg-gray-900/50 backdrop-blur-sm overflow-y-auto">
+          <div className="relative mx-auto w-11/12 max-w-3xl py-10">
             <div className="rounded-2xl border border-gray-200 bg-white shadow-2xl">
               <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
                 <div>
@@ -1146,6 +1166,7 @@ const Drugs = () => {
                 <button
                   onClick={handleCloseQRModal}
                   className="text-gray-400 hover:text-gray-600 transition-colors"
+                  aria-label="Đóng"
                 >
                   <XCircle className="w-6 h-6" />
                 </button>
@@ -1273,7 +1294,7 @@ const Drugs = () => {
                                 setLoading(false);
                               }
                             }}
-                            className="mt-4 w-full rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow hover:bg-blue-700"
+                            className="mt-4 w-full rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow hover:bg-blue-700"
                           >
                             Lưu QR Code vào hệ thống
                           </button>
@@ -1289,21 +1310,21 @@ const Drugs = () => {
                   <button
                     type="button"
                     onClick={handleCloseQRModal}
-                    className="w-full rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 md:w-auto"
+                    className="w-full rounded-xl border border-gray-300 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 md:w-auto"
                   >
                     Đóng
                   </button>
                   <button
                     type="button"
                     onClick={handleVerify}
-                    className="w-full rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white shadow hover:bg-green-700 md:w-auto"
+                    className="w-full rounded-xl bg-green-600 px-4 py-2.5 text-sm font-semibold text-white shadow hover:bg-green-700 md:w-auto"
                   >
                     Xác minh
                   </button>
                   <button
                     type="button"
                     onClick={handleDownloadQR}
-                    className="w-full rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow hover:bg-blue-700 md:w-auto"
+                    className="w-full rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow hover:bg-blue-700 md:w-auto"
                   >
                     Tải xuống
                   </button>
@@ -1316,8 +1337,8 @@ const Drugs = () => {
 
       {/* Blockchain Info Modal */}
       {showBlockchainModal && selectedDrug && (
-        <div className="fixed inset-0 bg-gray-900 bg-opacity-60 overflow-y-auto h-full w-full z-50">
-          <div className="relative top-12 mx-auto w-11/12 max-w-3xl">
+        <div className="fixed inset-0 z-50 bg-gray-900/60 backdrop-blur-sm overflow-y-auto">
+          <div className="relative mx-auto w-11/12 max-w-3xl py-10">
             <div className="rounded-2xl border border-gray-200 bg-white shadow-2xl">
               <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
                 <div>
@@ -1331,6 +1352,7 @@ const Drugs = () => {
                 <button
                   onClick={handleCloseBlockchainModal}
                   className="text-gray-400 transition-colors hover:text-gray-600"
+                  aria-label="Đóng"
                 >
                   <XCircle className="w-6 h-6" />
                 </button>
@@ -1462,13 +1484,13 @@ const Drugs = () => {
                     <div className="flex flex-col gap-3 border-t border-gray-100 pt-4 md:flex-row md:justify-end">
                       <button
                         onClick={handleCopyBlockchainId}
-                        className="w-full rounded-md border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-medium text-blue-700 transition-colors hover:bg-blue-100 md:w-auto"
+                        className="w-full rounded-xl border border-blue-200 bg-blue-50 px-4 py-2.5 text-sm font-semibold text-blue-700 transition-colors hover:bg-blue-100 md:w-auto"
                       >
                         Copy Blockchain ID
                       </button>
                       <button
                         onClick={handleViewBlockchainDetail}
-                        className="w-full rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white shadow hover:bg-green-700 md:w-auto"
+                        className="w-full rounded-xl bg-green-600 px-4 py-2.5 text-sm font-semibold text-white shadow hover:bg-green-700 md:w-auto"
                       >
                         Xem chi tiết
                       </button>
@@ -1492,10 +1514,25 @@ const Drugs = () => {
 
       {/* Error Message */}
       {error && (
-        <div className="fixed bottom-4 right-4 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded z-50">
-          <div className="flex items-center">
-            <AlertTriangle className="w-5 h-5 mr-2" />
-            {error}
+        <div className="fixed bottom-4 right-4 z-50 w-[calc(100%-2rem)] max-w-md">
+          <div className="rounded-2xl border border-red-200 bg-red-50 shadow-lg px-4 py-3">
+            <div className="flex items-start gap-3">
+              <div className="mt-0.5 h-9 w-9 rounded-xl bg-red-100 flex items-center justify-center">
+                <AlertTriangle className="w-5 h-5 text-red-600" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-red-800">Có lỗi xảy ra</p>
+                <p className="mt-0.5 text-sm text-red-700 break-words">{error}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setError(null)}
+                className="text-red-400 hover:text-red-600 transition-colors"
+                aria-label="Đóng thông báo lỗi"
+              >
+                <XCircle className="w-5 h-5" />
+              </button>
+            </div>
           </div>
         </div>
       )}

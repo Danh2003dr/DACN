@@ -19,6 +19,11 @@ import {
   Download
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { PageHeader } from '../components/ui/PageHeader';
+import { Card } from '../components/ui/Card';
+import { Button } from '../components/ui/Button';
+import { Input } from '../components/ui/Input';
+import { Select } from '../components/ui/Select';
 import pdfMake from 'pdfmake/build/pdfmake';
 
 // Khởi tạo vfs rỗng - sẽ load fonts khi cần
@@ -1361,25 +1366,21 @@ const Orders = () => {
   };
 
   return (
-    <div className="p-6">
-      <div className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Quản lý Đơn hàng</h1>
-          <p className="text-gray-600">Tạo và quản lý đơn hàng (Purchase Order, Sales Order)</p>
-        </div>
-        <button
-          onClick={() => setShowCreateModal(true)}
-          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition flex items-center gap-2"
-        >
-          <Plus className="w-4 h-4" />
-          Tạo đơn hàng
-        </button>
-      </div>
+    <div className="p-6 space-y-6">
+      <PageHeader
+        title="Quản lý Đơn hàng"
+        subtitle="Tạo và quản lý đơn hàng (Purchase Order, Sales Order)"
+        actions={
+          <Button onClick={() => setShowCreateModal(true)} leftIcon={Plus}>
+            Tạo đơn hàng
+          </Button>
+        }
+      />
 
       {/* Stats Cards */}
       {stats && (
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-          <div className="bg-white rounded-lg shadow p-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+          <Card className="p-5">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-gray-600">Tổng đơn hàng</p>
@@ -1387,8 +1388,8 @@ const Orders = () => {
               </div>
               <ShoppingCart className="w-8 h-8 text-blue-600" />
             </div>
-          </div>
-          <div className="bg-white rounded-lg shadow p-4">
+          </Card>
+          <Card className="p-5">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-gray-600">Tổng giá trị</p>
@@ -1398,8 +1399,8 @@ const Orders = () => {
               </div>
               <Package className="w-8 h-8 text-green-600" />
             </div>
-          </div>
-          <div className="bg-white rounded-lg shadow p-4">
+          </Card>
+          <Card className="p-5">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-gray-600">Đang xử lý</p>
@@ -1409,8 +1410,8 @@ const Orders = () => {
               </div>
               <Package className="w-8 h-8 text-purple-600" />
             </div>
-          </div>
-          <div className="bg-white rounded-lg shadow p-4">
+          </Card>
+          <Card className="p-5">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-gray-600">Đã giao</p>
@@ -1420,42 +1421,40 @@ const Orders = () => {
               </div>
               <CheckCircle className="w-8 h-8 text-green-600" />
             </div>
-          </div>
+          </Card>
         </div>
       )}
 
       {/* Filters */}
-      <div className="bg-white rounded-lg shadow mb-6 p-4">
+      <Card className="p-5">
         <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Tìm kiếm</label>
-            <input
+            <p className="text-sm font-medium text-gray-700 mb-1">Tìm kiếm</p>
+            <Input
               type="text"
               value={filters.search}
               onChange={(e) => setFilters({ ...filters, search: e.target.value })}
               placeholder="Mã đơn hàng, tên..."
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              leftIcon={Search}
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Loại đơn</label>
-            <select
+            <p className="text-sm font-medium text-gray-700 mb-1">Loại đơn</p>
+            <Select
               value={filters.orderType}
               onChange={(e) => setFilters({ ...filters, orderType: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
               <option value="">Tất cả</option>
               <option value="purchase">Purchase Order</option>
               <option value="sales">Sales Order</option>
               <option value="transfer">Transfer Order</option>
-            </select>
+            </Select>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Trạng thái</label>
-            <select
+            <p className="text-sm font-medium text-gray-700 mb-1">Trạng thái</p>
+            <Select
               value={filters.status}
               onChange={(e) => setFilters({ ...filters, status: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
               <option value="">Tất cả</option>
               <option value="draft">Draft</option>
@@ -1465,19 +1464,19 @@ const Orders = () => {
               <option value="shipped">Shipped</option>
               <option value="delivered">Delivered</option>
               <option value="cancelled">Cancelled</option>
-            </select>
+            </Select>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Từ ngày</label>
-            <input
+            <p className="text-sm font-medium text-gray-700 mb-1">Từ ngày</p>
+            <Input
               type="date"
               value={filters.startDate}
               onChange={(e) => setFilters({ ...filters, startDate: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
           </div>
           <div className="flex items-end gap-2">
-            <button
+            <Button
+              variant="secondary"
               onClick={() => {
                 setFilters({
                   orderType: '',
@@ -1491,48 +1490,46 @@ const Orders = () => {
                   loadStats();
                 }, 100);
               }}
-              className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition"
             >
               Reset
-            </button>
-            <button
+            </Button>
+            <Button
               onClick={() => {
                 loadOrders(1);
                 loadStats();
               }}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
             >
               Áp dụng
-            </button>
+            </Button>
           </div>
         </div>
-      </div>
+      </Card>
 
       {/* Orders Table */}
-      <div className="bg-white rounded-lg shadow overflow-hidden">
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-soft overflow-hidden">
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
+            <thead className="bg-gray-50/70">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
                   Mã đơn hàng
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
                   Loại
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
                   Người mua/Bán
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
                   Ngày đặt
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
                   Tổng giá trị
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
                   Trạng thái
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
                   Thao tác
                 </th>
               </tr>
