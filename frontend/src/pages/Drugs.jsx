@@ -16,6 +16,7 @@ import { QRCode } from 'react-qr-code';
 import { useAuth } from '../contexts/AuthContext';
 import api, { drugAPI } from '../utils/api';
 import { getDrugRisk } from '../utils/riskScoring';
+import axios from 'axios';
 
 const StatCard = ({ label, value, icon: Icon, tone = 'blue' }) => {
   const toneMap = {
@@ -84,6 +85,11 @@ const Drugs = () => {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const qrCodeRef = useRef(null);
+  const [aiRiskOverrides, setAiRiskOverrides] = useState({}); // { drugId: risk }
+  const [aiRiskLoading, setAiRiskLoading] = useState(false);
+  const [aiRiskError, setAiRiskError] = useState(null);
+
+  const AI_SERVICE_URL = process.env.REACT_APP_AI_SERVICE_URL;
 
   const defaultFormValues = {
     name: '',
@@ -116,6 +122,51 @@ const Drugs = () => {
       if (response.success) {
         setDrugs(response.data.drugs);
         setTotalPages(response.data.pagination.pages);
+
+        // Fetch AI risk (optional, best-effort). Không ảnh hưởng backend/logic chính.
+        if (AI_SERVICE_URL) {
+          setAiRiskLoading(true);
+          setAiRiskError(null);
+          try {
+            const token = localStorage.getItem('token');
+            const aiClient = axios.create({
+              baseURL: AI_SERVICE_URL,
+              timeout: 60000,
+              headers: token ? { Authorization: `Bearer ${token}` } : {}
+            });
+
+            const aiResp = await aiClient.get('/risk/drugs', {
+              params: {
+                page: page.toString(),
+                limit: '10',
+                ...(searchTerm ? { search: searchTerm } : {}),
+                ...(filterStatus ? { status: filterStatus } : {})
+              }
+            });
+
+            if (aiResp.data?.success) {
+              const map = {};
+              const aiDrugs = aiResp.data?.data?.drugs || [];
+              aiDrugs.forEach((d) => {
+                if (d?.drugId && d?.risk) map[d.drugId] = d.risk;
+              });
+              setAiRiskOverrides(map);
+            } else {
+              setAiRiskOverrides({});
+              setAiRiskError(aiResp.data?.message || 'AI service error');
+            }
+          } catch (e) {
+            setAiRiskOverrides({});
+            setAiRiskError(e?.message || 'Không thể kết nối AI service');
+          } finally {
+            setAiRiskLoading(false);
+          }
+        } else {
+          // No AI service configured -> clear overrides
+          setAiRiskOverrides({});
+          setAiRiskLoading(false);
+          setAiRiskError(null);
+        }
       }
     } catch (error) {
       setError('Không thể tải danh sách thuốc');
@@ -602,10 +653,10 @@ const Drugs = () => {
 
   const drugsWithRisk = useMemo(() => {
     return (drugs || []).map((drug) => {
-      const risk = getDrugRisk(drug);
+      const risk = (drug?.drugId && aiRiskOverrides[drug.drugId]) ? aiRiskOverrides[drug.drugId] : getDrugRisk(drug);
       return { ...drug, _risk: risk };
     });
-  }, [drugs]);
+  }, [drugs, aiRiskOverrides]);
 
   const riskCounts = useMemo(() => {
     const counts = { critical: 0, high: 0, medium: 0, low: 0, normal: 0 };
@@ -741,6 +792,11 @@ const Drugs = () => {
           <span className="inline-flex items-center px-2 py-1 rounded-full border bg-emerald-50 text-emerald-800 border-emerald-200">
             Bình thường: {riskCounts.normal || 0}
           </span>
+          {AI_SERVICE_URL && (
+            <span className="ml-auto text-gray-500">
+              AI service: {aiRiskLoading ? 'đang tính…' : aiRiskError ? `lỗi (${aiRiskError})` : 'OK'}
+            </span>
+          )}
         </div>
       </div>
 
