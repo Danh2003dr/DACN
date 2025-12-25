@@ -23,6 +23,10 @@ import {
 import { useAuth } from '../contexts/AuthContext';
 import { reviewAPI, drugAPI, userAPI } from '../utils/api';
 import toast from 'react-hot-toast';
+import { PageHeader } from '../components/ui/PageHeader';
+import { Button } from '../components/ui/Button';
+import { Input } from '../components/ui/Input';
+import { Select } from '../components/ui/Select';
 
 const Reviews = () => {
   const { user, hasRole } = useAuth();
@@ -365,20 +369,15 @@ const Reviews = () => {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Đánh giá và Góp ý</h1>
-          <p className="text-gray-600">Đánh giá ẩn danh và quản lý đánh giá hệ thống</p>
-        </div>
-        
-        <button
-          onClick={() => setShowCreateModal(true)}
-          className="inline-flex items-center justify-center bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 active:bg-blue-800 transition shadow-sm"
-        >
-          <Plus className="h-5 w-5" />
-          <span className="ml-2">Tạo đánh giá</span>
-        </button>
-      </div>
+      <PageHeader
+        title="Đánh giá và Góp ý"
+        subtitle="Đánh giá ẩn danh và quản lý đánh giá hệ thống"
+        actions={
+          <Button onClick={() => setShowCreateModal(true)} leftIcon={Plus}>
+            Tạo đánh giá
+          </Button>
+        }
+      />
 
       {/* Tabs */}
       <div className="bg-white rounded-2xl shadow">
@@ -407,53 +406,49 @@ const Reviews = () => {
         {activeTab === 'admin' && hasRole('admin') && (
           <div className="px-6 py-4 border-b border-gray-100 bg-gray-50 flex flex-wrap gap-3 items-center">
             <div className="flex items-center space-x-2 flex-1 min-w-[200px]">
-              <Search className="h-4 w-4 text-gray-400" />
-              <input
+              <Input
                 type="text"
                 placeholder="Tìm theo tiêu đề, nội dung, tên đối tượng..."
                 value={filters.search}
                 onChange={(e) => handleFilterChange('search', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
+                leftIcon={Search}
               />
             </div>
             <div className="flex items-center space-x-2">
               <span className="text-sm text-gray-600">Trạng thái:</span>
-              <select
+              <Select
                 value={filters.status}
                 onChange={(e) => handleFilterChange('status', e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
               >
                 <option value="">Tất cả</option>
                 <option value="pending">Chờ duyệt</option>
                 <option value="approved">Đã duyệt</option>
                 <option value="rejected">Từ chối</option>
                 <option value="flagged">Đánh dấu</option>
-              </select>
+              </Select>
             </div>
             <div className="flex items-center space-x-2">
               <span className="text-sm text-gray-600">Loại:</span>
-              <select
+              <Select
                 value={filters.targetType}
                 onChange={(e) => handleFilterChange('targetType', e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
               >
                 <option value="">Tất cả</option>
                 <option value="drug">Thuốc</option>
                 <option value="distributor">Nhà phân phối</option>
                 <option value="hospital">Bệnh viện</option>
                 <option value="manufacturer">Nhà sản xuất</option>
-              </select>
+              </Select>
             </div>
             <div className="flex items-center space-x-2">
               <span className="text-sm text-gray-600">Báo cáo:</span>
-              <select
+              <Select
                 value={filters.hasReports}
                 onChange={(e) => handleFilterChange('hasReports', e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
               >
                 <option value="">Tất cả</option>
                 <option value="true">Có báo cáo</option>
-              </select>
+              </Select>
             </div>
           </div>
         )}
@@ -485,13 +480,9 @@ const Reviews = () => {
                 Hãy tạo đánh giá mới hoặc thử thay đổi bộ lọc.
               </div>
               <div className="mt-5">
-                <button
-                  onClick={() => setShowCreateModal(true)}
-                  className="inline-flex items-center justify-center bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 active:bg-blue-800 transition"
-                >
-                  <Plus className="h-4 w-4" />
-                  <span className="ml-2">Tạo đánh giá</span>
-                </button>
+                <Button onClick={() => setShowCreateModal(true)} leftIcon={Plus}>
+                  Tạo đánh giá
+                </Button>
               </div>
             </div>
           ) : (

@@ -17,6 +17,12 @@ import {
   ChevronRight
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { PageHeader } from '../components/ui/PageHeader';
+import { Card } from '../components/ui/Card';
+import { Button } from '../components/ui/Button';
+import { Input } from '../components/ui/Input';
+import { Select } from '../components/ui/Select';
+import { Pagination } from '../components/ui/Pagination';
 
 const Backups = () => {
   const [backups, setBackups] = useState([]);
@@ -408,44 +414,36 @@ const Backups = () => {
   };
 
   return (
-    <div className="p-6">
-      <div className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Backup & Restore</h1>
-          <p className="text-gray-600">Quản lý sao lưu và khôi phục dữ liệu</p>
-        </div>
-        <div className="flex gap-2">
-          <button
-            onClick={handleCleanup}
-            className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition flex items-center gap-2"
-          >
-            <Trash2 className="w-4 h-4" />
-            Cleanup
-          </button>
-          <button
-            onClick={() => {
-              loadBackups(1);
-              loadStats();
-            }}
-            className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition flex items-center gap-2"
-          >
-            <RefreshCw className="w-4 h-4" />
-            Refresh
-          </button>
-          <button
-            onClick={() => setShowCreateModal(true)}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition flex items-center gap-2"
-          >
-            <Plus className="w-4 h-4" />
-            Tạo Backup
-          </button>
-        </div>
-      </div>
+    <div className="p-6 space-y-6">
+      <PageHeader
+        title="Backup & Restore"
+        subtitle="Quản lý sao lưu và khôi phục dữ liệu"
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="warning" onClick={handleCleanup} leftIcon={Trash2}>
+              Cleanup
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                loadBackups(1);
+                loadStats();
+              }}
+              leftIcon={RefreshCw}
+            >
+              Refresh
+            </Button>
+            <Button onClick={() => setShowCreateModal(true)} leftIcon={Plus}>
+              Tạo Backup
+            </Button>
+          </div>
+        }
+      />
 
       {/* Stats Cards */}
       {stats && (
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-          <div className="bg-white rounded-lg shadow p-4">
+          <Card className="p-4">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-gray-600">Tổng backups</p>
@@ -453,8 +451,8 @@ const Backups = () => {
               </div>
               <Database className="w-8 h-8 text-blue-600" />
             </div>
-          </div>
-          <div className="bg-white rounded-lg shadow p-4">
+          </Card>
+          <Card className="p-4">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-gray-600">Thành công</p>
@@ -462,8 +460,8 @@ const Backups = () => {
               </div>
               <CheckCircle className="w-8 h-8 text-green-600" />
             </div>
-          </div>
-          <div className="bg-white rounded-lg shadow p-4">
+          </Card>
+          <Card className="p-4">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-gray-600">Thất bại</p>
@@ -471,8 +469,8 @@ const Backups = () => {
               </div>
               <AlertTriangle className="w-8 h-8 text-red-600" />
             </div>
-          </div>
-          <div className="bg-white rounded-lg shadow p-4">
+          </Card>
+          <Card className="p-4">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-gray-600">Tổng dung lượng</p>
@@ -480,19 +478,18 @@ const Backups = () => {
               </div>
               <HardDrive className="w-8 h-8 text-purple-600" />
             </div>
-          </div>
+          </Card>
         </div>
       )}
 
       {/* Filters */}
-      <div className="bg-white rounded-lg shadow mb-6 p-4">
+      <Card className="p-4">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Trạng thái</label>
-            <select
+            <Select
               value={filters.status}
               onChange={(e) => setFilters({ ...filters, status: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
               <option value="">Tất cả</option>
               <option value="pending">Pending</option>
@@ -500,32 +497,31 @@ const Backups = () => {
               <option value="completed">Completed</option>
               <option value="failed">Failed</option>
               <option value="expired">Expired</option>
-            </select>
+            </Select>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Loại</label>
-            <select
+            <Select
               value={filters.type}
               onChange={(e) => setFilters({ ...filters, type: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
               <option value="">Tất cả</option>
               <option value="full">Full</option>
               <option value="incremental">Incremental</option>
               <option value="differential">Differential</option>
-            </select>
+            </Select>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Từ ngày</label>
-            <input
+            <Input
               type="date"
               value={filters.startDate}
               onChange={(e) => setFilters({ ...filters, startDate: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
           </div>
           <div className="flex items-end gap-2">
-            <button
+            <Button
+              variant="secondary"
               onClick={() => {
                 setFilters({
                   status: '',
@@ -538,22 +534,20 @@ const Backups = () => {
                   loadStats();
                 }, 100);
               }}
-              className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition"
             >
               Reset
-            </button>
-            <button
+            </Button>
+            <Button
               onClick={() => {
                 loadBackups(1);
                 loadStats();
               }}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
             >
               Áp dụng
-            </button>
+            </Button>
           </div>
         </div>
-      </div>
+      </Card>
 
       {/* Backups Table */}
       <div className="bg-white rounded-lg shadow overflow-hidden">
@@ -705,27 +699,19 @@ const Backups = () => {
 
         {/* Pagination */}
         {pagination.pages > 1 && (
-          <div className="bg-gray-50 px-6 py-3 flex items-center justify-between">
+        <div className="bg-gray-50 px-6 py-3">
+          <div className="flex items-center justify-between gap-3">
             <div className="text-sm text-gray-700">
               Trang {pagination.page} / {pagination.pages} (Tổng: {pagination.total})
             </div>
-            <div className="flex gap-2">
-              <button
-                onClick={() => loadBackups(pagination.page - 1)}
-                disabled={pagination.page === 1}
-                className="px-3 py-1 border border-gray-300 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
-              >
-                <ChevronLeft className="w-4 h-4" />
-              </button>
-              <button
-                onClick={() => loadBackups(pagination.page + 1)}
-                disabled={pagination.page === pagination.pages}
-                className="px-3 py-1 border border-gray-300 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
-              >
-                <ChevronRight className="w-4 h-4" />
-              </button>
-            </div>
+            <Pagination
+              page={pagination.page}
+              totalPages={pagination.pages}
+              onPrev={() => loadBackups(Math.max(1, pagination.page - 1))}
+              onNext={() => loadBackups(Math.min(pagination.pages, pagination.page + 1))}
+            />
           </div>
+        </div>
         )}
       </div>
 

@@ -24,6 +24,8 @@ import {
 import { useAuth } from '../contexts/AuthContext';
 import api, { settingsAPI } from '../utils/api';
 import toast from 'react-hot-toast';
+import { PageHeader } from '../components/ui/PageHeader';
+import { Button } from '../components/ui/Button';
 
 const Settings = () => {
   const { user } = useAuth();
@@ -255,11 +257,10 @@ const Settings = () => {
     <div className="p-6 max-w-6xl mx-auto">
       {/* Header */}
       <div className="mb-8">
-        <div className="flex items-center gap-3 mb-2">
-          <SettingsIcon className="w-8 h-8 text-blue-600" />
-          <h1 className="text-3xl font-bold text-gray-900">Cài đặt Hệ thống</h1>
-        </div>
-        <p className="text-gray-600">Quản lý cấu hình và tùy chọn hệ thống</p>
+        <PageHeader
+          title="Cài đặt Hệ thống"
+          subtitle="Quản lý cấu hình và tùy chọn hệ thống"
+        />
       </div>
 
       {/* Message */}
@@ -393,15 +394,15 @@ const Settings = () => {
             </div>
 
             <div className="mt-4">
-              <button
+              <Button
                 type="button"
+                variant="purple"
                 onClick={testBlockchainConnection}
                 disabled={loading}
-                className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:opacity-50"
+                leftIcon={Activity}
               >
-                <Activity className="w-4 h-4" />
                 {loading ? 'Đang kiểm tra...' : 'Kiểm tra kết nối'}
-              </button>
+              </Button>
             </div>
           </div>
 
@@ -573,24 +574,21 @@ const Settings = () => {
               <div className="p-6 border-t border-gray-200 space-y-6">
                 {/* Controls */}
                 <div className="flex justify-end gap-2">
-                  <button
+                  <Button
+                    type="button"
+                    variant={autoRefresh ? 'success' : 'secondary'}
                     onClick={() => setAutoRefresh(!autoRefresh)}
-                    className={`px-4 py-2 rounded-md text-sm font-medium ${
-                      autoRefresh
-                        ? 'bg-green-500 text-white hover:bg-green-600'
-                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                    }`}
                   >
                     {autoRefresh ? 'Tự động làm mới: BẬT' : 'Tự động làm mới: TẮT'}
-                  </button>
-                  <button
+                  </Button>
+                  <Button
+                    type="button"
                     onClick={() => loadMetrics()}
                     disabled={metricsLoading}
-                    className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 text-sm font-medium flex items-center gap-2 disabled:opacity-50"
+                    leftIcon={RefreshCw}
                   >
-                    <RefreshCw className={`w-4 h-4 ${metricsLoading ? 'animate-spin' : ''}`} />
                     Làm mới
-                  </button>
+                  </Button>
                 </div>
 
                 {/* Error Message */}

@@ -1,6 +1,11 @@
 import React, { useState } from 'react';
 import { importExportAPI } from '../utils/api';
 import toast from 'react-hot-toast';
+import { PageHeader } from '../components/ui/PageHeader';
+import { Card } from '../components/ui/Card';
+import { Button } from '../components/ui/Button';
+import { Select } from '../components/ui/Select';
+import { Input } from '../components/ui/Input';
 
 const ImportExport = () => {
   const [activeTab, setActiveTab] = useState('import');
@@ -139,32 +144,32 @@ const ImportExport = () => {
   };
 
   return (
-    <div className="p-6">
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold text-gray-900">Import/Export Dữ liệu</h1>
-        <p className="text-gray-600 mt-2">Import và export dữ liệu từ Excel/CSV</p>
-      </div>
+    <div className="p-6 space-y-6">
+      <PageHeader
+        title="Import/Export Dữ liệu"
+        subtitle="Import và export dữ liệu từ Excel/CSV (hoặc PDF công văn)"
+      />
 
       {/* Tabs */}
-      <div className="bg-white rounded-lg shadow mb-6">
-        <div className="border-b border-gray-200">
-          <nav className="flex -mb-px">
+      <Card className="overflow-hidden">
+        <div className="border-b border-gray-200 bg-gray-50/60">
+          <nav className="flex -mb-px px-6 gap-8">
             <button
               onClick={() => setActiveTab('import')}
-              className={`px-6 py-3 text-sm font-medium ${
+              className={`py-4 px-1 border-b-2 font-medium text-sm ${
                 activeTab === 'import'
-                  ? 'border-b-2 border-blue-500 text-blue-600'
-                  : 'text-gray-500 hover:text-gray-700'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
               }`}
             >
               Import
             </button>
             <button
               onClick={() => setActiveTab('export')}
-              className={`px-6 py-3 text-sm font-medium ${
+              className={`py-4 px-1 border-b-2 font-medium text-sm ${
                 activeTab === 'export'
-                  ? 'border-b-2 border-blue-500 text-blue-600'
-                  : 'text-gray-500 hover:text-gray-700'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
               }`}
             >
               Export
@@ -186,18 +191,17 @@ const ImportExport = () => {
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Loại dữ liệu
                 </label>
-                <select
+                <Select
                   value={importType}
                   onChange={(e) => {
                     setImportType(e.target.value);
                     setSelectedFile(null);
                     document.getElementById('file-input').value = '';
                   }}
-                  className="w-full px-3 py-2 border rounded-lg"
                 >
                   <option value="drugs">Thuốc (Drugs)</option>
                   <option value="inventory">Tồn kho (Inventory)</option>
-                </select>
+                </Select>
               </div>
 
               {importType === 'drugs' && (
@@ -205,18 +209,17 @@ const ImportExport = () => {
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Định dạng file
                   </label>
-                  <select
+                  <Select
                     value={importFormat}
                     onChange={(e) => {
                       setImportFormat(e.target.value);
                       setSelectedFile(null);
                       document.getElementById('file-input').value = '';
                     }}
-                    className="w-full px-3 py-2 border rounded-lg"
                   >
                     <option value="csv">CSV/Excel (Thông thường)</option>
                     <option value="pdf">PDF (Công văn Bộ Y tế)</option>
-                  </select>
+                  </Select>
                 </div>
               )}
 
@@ -224,12 +227,11 @@ const ImportExport = () => {
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Chọn file {importFormat === 'pdf' ? '(PDF công văn)' : '(CSV hoặc Excel)'}
                 </label>
-                <input
+                <Input
                   id="file-input"
                   type="file"
                   accept={importFormat === 'pdf' ? '.pdf' : '.csv,.xlsx,.xls'}
                   onChange={handleFileSelect}
-                  className="w-full px-3 py-2 border rounded-lg"
                 />
                 {selectedFile && (
                   <p className="mt-2 text-sm text-gray-600">
@@ -258,13 +260,9 @@ const ImportExport = () => {
                 </ul>
               </div>
 
-              <button
-                onClick={handleImport}
-                disabled={!selectedFile || importing}
-                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
-              >
+              <Button onClick={handleImport} disabled={!selectedFile || importing}>
                 {importing ? 'Đang import...' : 'Import'}
-              </button>
+              </Button>
             </div>
           ) : (
             <div className="space-y-6">
@@ -279,16 +277,15 @@ const ImportExport = () => {
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Loại dữ liệu
                 </label>
-                <select
+                <Select
                   value={exportType}
                   onChange={(e) => setExportType(e.target.value)}
-                  className="w-full px-3 py-2 border rounded-lg"
                 >
                   <option value="drugs">Thuốc (Drugs)</option>
                   <option value="inventory">Tồn kho (Inventory)</option>
                   <option value="orders">Đơn hàng (Orders)</option>
                   <option value="invoices">Hóa đơn (Invoices)</option>
-                </select>
+                </Select>
               </div>
 
               <div className="bg-green-50 border border-green-200 rounded-lg p-4">
@@ -300,17 +297,13 @@ const ImportExport = () => {
                 </ul>
               </div>
 
-              <button
-                onClick={handleExport}
-                disabled={exporting}
-                className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
-              >
+              <Button onClick={handleExport} disabled={exporting} variant="success">
                 {exporting ? 'Đang export...' : 'Export'}
-              </button>
+              </Button>
             </div>
           )}
         </div>
-      </div>
+      </Card>
     </div>
   );
 };

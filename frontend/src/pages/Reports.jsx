@@ -28,6 +28,11 @@ import {
 import { useAuth } from '../contexts/AuthContext';
 import { reportAPI, trustScoreAPI } from '../utils/api';
 import toast from 'react-hot-toast';
+import { PageHeader } from '../components/ui/PageHeader';
+import { Card } from '../components/ui/Card';
+import { Button } from '../components/ui/Button';
+import { Input } from '../components/ui/Input';
+import { Select } from '../components/ui/Select';
 
 const Reports = () => {
   const { user, hasRole } = useAuth();
@@ -518,64 +523,62 @@ const Reports = () => {
     return (
       <div className="space-y-6">
         {/* Filters */}
-        <div className="bg-white rounded-lg shadow-soft p-6">
+        <Card className="p-6">
           <div className="flex items-center justify-between mb-4">
             <div>
               <h3 className="text-lg font-semibold text-gray-900">Bộ lọc báo cáo</h3>
               <p className="text-sm text-gray-500">Chọn module và phạm vi thời gian để xem thống kê chi tiết.</p>
             </div>
-            <button
+            <Button
+              variant="secondary"
               onClick={() => { setDateRange({ startDate: '', endDate: '' }); loadModuleData(selectedModule); }}
-              className="hidden md:inline-flex items-center space-x-2 px-4 py-2 text-sm font-medium text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50"
+              leftIcon={RefreshCw}
+              className="hidden md:inline-flex"
             >
-              <RefreshCw className="h-4 w-4" />
-              <span>Làm mới</span>
-            </button>
+              Làm mới
+            </Button>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Module</label>
-              <select
+              <Select
                 value={selectedModule}
                 onChange={(e) => setSelectedModule(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
               >
                 <option value="drugs">Thuốc</option>
                 <option value="supply-chain">Chuỗi cung ứng</option>
                 <option value="tasks">Nhiệm vụ</option>
                 <option value="notifications">Thông báo</option>
                 <option value="reviews">Đánh giá</option>
-              </select>
+              </Select>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Từ ngày</label>
-              <input
+              <Input
                 type="date"
                 value={dateRange.startDate}
                 onChange={(e) => setDateRange({...dateRange, startDate: e.target.value})}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
               />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Đến ngày</label>
-              <input
+              <Input
                 type="date"
                 value={dateRange.endDate}
                 onChange={(e) => setDateRange({...dateRange, endDate: e.target.value})}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
               />
             </div>
             <div className="flex items-end">
-              <button
+              <Button
                 onClick={() => loadModuleData(selectedModule)}
-                className="w-full bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center justify-center space-x-2 shadow-sm"
+                className="w-full"
+                leftIcon={Filter}
               >
-                <Filter className="h-4 w-4" />
-                <span>Lọc</span>
-              </button>
+                Lọc
+              </Button>
             </div>
           </div>
-        </div>
+        </Card>
 
         {/* Module Data */}
         {moduleData ? (
@@ -1364,29 +1367,23 @@ const Reports = () => {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Thống kê & Báo cáo</h1>
-          <p className="text-gray-600">Theo dõi và phân tích dữ liệu hệ thống</p>
-        </div>
-        
-        <div className="flex space-x-2">
-          <button
-            onClick={() => window.location.reload()}
-            className="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 flex items-center space-x-2"
-          >
-            <RefreshCw className="h-5 w-5" />
-            <span>Làm mới</span>
-          </button>
-        </div>
-      </div>
+      <PageHeader
+        title="Thống kê & Báo cáo"
+        subtitle="Theo dõi và phân tích dữ liệu hệ thống"
+        actions={
+          <Button variant="secondary" onClick={() => window.location.reload()} leftIcon={RefreshCw}>
+            Làm mới
+          </Button>
+        }
+      />
 
       {/* Tabs */}
-      <div className="border-b border-gray-200">
-        <nav className="-mb-px flex space-x-8">
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-soft overflow-hidden">
+        <div className="border-b border-gray-200 bg-gray-50/60">
+          <nav className="-mb-px flex flex-wrap gap-x-8 px-6">
           <button
             onClick={() => setActiveTab('overview')}
-            className={`py-2 px-1 border-b-2 font-medium text-sm ${
+            className={`py-4 px-1 border-b-2 font-medium text-sm ${
               activeTab === 'overview'
                 ? 'border-blue-500 text-blue-600'
                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
@@ -1396,7 +1393,7 @@ const Reports = () => {
           </button>
           <button
             onClick={() => setActiveTab('kpi')}
-            className={`py-2 px-1 border-b-2 font-medium text-sm ${
+            className={`py-4 px-1 border-b-2 font-medium text-sm ${
               activeTab === 'kpi'
                 ? 'border-blue-500 text-blue-600'
                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
@@ -1406,7 +1403,7 @@ const Reports = () => {
           </button>
           <button
             onClick={() => setActiveTab('alerts')}
-            className={`py-2 px-1 border-b-2 font-medium text-sm relative ${
+            className={`py-4 px-1 border-b-2 font-medium text-sm relative ${
               activeTab === 'alerts'
                 ? 'border-blue-500 text-blue-600'
                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
@@ -1421,7 +1418,7 @@ const Reports = () => {
           </button>
           <button
             onClick={() => setActiveTab('modules')}
-            className={`py-2 px-1 border-b-2 font-medium text-sm ${
+            className={`py-4 px-1 border-b-2 font-medium text-sm ${
               activeTab === 'modules'
                 ? 'border-blue-500 text-blue-600'
                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
@@ -1429,7 +1426,8 @@ const Reports = () => {
           >
             Theo module
           </button>
-        </nav>
+          </nav>
+        </div>
       </div>
 
       {/* Loading */}

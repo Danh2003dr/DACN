@@ -3,6 +3,9 @@ import { useAuth } from '../contexts/AuthContext';
 import SimpleAddressMap from '../components/SimpleAddressMap';
 import AvatarCropper from '../components/AvatarCropper';
 import api from '../utils/api';
+import { PageHeader } from '../components/ui/PageHeader';
+import { Card } from '../components/ui/Card';
+import { Button } from '../components/ui/Button';
 
 const Profile = () => {
   const { user, updateUser, changePassword } = useAuth();
@@ -180,8 +183,14 @@ const Profile = () => {
     <>
     <div className="min-h-screen bg-gray-50 py-8">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="mb-6">
+          <PageHeader
+            title="Hồ sơ cá nhân"
+            subtitle="Cập nhật thông tin cá nhân, thông tin tổ chức và bảo mật tài khoản"
+          />
+        </div>
         {/* Header */}
-        <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
+        <Card className="p-6 mb-6">
           <div className="flex items-center space-x-4">
               <div className="relative">
                 {user?.avatar ? (
@@ -238,11 +247,11 @@ const Profile = () => {
               </div>
             </div>
           </div>
-        </div>
+        </Card>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Thông tin cá nhân */}
-          <div className="bg-white rounded-lg shadow-sm p-6">
+          <Card className="p-6">
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-lg font-semibold text-gray-900">Thông tin cá nhân</h2>
               <button className="p-2 text-gray-400 hover:text-gray-600">
@@ -329,30 +338,11 @@ const Profile = () => {
                 />
               </div>
 
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full bg-blue-500 text-white py-2 px-4 rounded-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
-              >
-                {loading ? (
-                  <>
-                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    Đang cập nhật...
-                  </>
-                ) : (
-                  <>
-                    <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                      <path d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z" />
-                    </svg>
-                    Cập nhật hồ sơ
-                  </>
-                )}
-              </button>
+              <Button type="submit" disabled={loading} className="w-full">
+                {loading ? 'Đang cập nhật...' : 'Cập nhật hồ sơ'}
+              </Button>
             </form>
-          </div>
+          </Card>
 
           {/* Thông tin tổ chức */}
           <div className="bg-white rounded-lg shadow-sm p-6">
@@ -437,7 +427,7 @@ const Profile = () => {
         )}
 
         {/* Change Password */}
-        <div className="bg-white rounded-lg shadow-sm p-6 mt-6 max-w-3xl">
+        <Card className="p-6 mt-6 max-w-3xl">
           <h2 className="text-lg font-semibold text-gray-900 mb-4">Đổi mật khẩu</h2>
           <form onSubmit={handlePwdChange} className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <input
@@ -467,19 +457,15 @@ const Profile = () => {
               minLength={6}
             />
             <div className="md:col-span-3 flex items-center gap-3">
-              <button
-                type="submit"
-                disabled={pwdLoading}
-                className="px-5 py-2 bg-gray-800 text-white rounded-md hover:bg-gray-900 disabled:opacity-50"
-              >
+              <Button type="submit" disabled={pwdLoading} variant="secondary">
                 {pwdLoading ? 'Đang đổi...' : 'Đổi mật khẩu'}
-              </button>
+              </Button>
               {pwdMessage && (
                 <span className="text-sm text-gray-600">{pwdMessage}</span>
               )}
             </div>
           </form>
-        </div>
+        </Card>
       </div>
     </div>
 

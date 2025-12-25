@@ -32,6 +32,12 @@ import {
 import { useAuth } from '../contexts/AuthContext';
 import { notificationAPI } from '../utils/api';
 import toast from 'react-hot-toast';
+import { PageHeader } from '../components/ui/PageHeader';
+import { Card } from '../components/ui/Card';
+import { Button } from '../components/ui/Button';
+import { Input } from '../components/ui/Input';
+import { Select } from '../components/ui/Select';
+import { Pagination } from '../components/ui/Pagination';
 
 const Notifications = () => {
   const { user, hasRole, hasAnyRole } = useAuth();
@@ -324,38 +330,28 @@ const Notifications = () => {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Quản lý Thông báo</h1>
-          <p className="text-gray-600">Tạo và quản lý thông báo hệ thống</p>
-        </div>
-        
-        <div className="flex space-x-3">
-          {hasRole('admin') && (
-            <button
-              onClick={() => setShowSystemModal(true)}
-              className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 flex items-center space-x-2"
-            >
-              <AlertCircle className="h-5 w-5" />
-              <span>Thông báo hệ thống</span>
-            </button>
-          )}
-          
-          {hasAnyRole(['admin', 'manufacturer', 'distributor', 'hospital']) && (
-            <button
-              onClick={() => setShowCreateModal(true)}
-              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-2"
-            >
-              <Plus className="h-5 w-5" />
-              <span>Tạo thông báo</span>
-            </button>
-          )}
-        </div>
-      </div>
+      <PageHeader
+        title="Quản lý Thông báo"
+        subtitle="Tạo và quản lý thông báo hệ thống"
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            {hasRole('admin') && (
+              <Button variant="danger" onClick={() => setShowSystemModal(true)} leftIcon={AlertCircle}>
+                Thông báo hệ thống
+              </Button>
+            )}
+            {hasAnyRole(['admin', 'manufacturer', 'distributor', 'hospital']) && (
+              <Button onClick={() => setShowCreateModal(true)} leftIcon={Plus}>
+                Tạo thông báo
+              </Button>
+            )}
+          </div>
+        }
+      />
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white p-4 rounded-lg shadow">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+        <Card className="p-5">
           <div className="flex items-center">
             <div className="p-2 bg-blue-100 rounded-lg">
               <Bell className="h-6 w-6 text-blue-600" />
@@ -365,9 +361,9 @@ const Notifications = () => {
               <p className="text-2xl font-semibold text-gray-900">{stats.total || 0}</p>
             </div>
           </div>
-        </div>
+        </Card>
         
-        <div className="bg-white p-4 rounded-lg shadow">
+        <Card className="p-5">
           <div className="flex items-center">
             <div className="p-2 bg-yellow-100 rounded-lg">
               <Clock className="h-6 w-6 text-yellow-600" />
@@ -377,9 +373,9 @@ const Notifications = () => {
               <p className="text-2xl font-semibold text-gray-900">{stats.unread || 0}</p>
             </div>
           </div>
-        </div>
+        </Card>
         
-        <div className="bg-white p-4 rounded-lg shadow">
+        <Card className="p-5">
           <div className="flex items-center">
             <div className="p-2 bg-orange-100 rounded-lg">
               <AlertTriangle className="h-6 w-6 text-orange-600" />
@@ -389,9 +385,9 @@ const Notifications = () => {
               <p className="text-2xl font-semibold text-gray-900">{stats.high || 0}</p>
             </div>
           </div>
-        </div>
+        </Card>
         
-        <div className="bg-white p-4 rounded-lg shadow">
+        <Card className="p-5">
           <div className="flex items-center">
             <div className="p-2 bg-red-100 rounded-lg">
               <AlertCircle className="h-6 w-6 text-red-600" />
@@ -401,12 +397,12 @@ const Notifications = () => {
               <p className="text-2xl font-semibold text-gray-900">{stats.urgent || 0}</p>
             </div>
           </div>
-        </div>
+        </Card>
       </div>
 
       {/* Tabs */}
-      <div className="bg-white rounded-lg shadow">
-        <div className="border-b border-gray-200">
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-soft overflow-hidden">
+        <div className="border-b border-gray-200 bg-gray-50/60">
           <nav className="-mb-px flex space-x-8 px-6">
             <button
               onClick={() => setActiveTab('received')}
@@ -432,32 +428,24 @@ const Notifications = () => {
         </div>
 
         {/* Filters */}
-        <div className="px-6 py-4 border-b border-gray-200">
+        <div className="px-6 py-4 border-b border-gray-200 bg-white">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Tìm kiếm
-              </label>
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
-                <input
-                  type="text"
-                  value={filters.search}
-                  onChange={(e) => setFilters({ ...filters, search: e.target.value })}
-                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Tìm theo tiêu đề, nội dung..."
-                />
-              </div>
+              <p className="text-sm font-medium text-gray-700 mb-1">Tìm kiếm</p>
+              <Input
+                type="text"
+                value={filters.search}
+                onChange={(e) => setFilters({ ...filters, search: e.target.value })}
+                placeholder="Tìm theo tiêu đề, nội dung..."
+                leftIcon={Search}
+              />
             </div>
             
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Loại thông báo
-              </label>
-              <select
+              <p className="text-sm font-medium text-gray-700 mb-1">Loại thông báo</p>
+              <Select
                 value={filters.type}
                 onChange={(e) => setFilters({ ...filters, type: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               >
                 <option value="">Tất cả loại</option>
                 <option value="system">Hệ thống</option>
@@ -467,24 +455,21 @@ const Notifications = () => {
                 <option value="quality_alert">Cảnh báo chất lượng</option>
                 <option value="general">Thông báo chung</option>
                 <option value="urgent">Khẩn cấp</option>
-              </select>
+              </Select>
             </div>
             
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Mức độ ưu tiên
-              </label>
-              <select
+              <p className="text-sm font-medium text-gray-700 mb-1">Mức độ ưu tiên</p>
+              <Select
                 value={filters.priority}
                 onChange={(e) => setFilters({ ...filters, priority: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               >
                 <option value="">Tất cả mức độ</option>
                 <option value="low">Thấp</option>
                 <option value="medium">Trung bình</option>
                 <option value="high">Cao</option>
                 <option value="urgent">Khẩn cấp</option>
-              </select>
+              </Select>
             </div>
             
             <div className="flex items-end space-x-2">
@@ -500,13 +485,9 @@ const Notifications = () => {
                 </label>
               )}
               
-              <button
-                onClick={loadNotifications}
-                className="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 flex items-center space-x-2"
-              >
-                <RefreshCw className="h-4 w-4" />
-                <span>Làm mới</span>
-              </button>
+              <Button variant="secondary" onClick={loadNotifications} leftIcon={RefreshCw}>
+                Làm mới
+              </Button>
             </div>
           </div>
         </div>
@@ -535,7 +516,7 @@ const Notifications = () => {
                 })?.isRead === false;
               
               return (
-                <div key={getUniqueKey(notification, idx)} className={`p-6 hover:bg-gray-50 ${isUnread ? 'bg-blue-50' : ''}`}>
+                <div key={getUniqueKey(notification, idx)} className={`p-6 hover:bg-gray-50/70 ${isUnread ? 'bg-blue-50' : ''}`}>
                   <div className="flex items-start justify-between">
                     <div className="flex items-start space-x-4 flex-1">
                       <div className="flex-shrink-0">
@@ -583,7 +564,7 @@ const Notifications = () => {
                     <div className="flex items-center space-x-2">
                       <button
                         onClick={() => getNotificationDetails(normalizeId(notification._id))}
-                        className="text-blue-600 hover:text-blue-900"
+                        className="text-blue-700 hover:text-blue-900"
                         title="Xem chi tiết"
                       >
                         <Eye className="h-4 w-4" />
@@ -592,7 +573,7 @@ const Notifications = () => {
                       {activeTab === 'received' && isUnread && (
                         <button
                           onClick={() => markAsRead(normalizeId(notification._id))}
-                          className="text-green-600 hover:text-green-900"
+                          className="text-green-700 hover:text-green-900"
                           title="Đánh dấu đã đọc"
                         >
                           <CheckCircle className="h-4 w-4" />
@@ -610,7 +591,7 @@ const Notifications = () => {
                           </button> */}
                           <button
                             onClick={() => deleteNotification(normalizeId(notification._id))}
-                            className="text-red-600 hover:text-red-800"
+                            className="text-red-700 hover:text-red-900"
                             title="Xóa thông báo"
                           >
                             <Trash2 className="h-4 w-4" />
@@ -626,34 +607,12 @@ const Notifications = () => {
         </div>
         
         {/* Pagination */}
-        {pagination.pages > 1 && (
-          <div className="px-6 py-4 border-t border-gray-200">
-            <div className="flex items-center justify-between">
-              <div className="text-sm text-gray-700">
-                Hiển thị {notifications.length} trong {pagination.total} kết quả
-              </div>
-              <div className="flex space-x-2">
-                <button
-                  onClick={() => setPagination({ ...pagination, current: pagination.current - 1 })}
-                  disabled={pagination.current === 1}
-                  className="px-3 py-1 border border-gray-300 rounded-md text-sm disabled:opacity-50"
-                >
-                  Trước
-                </button>
-                <span className="px-3 py-1 text-sm">
-                  {pagination.current} / {pagination.pages}
-                </span>
-                <button
-                  onClick={() => setPagination({ ...pagination, current: pagination.current + 1 })}
-                  disabled={pagination.current === pagination.pages}
-                  className="px-3 py-1 border border-gray-300 rounded-md text-sm disabled:opacity-50"
-                >
-                  Sau
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+        <Pagination
+          page={pagination.current}
+          totalPages={pagination.pages}
+          onPrev={() => setPagination({ ...pagination, current: Math.max(1, pagination.current - 1) })}
+          onNext={() => setPagination({ ...pagination, current: Math.min(pagination.pages, pagination.current + 1) })}
+        />
       </div>
 
       {/* Create Notification Modal */}
