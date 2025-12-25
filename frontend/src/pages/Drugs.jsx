@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import {
@@ -15,6 +15,7 @@ import {
 import { QRCode } from 'react-qr-code';
 import { useAuth } from '../contexts/AuthContext';
 import api, { drugAPI } from '../utils/api';
+import { getDrugRisk } from '../utils/riskScoring';
 
 const StatCard = ({ label, value, icon: Icon, tone = 'blue' }) => {
   const toneMap = {
@@ -77,6 +78,7 @@ const Drugs = () => {
   const [selectedDrug, setSelectedDrug] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
+  const [filterRisk, setFilterRisk] = useState(''); // normal | low | medium | high | critical
   const [stats, setStats] = useState({});
   const [error, setError] = useState(null);
   const [page, setPage] = useState(1);
@@ -587,6 +589,39 @@ const Drugs = () => {
     return 'bg-green-100 text-green-800';
   };
 
+  const getRiskMeta = (risk) => {
+    const map = {
+      critical: { label: 'Khẩn cấp', cls: 'bg-red-50 text-red-800 border-red-200' },
+      high: { label: 'Cao', cls: 'bg-orange-50 text-orange-800 border-orange-200' },
+      medium: { label: 'Trung bình', cls: 'bg-yellow-50 text-yellow-800 border-yellow-200' },
+      low: { label: 'Thấp', cls: 'bg-blue-50 text-blue-800 border-blue-200' },
+      normal: { label: 'Bình thường', cls: 'bg-emerald-50 text-emerald-800 border-emerald-200' }
+    };
+    return map[risk?.level] || map.normal;
+  };
+
+  const drugsWithRisk = useMemo(() => {
+    return (drugs || []).map((drug) => {
+      const risk = getDrugRisk(drug);
+      return { ...drug, _risk: risk };
+    });
+  }, [drugs]);
+
+  const riskCounts = useMemo(() => {
+    const counts = { critical: 0, high: 0, medium: 0, low: 0, normal: 0 };
+    drugsWithRisk.forEach((d) => {
+      const lvl = d?._risk?.level || 'normal';
+      if (counts[lvl] !== undefined) counts[lvl] += 1;
+      else counts.normal += 1;
+    });
+    return counts;
+  }, [drugsWithRisk]);
+
+  const filteredDrugs = useMemo(() => {
+    if (!filterRisk) return drugsWithRisk;
+    return drugsWithRisk.filter((d) => (d?._risk?.level || 'normal') === filterRisk);
+  }, [drugsWithRisk, filterRisk]);
+
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
@@ -624,11 +659,12 @@ const Drugs = () => {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
         <StatCard label="Tổng số lô" value={stats.total || 0} icon={CheckCircle} tone="blue" />
         <StatCard label="Đang hoạt động" value={stats.active || 0} icon={CheckCircle} tone="green" />
         <StatCard label="Đã thu hồi" value={stats.recalled || 0} icon={XCircle} tone="red" />
         <StatCard label="Sắp hết hạn" value={stats.expiringSoon || 0} icon={AlertTriangle} tone="amber" />
+        <StatCard label="Nguy cơ cao (AI)" value={(riskCounts.high || 0) + (riskCounts.critical || 0)} icon={AlertTriangle} tone="red" />
       </div>
 
       {/* Filters */}
@@ -661,6 +697,21 @@ const Drugs = () => {
             </select>
           </div>
 
+          <div className="md:w-56">
+            <select
+              value={filterRisk}
+              onChange={(e) => setFilterRisk(e.target.value)}
+              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+            >
+              <option value="">Tất cả rủi ro (AI)</option>
+              <option value="critical">Khẩn cấp</option>
+              <option value="high">Cao</option>
+              <option value="medium">Trung bình</option>
+              <option value="low">Thấp</option>
+              <option value="normal">Bình thường</option>
+            </select>
+          </div>
+
           <button
             type="button"
             onClick={() => {
@@ -673,6 +724,24 @@ const Drugs = () => {
             Áp dụng
           </button>
         </div>
+        <div className="mt-4 flex flex-wrap gap-2 text-xs">
+          <span className="text-gray-500">Trong trang hiện tại:</span>
+          <span className="inline-flex items-center px-2 py-1 rounded-full border bg-red-50 text-red-800 border-red-200">
+            Khẩn cấp: {riskCounts.critical || 0}
+          </span>
+          <span className="inline-flex items-center px-2 py-1 rounded-full border bg-orange-50 text-orange-800 border-orange-200">
+            Cao: {riskCounts.high || 0}
+          </span>
+          <span className="inline-flex items-center px-2 py-1 rounded-full border bg-yellow-50 text-yellow-800 border-yellow-200">
+            Trung bình: {riskCounts.medium || 0}
+          </span>
+          <span className="inline-flex items-center px-2 py-1 rounded-full border bg-blue-50 text-blue-800 border-blue-200">
+            Thấp: {riskCounts.low || 0}
+          </span>
+          <span className="inline-flex items-center px-2 py-1 rounded-full border bg-emerald-50 text-emerald-800 border-emerald-200">
+            Bình thường: {riskCounts.normal || 0}
+          </span>
+        </div>
       </div>
 
       {/* Drugs Table */}
@@ -682,11 +751,11 @@ const Drugs = () => {
             <RefreshCw className="w-8 h-8 animate-spin mx-auto mb-4 text-blue-600" />
             <p className="text-gray-600">Đang tải dữ liệu...</p>
           </div>
-        ) : drugs.length === 0 ? (
+        ) : filteredDrugs.length === 0 ? (
           <div className="p-8 text-center">
             <AlertTriangle className="w-12 h-12 text-gray-400 mx-auto mb-4" />
             <h3 className="text-lg font-medium text-gray-900 mb-2">Không có dữ liệu</h3>
-            <p className="text-gray-600">Chưa có lô thuốc nào trong hệ thống</p>
+            <p className="text-gray-600">Không có lô thuốc phù hợp bộ lọc hiện tại</p>
           </div>
         ) : (
           <>
@@ -710,12 +779,15 @@ const Drugs = () => {
                       Trạng thái
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                      Rủi ro (AI)
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
                       Hành động
                     </th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {drugs.map((drug, idx) => (
+                  {filteredDrugs.map((drug, idx) => (
                     <tr key={getUniqueKey(drug, idx)} className="hover:bg-gray-50/70">
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div>
@@ -763,6 +835,22 @@ const Drugs = () => {
                           {getStatusIcon(drug)}
                           {getStatusText(drug)}
                         </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        {(() => {
+                          const risk = drug?._risk || getDrugRisk(drug);
+                          const meta = getRiskMeta(risk);
+                          const top2 = (risk.factors || []).slice(0, 2).map(f => f.label).join(', ');
+                          return (
+                            <span
+                              title={top2 ? `Điểm: ${risk.score}/100 · ${top2}` : `Điểm: ${risk.score}/100`}
+                              className={`inline-flex items-center gap-2 px-2.5 py-0.5 rounded-full text-xs font-semibold border ${meta.cls}`}
+                            >
+                              <span>{meta.label}</span>
+                              <span className="font-mono text-[11px] opacity-80">{risk.score}/100</span>
+                            </span>
+                          );
+                        })()}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                         <div className="flex items-center gap-1">
